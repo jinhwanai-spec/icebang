@@ -105,7 +105,7 @@ func _physics_process(delta: float) -> void:
 		_goal_generator.repair(delta, self)  # 도착했으면 봉인석 가동
 	elif not agent.is_navigation_finished() or (mode == "repair" and is_instance_valid(_goal_generator) and not _goal_generator.completed):
 		# 길 끝까지 왔는데 봉인석에 손이 안 닿으면 봉인석 쪽으로 곧장 붙음 (멍하니 서 있지 않게)
-		var next := agent.get_next_path_position() if not agent.is_navigation_finished() else _goal_generator.global_position
+		var next := Survivor.next_flat_point(agent, global_position) if not agent.is_navigation_finished() else _goal_generator.global_position
 		var dir := next - global_position
 		dir.y = 0.0
 		if dir.length() > 0.05:

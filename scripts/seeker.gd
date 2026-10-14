@@ -408,6 +408,8 @@ func _move_to_destination(delta: float, speed: float) -> void:
 			_pick_patrol_point()  # 도착하면 바로 다음 곳으로 (멍하니 서 있지 않음)
 		return
 	var next := agent.get_next_path_position()
+	if Vector2(next.x - global_position.x, next.z - global_position.z).length() < 0.3:
+		next = Survivor.next_flat_point(agent, global_position)
 	_move_dir(next - global_position, delta, speed)
 
 

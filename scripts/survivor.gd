@@ -805,6 +805,17 @@ func _net_fwd(method: String, args: Array) -> bool:
 	return method in ["die", "_kill", "pull_to", "teleport_to", "bandage_pull"]
 
 
+## 길 위의 다음 지점 중 수평으로 0.35m 넘게 떨어진 첫 지점 (바로 위/아래 점에 걸려 제자리에 서는 것 방지)
+static func next_flat_point(nav: NavigationAgent3D, from: Vector3) -> Vector3:
+	var path := nav.get_current_navigation_path()
+	var i := nav.get_current_navigation_path_index()
+	for k in range(maxi(i, 0), path.size()):
+		var p: Vector3 = path[k]
+		if Vector2(p.x - from.x, p.z - from.z).length() > 0.35:
+			return p
+	return nav.get_next_path_position()
+
+
 ## 상태를 숫자 하나로 (네트워크 전송용)
 func net_flags() -> int:
 	var f := 0

@@ -88,6 +88,15 @@ func _make_materials() -> void:
 	_mat["leaves"] = _noise_mat(Color(0.12, 0.22, 0.1), 0.6, 1.0, 2.0)
 	_mat["paint"] = _flat_mat(Color(0.75, 0.75, 0.7), 0.8)
 	_mat["crate"] = _pattern_mat("planks", Color(0.5, 0.36, 0.2), 1.0)
+	# 실내 마감용 (건물 안 벽지·판넬·바닥재·천장)
+	_mat["in_paint"] = _pattern_mat("paint", Color(0.7, 0.67, 0.6), 2.5)
+	_mat["in_paint_b"] = _pattern_mat("paint", Color(0.6, 0.66, 0.68), 2.5)
+	_mat["in_wains_wood"] = _pattern_mat("woodfloor", Color(0.42, 0.3, 0.2), 2.0)
+	_mat["in_wains_tile"] = _pattern_mat("wtile", Color(0.6, 0.66, 0.66), 0.6)
+	_mat["in_lino"] = _pattern_mat("lino", Color(0.52, 0.52, 0.5), 1.4)
+	_mat["in_terrazzo"] = _pattern_mat("terrazzo", Color(0.6, 0.58, 0.55), 1.5)
+	_mat["in_wood"] = _pattern_mat("woodfloor", Color(0.5, 0.36, 0.24), 2.0)
+	_mat["in_ceil"] = _pattern_mat("ceiling", Color(0.64, 0.64, 0.62), 1.2)
 
 
 ## 노이즈 텍스처로 콘크리트/아스팔트 같은 얼룩덜룩한 질감을 만듭니다.
