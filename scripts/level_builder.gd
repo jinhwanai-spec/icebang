@@ -44,6 +44,27 @@ var use_shacks := false
 var debug_rooms: Array = []
 ## (테스트용) 복도 한쪽 끝 위치 (x, z). 없으면 Vector3.INF
 var corridor_probe := Vector3.INF
+## 창문으로 들어오는 달빛 (볼류메트릭 안개에서 빛줄기로 보임). at = 창 중심, inward = 방 안쪽 방향
+var _moon_count := 0
+func _moon_shaft(at: Vector3, inward: Vector3) -> void:
+	if _moon_count >= 14:
+		return
+	_moon_count += 1
+	var sl := SpotLight3D.new()
+	sl.light_color = Color(0.55, 0.65, 1.0)
+	sl.light_energy = 2.2
+	sl.light_volumetric_fog_energy = 3.0
+	sl.spot_range = 9.0
+	sl.spot_angle = 22.0
+	sl.shadow_enabled = false
+	sl.distance_fade_enabled = true
+	sl.distance_fade_begin = 35.0
+	sl.distance_fade_length = 10.0
+	region.add_child(sl)
+	sl.global_position = at - inward * 1.2 + Vector3.UP * 1.0
+	sl.look_at(at + inward * 3.0 + Vector3.DOWN * 1.8, Vector3.UP)
+
+
 ## 층 표시 (계단실 벽에 큰 글자 + 판)
 func _floor_sign(p: Vector3, facing: Vector3, text: String, col := Color(0.2, 0.45, 0.4)) -> void:
 	var yaw := atan2(facing.x, facing.z)

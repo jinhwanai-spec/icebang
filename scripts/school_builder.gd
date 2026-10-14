@@ -203,6 +203,8 @@ func _main_building() -> void:
 				# 안쪽 창턱
 				var fi := gc - n * (BuildingKit.WALL_T * 0.5)
 				_bx("trim", fi + Vector3.UP * -1.0 - n * 0.08, tt, -n, Vector3(1.7, 0.05, 0.18), Color(0.75, 0.72, 0.65))
+				if rng.randf() < 0.12:
+					_moon_shaft(gc, -n)
 				# 바깥벽 빗물 자국 (창턱 아래로 흘러내린 얼룩)
 				if rng.randf() < 0.35:
 					kit.decal(fn + n * 0.01 + Vector3.UP * -1.7, n, rng.randf_range(0.9, 1.5), "stain", PI * 0.5)

@@ -124,6 +124,8 @@ func _hospital() -> void:
 				_bx("trim", fn + n * 0.03, tt, n, Vector3(0.06, 1.8, 0.05), Color(0.25, 0.27, 0.3))
 				if rng.randf() < 0.35:
 					kit.decal(fn + n * 0.01 + Vector3.UP * -1.6, n, rng.randf_range(0.9, 1.5), "stain", PI * 0.5)
+				if rng.randf() < 0.12:
+					_moon_shaft(gc, -n)
 				var fi := gc - n * (BuildingKit.WALL_T * 0.5)
 				_bx("trim", fi + Vector3.UP * -0.9 - n * 0.08, tt, -n, Vector3(1.4, 0.05, 0.16), Color(0.85, 0.86, 0.85))
 			kit.wall(a, b, y, FH, _mat["hosp_wall"], "w_hosp", ops, BuildingKit.WALL_T, in_side)
@@ -159,6 +161,30 @@ func _hospital() -> void:
 	lbl.position = Vector3(0, Y0 + 3.95, r.end.y + 4.47)
 	region.add_child(lbl)
 	_box(Vector3(0, Y0 + 3.95, r.end.y + 4.35), Vector3(8.0, 0.9, 0.2), _flat_mat(Color(0.12, 0.25, 0.3), 0.6), false)
+	# 동쪽 옆문 위 빨간 "응급실" 간판 + 구급차 진입 차양
+	var er := StandardMaterial3D.new()
+	er.albedo_color = Color(0.5, 0.05, 0.05)
+	er.emission_enabled = true
+	er.emission = Color(1.0, 0.12, 0.1)
+	er.emission_energy_multiplier = 1.5
+	_box(Vector3(r.end.x + 0.2, Y0 + 3.1, corr_z), Vector3(0.2, 0.7, 3.0), er, false)
+	var erl := Label3D.new()
+	erl.text = "응 급 실"
+	erl.font_size = 72
+	erl.pixel_size = 0.007
+	erl.position = Vector3(r.end.x + 0.32, Y0 + 3.1, corr_z)
+	erl.rotation.y = PI / 2.0
+	region.add_child(erl)
+	_bx("trim", Vector3(r.end.x + 3.0, Y0 + 3.6, corr_z), Vector3.BACK, Vector3.RIGHT, Vector3(5.0, 0.25, 6.0), Color(0.7, 0.72, 0.72))
+	for dz in [-2.6, 2.6]:
+		kit.part(Vector3(r.end.x + 5.3, Y0 + 1.8, corr_z + dz), Vector3(0.25, 3.6, 0.25), Color(0.7, 0.7, 0.72), "trim", true)
+	var el := OmniLight3D.new()
+	el.light_color = Color(1.0, 0.2, 0.15)
+	el.light_energy = 1.2
+	el.omni_range = 9.0
+	el.position = Vector3(r.end.x + 1.5, Y0 + 3.0, corr_z)
+	el.set_script(preload("res://scripts/flicker_light.gd"))
+	region.add_child(el)
 	# 바닥판·천장
 	kit.slab(inner, YB + 0.05, _mat["base_floor"], "w_bfloor", [], false, 0.3)
 	kit.slab(inner, Y0, _mat["hosp_floor"], "w_hfloor", [stA, stC], false, 0.25)
