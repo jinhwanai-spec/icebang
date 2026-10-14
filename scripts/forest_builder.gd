@@ -428,17 +428,23 @@ func _lantern(parent: Node3D, local: Vector3, lit: bool) -> void:
 func _cabins() -> void:
 	for spot in [Vector3(-32, 0, -29), Vector3(29, 0, 19), Vector3(-54, 0, 54), Vector3(58, 0, -54),
 			Vector3(-62, 0, -8), Vector3(20, 0, 66), Vector3(66, 0, 30), Vector3(-30, 0, -66)]:
-		if _blocked(spot, 5.0):
+		if _blocked(spot, 7.0):
 			continue
 		_cabin(spot)
 
 
 ## 들어갈 수 있는 통나무 오두막: 문, 창문, 침대·탁자·옷장(숨는 곳)·벽난로
 func _cabin(spot: Vector3) -> void:
-	var w := rng.randf_range(6.5, 8.0)
-	var d := rng.randf_range(5.5, 6.5)
+	var w := rng.randf_range(9.0, 11.0)
+	var d := rng.randf_range(7.5, 8.5)
 	var r := Rect2(spot.x - w * 0.5, spot.z - d * 0.5, w, d)
-	var h := 2.9
+	_cabin_rects.append(r)
+	var h := 3.3
+	# 안쪽 마감: 아래쪽 나무 판넬, 위는 통나무 그대로
+	kit.wainscot_mat = _mat["crate"]
+	kit.wainscot_h = 1.0
+	kit.trim_col = Color(0.22, 0.15, 0.09)
+	kit.room_h = h
 	var key := "w_log"
 	var sides := [
 		[Vector3(r.position.x, 0, r.position.y), Vector3(r.end.x, 0, r.position.y)],
@@ -465,7 +471,14 @@ func _cabin(spot: Vector3) -> void:
 			gc.y = 1.5
 			var lit := rng.randf() < 0.5
 			kit.block(gc, Vector3(1.2, 1.0, 0.04), _deco_mat("lit" if lit else "glass"), "b_" + ("lit" if lit else "glass"), true, Basis(dir, Vector3.UP, dir.cross(Vector3.UP).normalized()), false, Color(1.0, 0.65, 0.3) if lit else Color(0.06, 0.07, 0.08))
-		kit.wall(a, b, 0.0, h, _mat["log"], key, ops, 0.3)
+			# 창문 십자 창살 + 창턱
+			var yawc := atan2(-dir.z, dir.x)
+			kit.part(gc, Vector3(1.2, 0.06, 0.36), Color(0.25, 0.17, 0.1), "trim", false, yawc)
+			kit.part(gc, Vector3(0.06, 1.0, 0.36), Color(0.25, 0.17, 0.1), "trim", false, yawc)
+			kit.part(gc + Vector3.UP * -0.53, Vector3(1.4, 0.06, 0.45), Color(0.3, 0.2, 0.12), "trim", false, yawc)
+		var cn := dir.cross(Vector3.UP).normalized()
+		var to_c := Vector3(spot.x, 0, spot.z) - (a + b) * 0.5
+		kit.wall(a, b, 0.0, h, _mat["log"], key, ops, 0.3, 1 if cn.dot(to_c) > 0.0 else -1)
 	# 모서리 통나무 기둥
 	for x in [r.position.x, r.end.x]:
 		for z in [r.position.y, r.end.y]:
@@ -480,10 +493,27 @@ func _cabin(spot: Vector3) -> void:
 	rm.material_override = _mat["roof"]
 	rm.position = Vector3(spot.x, h + 1.1, spot.z)
 	region.add_child(rm)
-	# 살림살이: 침대, 탁자, 옷장(숨는 곳), 벽난로(불빛)
+	kit.wainscot_mat = null
+	# 바닥 깔개·천장 들보·매달린 랜턴
+	kit.floor_overlay(r.grow(-0.3), 0.06, _mat["in_wood"])
+	kit.part(Vector3(spot.x, 0.075, spot.z), Vector3(2.6, 0.01, 1.8), Color(0.45, 0.15, 0.12), "trim")
+	kit.part(Vector3(spot.x, 0.08, spot.z), Vector3(2.2, 0.01, 1.4), Color(0.6, 0.45, 0.25), "trim")
+	for i in 3:
+		var bx := r.position.x + (i + 1) * r.size.x / 4.0
+		kit.part(Vector3(bx, h - 0.2, spot.z), Vector3(0.3, 0.3, d - 0.3), Color(0.26, 0.18, 0.11), "trim")
+	kit.part(Vector3(spot.x, h - 0.75, spot.z), Vector3(0.02, 0.9, 0.02), Color(0.1, 0.1, 0.1), "metal")
+	kit.part(Vector3(spot.x, h - 1.3, spot.z), Vector3(0.22, 0.3, 0.22), Color(1.0, 0.7, 0.35) if rng.randf() < 0.4 else Color(0.2, 0.18, 0.15), "lit")
+	kit.grime(r.grow(-0.4), 0.075, h, 0.6, 0.2)
+	# 살림살이: 침대, 탁자, 옷장(숨는 곳), 벽난로(불빛) — 문 앞은 비움
 	var inner := r.grow(-0.5)
+	var ddir: Vector3 = [Vector3(0, 0, -1), Vector3(1, 0, 0), Vector3(0, 0, 1), Vector3(-1, 0, 0)][door_side]
+	var dpos := Vector3(spot.x, 0, spot.z) + Vector3(ddir.x * w * 0.5, 0, ddir.z * d * 0.5)
+	kit.door_clear = Rect2(dpos.x - 1.4, dpos.z - 2.8, 2.8, 5.6) if door_side % 2 == 0 else Rect2(dpos.x - 2.8, dpos.z - 1.4, 5.6, 2.8)
 	kit.furnish(inner, 0.06, "apartment", true)
+	debug_rooms.append([{"rect": r.grow(-0.3), "kind": "cabin", "name": "cabin", "door_at": dpos, "door_along_x": door_side % 2 == 0}, 0.06])
+	kit._along_wall(inner, (door_side + 1) % 4, 0.45, 1.9, 0.06, func(p, yw): if kit.rng.randf() < 0.6: kit._rack(p, yw))
 	kit._maybe_locker(inner, 0.06, 1.0)
+	kit.door_clear = Rect2()
 	var fire := Vector3(inner.get_center().x, 0.06, inner.position.y + 0.4) if door_side != 0 else Vector3(inner.get_center().x, 0.06, inner.end.y - 0.4)
 	kit.part(fire + Vector3.UP * 0.6, Vector3(1.2, 1.2, 0.6), Color(0.35, 0.33, 0.32), "trim", true)
 	kit.part(fire + Vector3.UP * 0.4, Vector3(0.7, 0.5, 0.62), Color(0.05, 0.03, 0.02), "trim")
@@ -496,8 +526,11 @@ func _cabin(spot: Vector3) -> void:
 		region.add_child(l)
 		kit.part(fire + Vector3.UP * 0.3, Vector3(0.4, 0.2, 0.3), Color(1.0, 0.55, 0.15), "lit")
 	# 오두막 옆 장작더미와 풀숲
-	_crates(spot + Vector3(w * 0.5 + 1.2, 0, 0))
-	_grass(spot - Vector3(w * 0.5 + 2.0, 0, 0), Vector2(3.0, 5.0))
+	# 문 반대쪽 벽 바깥에 장작더미, 옆에 풀숲 (문을 막지 않게)
+	var back: Vector3 = -ddir
+	_crates(spot + Vector3(back.x * (w * 0.5 + 1.2), 0, back.z * (d * 0.5 + 1.2)))
+	var side_v := Vector3(ddir.z, 0, -ddir.x)
+	_grass(spot + Vector3(side_v.x * (w * 0.5 + 2.0), 0, side_v.z * (d * 0.5 + 2.0)), Vector2(3.0, 3.0))
 
 
 ## 버려진 텐트와 모닥불, 통나무 의자, 바닥에 놓인 랜턴 (몇몇은 무너지고 꺼져 있음)
@@ -647,9 +680,14 @@ func _real_rock(pos: Vector3) -> void:
 
 
 ## 공터, 길 근처, 스폰 근처면 true (나무·바위를 두지 않음)
+var _cabin_rects: Array = []  # 오두막 자리 (나무·바위·텐트가 안이나 문 앞에 생기지 않게)
+
 func _blocked(p: Vector3, margin: float) -> bool:
 	if _near_spawn(p, 7.0 + margin):
 		return true
+	for cr in _cabin_rects:
+		if (cr as Rect2).grow(margin + 1.5).has_point(Vector2(p.x, p.z)):
+			return true
 	for c in CLEARINGS:
 		if Vector2(p.x, p.z).distance_to(Vector2(c.x, c.z)) < CLEARING_RADIUS + margin:
 			return true
