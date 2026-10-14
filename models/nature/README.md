@@ -4,7 +4,7 @@
 
 | 종류 | 파일 | 메모 |
 |---|---|---|
-| 나무 | tree_round_a/b, tree_round_autumn, tree_pine, tree_dead, tree_birch, tree_sapling | 높이 약 5~6m (사피링 2m). 사피링 외에는 줄기 충돌체(`Collision-colonly`) 포함 |
+| 나무 | tree_round_a/b, tree_round_autumn, tree_pine, tree_dead, tree_birch, tree_sapling | 높이 약 5~6m (묘목 2m). 묘목 외에는 줄기 충돌체(`Collision-colonly`) 포함 |
 | 덤불 | bush_round, bush_flower, bush_small, hedge_3m | 덤불은 충돌 없음(통과 가능 = 숨기 좋음), 울타리(hedge)만 충돌 있음 |
 | 풀/꽃 | grass_clump, grass_reeds, weeds_crack, flower_patch | weeds_crack 은 보도 틈 잡초 줄 (길이 2m) |
 | 바닥 | log_fallen, stump, mushrooms_glow, mushrooms_red, leaf_pile | 통나무·그루터기는 충돌 있음. mushrooms_glow 는 발광(밤 맵 포인트) |
