@@ -75,6 +75,7 @@ func _hospital() -> void:
 		[Vector3(r.position.x, 0, r.end.y), Vector3(r.position.x, 0, r.position.y), Vector3(-1, 0, 0)],
 	]
 	kit.room_h = FH
+	kit.door_style = "hospital"
 	for si in 4:
 		var a: Vector3 = sides[si][0]
 		var b: Vector3 = sides[si][1]

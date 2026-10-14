@@ -56,6 +56,8 @@ func spawn_props(main: Node3D) -> void:
 		node.rotation.y = p[2]
 		if p.size() > 3:
 			node.set_meta("door_w", p[3])
+		if p.size() > 4:
+			node.set_meta("door_style", p[4])
 		node.call("setup", p[0], _builder._mat)
 
 

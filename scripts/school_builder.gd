@@ -179,7 +179,7 @@ func _main_building() -> void:
 				kit._door_frame(dc, dir, trim.darkened(0.4))
 				_exit_sign(dc + Vector3.UP * (BuildingKit.DOOR_H + 0.35) - n * 0.2, -n)
 				if rng.randf() < 0.5:
-					props.append(["door", dc, atan2(dir.z, -dir.x) + PI, 1.7])
+					props.append(["door", dc, atan2(dir.z, -dir.x) + PI, 1.7, "school"])
 			var count := int((L - 1.0) / 2.4)
 			var gap := (L - 1.0) / count
 			for i in count:
@@ -335,6 +335,7 @@ func _school_finish() -> void:
 	kit.wainscot_h = 1.2
 	kit.room_h = FH
 	kit.corridor_windows = true
+	kit.door_style = "school"
 	kit.trim_col = Color(0.36, 0.27, 0.18)
 
 

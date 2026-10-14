@@ -31,6 +31,8 @@ var trim_col := Color(0.3, 0.27, 0.24)
 var lining_mat: Material = null
 ## 복도식 건물(학교): 교실 복도 벽에 높은 창문을 낼지
 var corridor_windows := false
+## 문 모양: "" = 나무 판자문, "school" / "hospital" = 칠한 판문(창 있음)
+var door_style := ""
 var _lining_side := 0
 
 
@@ -514,7 +516,7 @@ func partition(w: Array, y: float, h: float, mat: Material, key: String, cut: Ar
 	center.y = y
 	_door_frame(center, dir3, Color(0.3, 0.22, 0.15))
 	if rng.randf() < door_prop_chance:
-		lb.props.append(["door", center, atan2(dir3.z, -dir3.x) + PI, DOOR_W - 0.1])
+		lb.props.append(["door", center, atan2(dir3.z, -dir3.x) + PI, DOOR_W - 0.1, door_style])
 
 
 func _door_frame(center: Vector3, dir: Vector3, col: Color) -> void:

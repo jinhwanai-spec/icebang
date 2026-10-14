@@ -43,9 +43,12 @@ func setup(prop_kind: String, mats: Dictionary) -> void:
 			_hinge.position = Vector3(-0.7, 0, 0)
 			add_child(_hinge)
 			_door_body = _static_box(_hinge, Vector3(0.7, 1.05, 0), Vector3(1.4, 2.1, 0.1), mats.get("crate"), 1)
+			var style := str(get_meta("door_style", ""))
+			if style != "":
+				_modern_door(style)
 			# 나무 문: 가로 띠 2개 + Z자 버팀목 + 경첩 + 손잡이
 			var brace := _mat_col(Color(0.24, 0.16, 0.1))
-			for z in [-0.065, 0.065]:
+			for z in ([] if style != "" else [-0.065, 0.065]):
 				for y in [-0.7, 0.7]:
 					_deco(_door_body, Vector3(0, y, z), Vector3(1.3, 0.16, 0.04), brace)
 				var diag := _deco(_door_body, Vector3(0, 0, z), Vector3(1.5, 0.14, 0.04), brace)
@@ -491,6 +494,26 @@ func _swing_locker(hold: float) -> void:
 
 
 static var _col_mats := {}
+## 학교·병원 문: 칠한 판문 + 작은 유리창 + 손잡이 (+ 병원은 아래 철판)
+func _modern_door(style: String) -> void:
+	var col := Color(0.55, 0.42, 0.3) if style == "school" else Color(0.62, 0.72, 0.68)
+	for c in _door_body.get_children():
+		if c is MeshInstance3D:
+			(c as MeshInstance3D).material_override = _mat_col(col, 0.7)
+	var frame := _mat_col(col.darkened(0.25), 0.7)
+	for z in [-0.055, 0.055]:
+		# 창 (위쪽 가운데) + 창틀
+		_deco(_door_body, Vector3(0.05, 0.45, z), Vector3(0.42, 0.6, 0.01), _mat_col(Color(0.12, 0.15, 0.2), 0.1))
+		_deco(_door_body, Vector3(0.05, 0.77, z * 1.1), Vector3(0.5, 0.05, 0.015), frame)
+		_deco(_door_body, Vector3(0.05, 0.13, z * 1.1), Vector3(0.5, 0.05, 0.015), frame)
+		# 손잡이
+		_deco(_door_body, Vector3(0.55, -0.05, z * 1.6), Vector3(0.14, 0.04, 0.06), _mat_col(Color(0.7, 0.7, 0.72), 0.35))
+		if style == "hospital":
+			_deco(_door_body, Vector3(0, -0.85, z * 1.05), Vector3(1.38, 0.35, 0.01), _mat_col(Color(0.6, 0.62, 0.65), 0.3))
+		else:
+			_deco(_door_body, Vector3(0, -0.45, z * 1.05), Vector3(1.1, 0.7, 0.012), frame)
+
+
 func _mat_col(c: Color, rough := 0.85) -> StandardMaterial3D:
 	var key := "%s_%s" % [c.to_html(), rough]
 	if _col_mats.has(key):
