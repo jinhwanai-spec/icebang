@@ -100,6 +100,8 @@ func _ready() -> void:
 		forced_map = str(Net.match_config["map"])
 	else:
 		level_rng.randomize()
+		if forced_map == "" and SaveData.test_map != "":
+			forced_map = SaveData.test_map
 	world_env.environment.fog_density = GameConfig.num("view", "fog_density", 0.06)
 	_build_level()
 	AtmosphereScript.apply(self, map_id)  # 조명·안개·빛 번짐 (그래픽 품질에 따라)
@@ -222,6 +224,7 @@ func _spawn_characters() -> void:
 	# 플레이어: 메뉴에서 고른 캐릭터
 	player = PlayerScene.instantiate() as Survivor
 	player.character_id = SaveData.selected_character
+	player.cosmetics = SaveData.equipped.duplicate()
 	player.display_name = "나"
 	add_child(player)
 	player.global_position = spawns[0]
@@ -678,7 +681,7 @@ func _on_rescued(rescuer: Survivor, target: Survivor) -> void:
 	if rescuer == player:
 		player_rescues += 1
 		hud.show_message("땡! %s 해동 성공" % target.display_name, 2.0)
-	elif target == player:
+	elif target == player and rescuer:
 		hud.show_message("땡! %s(이)가 풀어줬어요" % rescuer.display_name, 2.0)
 
 
@@ -782,6 +785,7 @@ func _net_spawn_characters() -> void:
 			s.net_owner = int(sl["peer"])
 			s.net_puppet = (not host) or s.net_owner != 0
 		s.character_id = str(sl["character"])
+		s.cosmetics = sl.get("cos", {})
 		s.display_name = "나" if i == me else str(sl["name"])
 		s.net_slot = i
 		s.name = "S%d" % i

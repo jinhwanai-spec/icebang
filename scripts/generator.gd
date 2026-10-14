@@ -51,6 +51,120 @@ func _ready() -> void:
 	_make_beam()
 	_make_motes()
 	_update_visual()
+	_apply_reveal(0.0)
+
+
+# ---------------------------------------------------------------- 가까이 가야 깨어나는 봉인석
+# 멀리서는 어두운 돌비석일 뿐이라 안 보임. 가까이 가면(내 화면 기준) 룬·크리스탈·빛이 서서히 켜짐.
+# 가동이 끝나면 초록 빛기둥이 솟고 주변이 환해짐 (완료한 곳은 멀리서도 보임)
+
+## 깨어나기 시작하는 거리, 완전히 빛나는 거리 (balance.cfg [generator])
+var _reveal := -1.0
+var _motes: CPUParticles3D
+var _beam: MeshInstance3D
+
+func _process(delta: float) -> void:
+	var cam := get_viewport().get_camera_3d()
+	if cam == null:
+		return
+	var far := GameConfig.num("generator", "reveal_start", 16.0)
+	var near := GameConfig.num("generator", "reveal_full", 7.0)
+	var d := Vector2(cam.global_position.x - global_position.x, cam.global_position.z - global_position.z).length()
+	var want := 1.0 if completed else clampf((far - d) / maxf(0.1, far - near), 0.0, 1.0)
+	var r := move_toward(maxf(_reveal, 0.0), want, delta * 1.5)
+	if absf(r - _reveal) > 0.002:
+		_apply_reveal(r)
+
+
+func _apply_reveal(r: float) -> void:
+	_reveal = r
+	var k := r * r * (3.0 - 2.0 * r)  # 부드럽게
+	progress_label.visible = r > 0.35
+	progress_label.modulate.a = clampf((r - 0.35) / 0.4, 0.0, 1.0)
+	progress_label.outline_modulate.a = progress_label.modulate.a
+	if _motes:
+		_motes.emitting = r > 0.2
+	if _beam:
+		_beam.visible = completed
+	light.visible = r > 0.01
+	if completed:
+		return
+	light.light_energy = (1.0 + progress * 1.5) * k
+	if _rune_mat:
+		_rune_mat.emission_energy_multiplier = (0.8 + progress * 2.5) * k
+	var cm := crystal.material_override as StandardMaterial3D
+	if cm:
+		cm.emission_energy_multiplier = 0.05 + 0.95 * k
+		for c in _small_crystals:
+			c.material_override = cm
+
+
+## 가동 완료 순간: 빛이 확 퍼지면서 주변이 환해짐 + 바닥에 빛 고리 + 빛 가루 폭발
+func _burst() -> void:
+	var flash := OmniLight3D.new()
+	flash.light_color = Color(0.45, 1.0, 0.7)
+	flash.omni_range = 4.0
+	flash.light_energy = 0.0
+	flash.shadow_enabled = false
+	flash.position.y = 2.0
+	add_child(flash)
+	var tw := flash.create_tween()
+	tw.tween_property(flash, "light_energy", 9.0, 0.15)
+	tw.parallel().tween_property(flash, "omni_range", 22.0, 0.5).set_ease(Tween.EASE_OUT)
+	tw.tween_property(flash, "light_energy", 2.2, 1.6)
+	tw.parallel().tween_property(flash, "omni_range", 13.0, 1.6)
+	# 바닥으로 퍼지는 빛 고리
+	var ring := MeshInstance3D.new()
+	var tm := TorusMesh.new()
+	tm.inner_radius = 0.9
+	tm.outer_radius = 1.0
+	tm.rings = 48
+	ring.mesh = tm
+	var rm := StandardMaterial3D.new()
+	rm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	rm.albedo_color = Color(0.5, 1.0, 0.75, 0.9)
+	rm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	rm.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	rm.disable_fog = true
+	ring.material_override = rm
+	ring.position.y = 0.1
+	ring.scale = Vector3(1, 0.05, 1)
+	add_child(ring)
+	var rt := ring.create_tween()
+	rt.tween_property(ring, "scale", Vector3(14, 0.05, 14), 1.2).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
+	rt.parallel().tween_property(rm, "albedo_color:a", 0.0, 1.2)
+	rt.tween_callback(ring.queue_free)
+	# 빛 가루 폭발
+	var p := CPUParticles3D.new()
+	add_child(p)
+	p.position.y = 2.2
+	p.one_shot = true
+	p.explosiveness = 0.95
+	p.amount = 70
+	p.lifetime = 2.2
+	p.direction = Vector3.UP
+	p.spread = 180.0
+	p.initial_velocity_min = 3.0
+	p.initial_velocity_max = 7.0
+	p.damping_min = 2.0
+	p.damping_max = 3.0
+	p.gravity = Vector3(0, -0.6, 0)
+	p.scale_amount_min = 0.04
+	p.scale_amount_max = 0.09
+	var dot := SphereMesh.new()
+	dot.radius = 1.0
+	dot.height = 2.0
+	dot.radial_segments = 6
+	dot.rings = 3
+	p.mesh = dot
+	var pm := StandardMaterial3D.new()
+	pm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	pm.albedo_color = Color(0.6, 1.0, 0.75)
+	pm.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	pm.disable_fog = true
+	p.material_override = pm
+	p.emitting = true
+	get_tree().create_timer(3.0).timeout.connect(p.queue_free)
 
 
 ## 봉인석 모양: 금빛 룬 문자가 새겨진 돌비석 + 꼭대기의 보라 크리스탈 + 발밑 돌무더기
@@ -230,12 +344,15 @@ func _make_beam() -> void:
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	mi.position.y = 30.0 + 2.9  # 비석 꼭대기(크리스탈)부터 위로
 	add_child(mi)
+	_beam = mi
+	mi.visible = false
 
 
 ## 봉인석 주위로 천천히 떠오르는 빛 가루 (금빛 + 보라빛)
 func _make_motes() -> void:
 	var p := CPUParticles3D.new()
 	add_child(p)
+	_motes = p
 	p.position.y = 1.2
 	p.amount = 46 if SaveData.high_graphics() else 18
 	p.lifetime = 3.5
@@ -354,6 +471,9 @@ func _check_complete(who: Node = null) -> void:
 		progress = 1.0
 		completed = true
 		_play_complete_sound()
+		_burst()
+		if _beam:
+			_beam.visible = true
 		mission_completed.emit(self)
 	_update_visual()
 
@@ -391,6 +511,8 @@ func _update_visual() -> void:
 	crystal.material_override = mat
 	for c in _small_crystals:
 		c.material_override = mat
+	if _reveal >= 0.0:
+		_apply_reveal(_reveal)
 
 
 ## 가동 완료 소리 (멀리 있는 동료도 들을 수 있게 넓게)

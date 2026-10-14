@@ -25,6 +25,8 @@ const SFX_HIT := preload("res://audio/punch.wav")
 
 ## 어떤 캐릭터인지 (characters.gd 의 id). main.gd 가 정해 줌
 var character_id := "chameleon"
+## 착용한 치장 (cosmetics.gd): {"eyes": 아이디, "hair": ..., "outfit": ..., "acc": ...}
+var cosmetics := {}
 ## 화면에 보여줄 이름
 var display_name := "생존자"
 
@@ -82,7 +84,16 @@ func _ready() -> void:
 	ice_mesh.visible = false
 	emote_label.visible = false
 	step_audio.max_distance = GameConfig.num("view", "survivor_step_hear_distance", 22.0)
-	body.build(character_id)
+	body.build(character_id, cosmetics)
+	# 얼음: 각진 얼음 덩어리 + 서리 셰이더 (땡 받는 동안 금이 감)
+	ice_mesh.mesh = IceFx.chunk_mesh()
+	_ice_mat = IceFx.material()
+	ice_mesh.material_override = _ice_mat
+	frozen_changed.connect(func(on: bool) -> void:
+		if on:
+			IceFx.form(self, ice_mesh)
+		else:
+			IceFx.shatter(self, global_position))
 	# 은은한 주변 조명: 밤이라 캐릭터가 너무 어둡지 않게 (내 캐릭터는 조금 더 밝게)
 	var glow := OmniLight3D.new()
 	glow.light_color = Color(1.0, 0.92, 0.8)
@@ -99,6 +110,11 @@ func _process(delta: float) -> void:
 		if is_frozen or is_dead or escaped or in_locker or is_shadowed():
 			dance_left = 0.0
 	body.emote = emote_id if dance_left > 0.0 else ""
+	if is_frozen and _ice_mat:
+		var cr := clampf(thaw_progress / maxf(0.1, GameConfig.num("player", "thaw_time", 10.0)), 0.0, 1.0)
+		_ice_mat.set_shader_parameter("crack", cr)
+		ice_mesh.position.x = sin(Time.get_ticks_msec() * 0.05) * 0.012 * cr  # 깨지기 직전 덜덜
+
 	body.animate(delta, Vector2(velocity.x, velocity.z).length(), is_frozen)
 
 
@@ -109,16 +125,18 @@ func _process(delta: float) -> void:
 const EMOTES := [
 	["butt_dance", "엉덩이 춤", 3.0, "back"],
 	["fart", "방귀 뿡", 2.2, "back"],
-	["nose_pick", "코딱지 튕기기", 2.8, "front"],
-	["butt_slap", "엉덩이 팡팡", 3.0, "back"],
+	["disco", "디스코 (노래)", 6.4, "front"],
+	["trot", "트로트 어깨춤 (노래)", 6.4, "front"],
 	["poop", "응가", 3.2, "front"],
-	["armpit_fart", "겨드랑이 방귀", 2.6, "front"],
+	["chicken", "닭 흉내", 3.4, "front"],
 	["dead", "죽은 척", 3.5, "front"],
 	["robot", "로봇 춤", 3.5, "front"],
-	["seal_clap", "물개 박수", 3.0, "front"],
+	["gaedari", "개다리 춤", 3.6, "front"],
 	["dizzy", "빙글빙글", 3.2, "front"],
 ]
 const EmoteFx := preload("res://scripts/emote_fx.gd")
+const IceFx := preload("res://scripts/ice_fx.gd")
+var _ice_mat: ShaderMaterial
 
 ## 이모트 남은 시간과 종류
 var dance_left := 0.0
@@ -361,6 +379,8 @@ func _kill() -> void:
 		return
 	if in_locker:
 		exit_locker()
+	if is_frozen:
+		IceFx.shatter(self, global_position)  # 얼음이 깨지며 탈락
 	is_dead = true
 	is_frozen = false
 	ice_mesh.visible = false

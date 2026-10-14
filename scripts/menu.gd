@@ -15,6 +15,10 @@ const C_DIM := Color("8a93a3")
 const C_ICE := Color("7fd6ff")
 const C_BLOOD := Color("d9465a")
 
+## 테스트용 선택지: 스테이지별 술래 이름 (main.gd SEEKER_ORDER 순서), 맵
+const SEEKER_NAMES := ["거대 쥐", "유령", "도축자", "인형술사", "사냥개", "거미", "먹보 하마", "사이코", "처형인", "마네킹", "안개 마녀"]
+const MAP_CHOICES := [["", "랜덤"], ["city", "버려진 도시"], ["forest", "숲속 폐캠핑장"]]
+
 ## 상점에 파는 공통 능력: [능력 id, 이름, 설명]
 const SHOP_ITEMS := [
 	["noise", "소리 내기", "얼음 상태에서 F — 조준한 곳에 소리를 내서 술래를 유인 (쿨타임 100초)"],
@@ -58,6 +62,7 @@ func _ready() -> void:
 	_pages["solo"] = _build_solo_page()
 	_pages["multi"] = _build_multi_page()
 	_pages["shop"] = _build_shop_page()
+	_pages["wardrobe"] = _build_wardrobe_page()
 	Net.lobby_changed.connect(_refresh_multi)
 	Net.status_changed.connect(_on_net_status)
 	_show("multi" if Net.active else "main")
@@ -73,6 +78,8 @@ func _show(page: String) -> void:
 			_refresh_cards()
 		"shop":
 			_refresh_shop()
+		"wardrobe":
+			_refresh_wardrobe()
 		"multi":
 			_refresh_multi()
 
@@ -124,9 +131,12 @@ func _build_main_page() -> Control:
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 10)
 	col.add_child(row)
-	var shop := _button("상점", _show.bind("shop"))
+	var shop := _button("능력 상점", _show.bind("shop"))
 	shop.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.add_child(shop)
+	var ward := _button("치장 상점", _show.bind("wardrobe"))
+	ward.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(ward)
 	var quit := _button("종료", func() -> void: get_tree().quit())
 	quit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.add_child(quit)
@@ -188,6 +198,7 @@ func _build_solo_page() -> Control:
 	_card_box.add_theme_constant_override("h_separation", 12)
 	_card_box.add_theme_constant_override("v_separation", 12)
 	scroll.add_child(_card_box)
+	col.add_child(_test_pickers())
 	var row := HBoxContainer.new()
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
 	row.add_theme_constant_override("separation", 12)
@@ -250,6 +261,33 @@ func _refresh_cards() -> void:
 		for c in v.get_children():
 			if c is Control:
 				(c as Control).mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+
+## 테스트용: 스테이지(술래)와 맵을 직접 고르기
+func _test_pickers() -> Control:
+	var row := HBoxContainer.new()
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.add_theme_constant_override("separation", 10)
+	row.add_child(_label("스테이지", 14, C_DIM))
+	var st := OptionButton.new()
+	for i in SEEKER_NAMES.size():
+		st.add_item("%d. %s" % [i + 1, SEEKER_NAMES[i]], i)
+	st.select(clampi(SaveData.stage, 1, STAGES) - 1)
+	st.item_selected.connect(func(i: int) -> void:
+		SaveData.stage = i + 1
+		SaveData.save_game()
+		_refresh_main())
+	row.add_child(st)
+	row.add_child(_gap_h(16))
+	row.add_child(_label("맵", 14, C_DIM))
+	var mp := OptionButton.new()
+	for i in MAP_CHOICES.size():
+		mp.add_item(MAP_CHOICES[i][1], i)
+		if MAP_CHOICES[i][0] == SaveData.test_map:
+			mp.select(i)
+	mp.item_selected.connect(func(i: int) -> void: SaveData.test_map = MAP_CHOICES[i][0])
+	row.add_child(mp)
+	return row
 
 
 func _on_pick(id: String) -> void:
@@ -338,6 +376,7 @@ func _build_multi_page() -> Control:
 	_mp_slots = HBoxContainer.new()
 	_mp_slots.add_theme_constant_override("separation", 12)
 	_mp_lobby.add_child(_mp_slots)
+	_mp_lobby.add_child(_test_pickers())  # 방장이 고른 스테이지·맵으로 시작
 
 	_mp_lobby.add_child(_label("내 캐릭터 고르기", 16, C_DIM))
 	_mp_chars = GridContainer.new()
@@ -521,6 +560,237 @@ func _refresh_shop() -> void:
 		btn.custom_minimum_size = Vector2(140, 48)
 		btn.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		row.add_child(btn)
+
+
+# ================================================================ 치장 상점 (눈·머리·옷·장신구)
+
+var _w_slot := "eyes"
+var _w_try := {}            # 미리 입어 보는 중인 조합
+var _w_pick := ""           # 지금 고른 아이템
+var _w_grid: GridContainer
+var _w_coins: Label
+var _w_tabs: HBoxContainer
+var _w_info: Label
+var _w_action: Button
+var _w_char: OptionButton
+var _w_view: SubViewport
+var _w_body: ClayBody
+var _w_pivot: Node3D
+var _w_drag := false
+
+
+func _build_wardrobe_page() -> Control:
+	var page := _page()
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 14)
+	_center(page).add_child(col)
+	col.add_child(_header("치장 상점", "코인으로 눈·머리·옷·장신구를 사서 꾸며요 · 모든 캐릭터에 똑같이 적용돼요"))
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 18)
+	col.add_child(row)
+
+	# 왼쪽: 3D 미리보기 (마우스로 끌어서 돌리기)
+	var left := VBoxContainer.new()
+	left.add_theme_constant_override("separation", 10)
+	row.add_child(left)
+	var pv := _card()
+	left.add_child(pv)
+	var svc := SubViewportContainer.new()
+	svc.custom_minimum_size = Vector2(380, 470)
+	svc.stretch = true
+	pv.add_child(svc)
+	_w_view = SubViewport.new()
+	_w_view.own_world_3d = true
+	_w_view.transparent_bg = true
+	_w_view.msaa_3d = Viewport.MSAA_4X
+	svc.add_child(_w_view)
+	var env := WorldEnvironment.new()
+	env.environment = Environment.new()
+	env.environment.background_mode = Environment.BG_CLEAR_COLOR
+	env.environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+	env.environment.ambient_light_color = Color(0.55, 0.6, 0.75)
+	env.environment.ambient_light_energy = 0.7
+	_w_view.add_child(env)
+	var cam := Camera3D.new()
+	cam.position = Vector3(0, 1.2, 4.0)
+	cam.fov = 38
+	_w_view.add_child(cam)
+	cam.look_at(Vector3(0, 1.05, 0))
+	var key := DirectionalLight3D.new()
+	key.rotation = Vector3(-0.6, 0.5, 0)
+	key.light_energy = 1.2
+	key.shadow_enabled = true
+	_w_view.add_child(key)
+	var rim := OmniLight3D.new()
+	rim.position = Vector3(-1.5, 2.2, -1.5)
+	rim.light_color = Color(0.5, 0.8, 1.0)
+	rim.light_energy = 2.0
+	rim.omni_range = 5.0
+	_w_view.add_child(rim)
+	var disc := MeshInstance3D.new()
+	var fm := CylinderMesh.new()
+	fm.top_radius = 0.8
+	fm.bottom_radius = 0.85
+	fm.height = 0.06
+	disc.mesh = fm
+	var fmat := StandardMaterial3D.new()
+	fmat.albedo_color = Color(0.16, 0.19, 0.26)
+	disc.material_override = fmat
+	disc.position.y = -0.03
+	_w_view.add_child(disc)
+	_w_pivot = Node3D.new()
+	_w_view.add_child(_w_pivot)
+	svc.gui_input.connect(func(e: InputEvent) -> void:
+		if e is InputEventMouseButton and (e as InputEventMouseButton).button_index == MOUSE_BUTTON_LEFT:
+			_w_drag = (e as InputEventMouseButton).pressed
+		elif e is InputEventMouseMotion and _w_drag:
+			_w_pivot.rotate_y((e as InputEventMouseMotion).relative.x * 0.012))
+	var crow := HBoxContainer.new()
+	crow.add_theme_constant_override("separation", 8)
+	left.add_child(crow)
+	crow.add_child(_label("캐릭터", 14, C_DIM))
+	_w_char = OptionButton.new()
+	_w_char.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	for id in CharacterDB.ORDER:
+		_w_char.add_item(CharacterDB.get_info(id)["name"])
+	_w_char.item_selected.connect(func(_i: int) -> void: _w_rebuild())
+	crow.add_child(_w_char)
+	_w_info = _label("", 15, C_TEXT)
+	_w_info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_w_info.custom_minimum_size = Vector2(380, 44)
+	left.add_child(_w_info)
+	_w_action = _button("", _on_wardrobe_action, true)
+	left.add_child(_w_action)
+
+	# 오른쪽: 칸 탭 + 아이템 목록
+	var right := VBoxContainer.new()
+	right.add_theme_constant_override("separation", 10)
+	row.add_child(right)
+	var top := HBoxContainer.new()
+	right.add_child(top)
+	_w_tabs = HBoxContainer.new()
+	_w_tabs.add_theme_constant_override("separation", 8)
+	_w_tabs.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	top.add_child(_w_tabs)
+	_w_coins = _label("", 18, Color("ffd36b"))
+	top.add_child(_w_coins)
+	var scroll := ScrollContainer.new()
+	scroll.custom_minimum_size = Vector2(700, 480)
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	right.add_child(scroll)
+	_w_grid = GridContainer.new()
+	_w_grid.columns = 4
+	_w_grid.add_theme_constant_override("h_separation", 8)
+	_w_grid.add_theme_constant_override("v_separation", 8)
+	scroll.add_child(_w_grid)
+	var bottom := HBoxContainer.new()
+	bottom.add_theme_constant_override("separation", 10)
+	col.add_child(bottom)
+	bottom.add_child(_button("뒤로", func() -> void:
+		_w_try = {}
+		_show("main")))
+	bottom.add_child(_text_button("입어 본 것 되돌리기", func() -> void:
+		_w_try = SaveData.equipped.duplicate()
+		_w_pick = ""
+		_refresh_wardrobe()))
+	return page
+
+
+func _process(delta: float) -> void:
+	if _w_body and is_instance_valid(_w_body) and _pages.has("wardrobe") and (_pages["wardrobe"] as Control).visible:
+		if not _w_drag:
+			_w_pivot.rotate_y(delta * 0.35)
+		_w_body.animate(delta, 0.0, false)
+
+
+func _refresh_wardrobe() -> void:
+	if _w_try.is_empty():
+		_w_try = SaveData.equipped.duplicate()
+	var ci := CharacterDB.ORDER.find(SaveData.selected_character)
+	if _w_char.selected < 0:
+		_w_char.select(maxi(0, ci))
+	_w_coins.text = "● %d" % SaveData.coins
+	for c in _w_tabs.get_children():
+		c.queue_free()
+	for slot in Cosmetics.SLOTS:
+		var on: bool = slot == _w_slot
+		var owned := 0
+		var all := Cosmetics.items_in(slot)
+		for it in all:
+			if SaveData.owns_cos(it[0]):
+				owned += 1
+		var b := _button("%s  %d/%d" % [Cosmetics.SLOT_NAMES[slot], owned, all.size()], func() -> void:
+			_w_slot = slot
+			_refresh_wardrobe(), on)
+		b.custom_minimum_size = Vector2(130, 42)
+		_w_tabs.add_child(b)
+	for c in _w_grid.get_children():
+		c.queue_free()
+	for it in Cosmetics.items_in(_w_slot):
+		var id: String = it[0]
+		var own := SaveData.owns_cos(id)
+		var worn: bool = SaveData.equipped.get(_w_slot, "") == id
+		var trying: bool = _w_try.get(_w_slot, "") == id
+		var b := Button.new()
+		b.custom_minimum_size = Vector2(166, 74)
+		b.text = "%s\n%s" % [it[1], "착용 중" if worn else ("보유" if own else "● %d" % it[3])]
+		b.add_theme_font_size_override("font_size", 14)
+		b.icon = _dot_texture(it[5])
+		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		var border: Color = C_ICE if trying else (Color("ffd36b") if worn else C_LINE)
+		var bg := C_PANEL_HI if trying else C_PANEL
+		b.add_theme_stylebox_override("normal", _box(bg, border, 2 if (trying or worn) else 1, 10, 10))
+		b.add_theme_stylebox_override("hover", _box(C_PANEL_HI, C_DIM, 1, 10, 10))
+		b.add_theme_stylebox_override("pressed", _box(C_PANEL_HI, C_ICE, 2, 10, 10))
+		if not own:
+			b.add_theme_color_override("font_color", C_DIM)
+		b.pressed.connect(func() -> void:
+			_w_pick = id
+			_w_try[_w_slot] = id
+			_refresh_wardrobe())
+		_w_grid.add_child(b)
+	_w_update_action()
+	_w_rebuild()
+
+
+func _w_update_action() -> void:
+	if _w_pick == "":
+		_w_info.text = "아이템을 누르면 미리 입어 볼 수 있어요"
+		_w_action.text = "착용 저장"
+		_w_action.disabled = _w_try == SaveData.equipped
+		return
+	var it := Cosmetics.info(_w_pick)
+	var own := SaveData.owns_cos(_w_pick)
+	_w_info.text = "%s · %s" % [Cosmetics.SLOT_NAMES[it[2]], it[1]]
+	if own:
+		_w_action.text = "착용 중" if SaveData.equipped.get(it[2], "") == _w_pick else "착용하기"
+		_w_action.disabled = SaveData.equipped.get(it[2], "") == _w_pick
+	else:
+		_w_action.text = "구매하고 착용  ● %d" % it[3]
+		_w_action.disabled = SaveData.coins < int(it[3])
+		if _w_action.disabled:
+			_w_info.text += "   (코인이 부족해요)"
+
+
+func _on_wardrobe_action() -> void:
+	if _w_pick == "":
+		for slot in _w_try:
+			if SaveData.owns_cos(_w_try[slot]):
+				SaveData.equipped[slot] = _w_try[slot]
+		SaveData.save_game()
+	elif SaveData.owns_cos(_w_pick) or SaveData.buy_cos(_w_pick):
+		SaveData.equip_cos(_w_pick)
+	_refresh_wardrobe()
+
+
+## 미리보기 인형 다시 만들기 (안 산 아이템도 입어 볼 수 있음)
+func _w_rebuild() -> void:
+	if _w_body and is_instance_valid(_w_body):
+		_w_body.queue_free()
+	_w_body = ClayBody.new()
+	_w_pivot.add_child(_w_body)
+	var cid: String = CharacterDB.ORDER[maxi(0, _w_char.selected)]
+	_w_body.build(cid, _w_try)
 
 
 func _on_buy(id: String) -> void:

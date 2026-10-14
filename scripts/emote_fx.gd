@@ -8,26 +8,31 @@ static func spawn(who: Node3D, id: String) -> void:
 	match id:
 		"fart":
 			_later(who, id, 0.6, func(): _gas(who, _butt(who), 1.0, "뿡!"))
-		"armpit_fart":
-			for k in 3:
-				_later(who, id, 0.25 + k * 0.8, func(): _gas(who, _local(who, Vector3(0.32, 1.0, 0.05)), 0.45, "뿡"))
-		"nose_pick":
-			_later(who, id, 1.95, func(): _booger(who))
 		"poop":
 			_say(who, "끄응...")
 			_later(who, id, 1.6, func(): _poop(who))
-		"butt_slap":
-			_say(who, "메롱~ 약오르지?")
 		"dead":
 			_later(who, id, 0.4, func(): _say(who, "X_X"))
 		"robot":
 			_say(who, "삐-빅- 로봇 모드")
-		"seal_clap":
-			_say(who, "아우! 아우!")
 		"dizzy":
 			_later(who, id, 1.2, func():
 				_stars(who)
 				_say(who, "@_@ 어질어질"))
+		"disco":
+			_disco(who, id)
+		"trot":
+			_say(who, "얼쑤~ 좋다!")
+			for k in 10:
+				_later(who, id, 0.2 + k * 0.6, func(): _note(who))
+		"chicken":
+			for k in 4:
+				_later(who, id, 0.3 + k * 0.5, func(): _feathers(who))
+			_later(who, id, 2.4, func(): _pop_text(who, who.global_position + Vector3.UP * 2.0, "꼬끼오~!!", Color(1.0, 0.9, 0.3), 1.6))
+		"gaedari":
+			_say(who, "개다리~ 후들후들")
+			for k in 3:
+				_later(who, id, 0.5 + k * 1.0, func(): _pop_text(who, who.global_position + Vector3(randf_range(-0.4, 0.4), 1.6, 0), "♬", Color(0.6, 0.9, 1.0), 1.2))
 
 
 ## 붙어 있는 효과(별 등) 없애기
@@ -140,35 +145,6 @@ static func _pop_text(who: Node3D, at: Vector3, text: String, col: Color, scale_
 	tw.tween_callback(l.queue_free)
 
 
-## 코딱지: 손끝에서 앞으로 포물선을 그리며 날아가 바닥에 철퍼덕 붙음
-static func _booger(who: Node3D) -> void:
-	var b := MeshInstance3D.new()
-	var s := SphereMesh.new()
-	s.radius = 0.04
-	s.height = 0.08
-	b.mesh = s
-	var m := StandardMaterial3D.new()
-	m.albedo_color = Color(0.55, 0.7, 0.15)
-	m.roughness = 0.25
-	m.emission_enabled = true
-	m.emission = Color(0.4, 0.6, 0.05)
-	m.emission_energy_multiplier = 0.5
-	b.material_override = m
-	_world(who).add_child(b)
-	var start := _local(who, Vector3(0.12, 1.25, 0.3))
-	var land := who.global_position + _front(who) * 2.6 + Vector3.UP * 0.03
-	b.global_position = start
-	var arc := func(k: float):
-		if is_instance_valid(b):
-			b.global_position = start.lerp(land, k) + Vector3.UP * sin(k * PI) * 0.9
-	var tw := b.create_tween()
-	tw.tween_method(arc, 0.0, 1.0, 0.55)
-	tw.tween_property(b, "scale", Vector3(1.8, 0.35, 1.8), 0.08)  # 철퍼덕
-	tw.tween_interval(6.0)
-	tw.tween_property(b, "scale", Vector3.ZERO, 0.4)
-	tw.tween_callback(b.queue_free)
-
-
 ## 응가: 귀여운 똥 (눈 달림) + 주위를 도는 파리 두 마리. 10초 뒤 사라짐
 static func _poop(who: Node3D) -> void:
 	var root := Node3D.new()
@@ -227,6 +203,86 @@ static func _poop(who: Node3D) -> void:
 	tw.tween_property(root, "scale", Vector3.ZERO, 0.4)
 	tw.tween_callback(root.queue_free)
 	_pop_text(who, root.global_position + Vector3.UP * 0.5, "뿌직!", Color(0.9, 0.7, 0.4), 1.1)
+
+
+## 디스코: 머리 위에 돌아가는 미러볼 + 색이 바뀌는 조명 (이모트가 끝나면 사라짐)
+static func _disco(who: Node3D, id: String) -> void:
+	var root := Node3D.new()
+	root.set_meta("emote_fx", true)
+	who.add_child(root)
+	root.position = Vector3(0, 2.3, 0)
+	var ball := MeshInstance3D.new()
+	var sm := SphereMesh.new()
+	sm.radius = 0.16
+	sm.height = 0.32
+	sm.radial_segments = 12
+	sm.rings = 6
+	ball.mesh = sm
+	var mm := StandardMaterial3D.new()
+	mm.albedo_color = Color(0.85, 0.85, 0.9)
+	mm.metallic = 1.0
+	mm.roughness = 0.05
+	mm.emission_enabled = true
+	mm.emission = Color(0.5, 0.5, 0.6)
+	ball.material_override = mm
+	root.add_child(ball)
+	var string := MeshInstance3D.new()
+	var cm := CylinderMesh.new()
+	cm.top_radius = 0.005
+	cm.bottom_radius = 0.005
+	cm.height = 0.4
+	string.mesh = cm
+	string.position.y = 0.35
+	root.add_child(string)
+	var light := OmniLight3D.new()
+	light.omni_range = 5.0
+	light.light_energy = 1.6
+	light.position.y = -0.3
+	root.add_child(light)
+	var cols := [Color(1, 0.2, 0.5), Color(0.2, 0.6, 1), Color(0.3, 1, 0.4), Color(1, 0.85, 0.2), Color(0.7, 0.3, 1)]
+	var tw := root.create_tween().set_loops(26)
+	for c in cols:
+		tw.tween_callback(func(): light.light_color = c)
+		tw.parallel().tween_property(root, "rotation:y", root.rotation.y + TAU / cols.size(), 0.25)
+		tw.tween_interval(0.0)
+	_say(who, "Let's dance!")
+	who.get_tree().create_timer(6.4).timeout.connect(func():
+		if is_instance_valid(root):
+			root.queue_free())
+
+
+## 트로트: 음표가 뿅뿅 떠오름
+static func _note(who: Node3D) -> void:
+	var cols := [Color(1.0, 0.5, 0.7), Color(1.0, 0.85, 0.3), Color(0.5, 0.9, 1.0)]
+	_pop_text(who, who.global_position + Vector3(randf_range(-0.5, 0.5), 1.7, randf_range(-0.2, 0.2)), ["♪", "♫", "♬"][randi() % 3], cols[randi() % 3], 1.3)
+
+
+## 닭 흉내: 하얀 깃털이 날림
+static func _feathers(who: Node3D) -> void:
+	var p := CPUParticles3D.new()
+	_world(who).add_child(p)
+	p.global_position = who.global_position + Vector3.UP * 0.9
+	p.one_shot = true
+	p.explosiveness = 0.9
+	p.amount = 6
+	p.lifetime = 1.6
+	p.direction = Vector3.UP
+	p.spread = 80.0
+	p.initial_velocity_min = 1.0
+	p.initial_velocity_max = 2.0
+	p.gravity = Vector3(0, -1.2, 0)
+	p.angular_velocity_min = -200
+	p.angular_velocity_max = 200
+	var q := QuadMesh.new()
+	q.size = Vector2(0.06, 0.14)
+	p.mesh = q
+	var m := StandardMaterial3D.new()
+	m.albedo_color = Color(0.98, 0.97, 0.92)
+	m.cull_mode = BaseMaterial3D.CULL_DISABLED
+	m.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+	p.material_override = m
+	p.emitting = true
+	who.get_tree().create_timer(2.0).timeout.connect(p.queue_free)
 
 
 ## 머리 위를 도는 노란 별 4개 (이모트가 끝나면 사라짐)

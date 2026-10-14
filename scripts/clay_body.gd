@@ -27,16 +27,18 @@ var _punch_dur := 0.45
 var _orbit: Node3D
 
 
-## character_id 에 맞는 색과 액세서리로 만들기
-func build(character_id: String) -> void:
-	var color: Color = CharacterDB.get_info(character_id)["color"]
+## character_id 의 몸 색으로 기본 점토 인형을 만들고, 치장(눈·머리·옷·장신구)을 입힘
+## cos = {"eyes": 아이디, "hair": ..., "outfit": ..., "acc": ...} (cosmetics.gd). 비우면 기본 눈만
+func build(character_id: String, cos := {}) -> void:
+	var color: Color = CharacterDB.get_info(character_id)["color"] if CharacterDB.ORDER.has(character_id) else Color(0.8, 0.8, 0.8)
 	_mat = _clay(color)
 	_accent = _clay(color.darkened(0.35))
 
 	_torso = Node3D.new()
 	add_child(_torso)
-	# 몸통 (위아래로 살짝 긴 구)
-	_sphere(_torso, Vector3(0, 0.66, 0), 0.32, Vector3(1.0, 1.25, 0.9), _mat)
+	# 몸통 (위아래로 살짝 긴 구). 옷 색은 셰이더로 몸에 바로 칠함 (dress)
+	_body_mi = _sphere(_torso, Vector3(0, 0.66, 0), 0.32, Vector3(1.0, 1.25, 0.9), _mat)
+	_body_color = color
 	# 머리 (크고 둥글게)
 	_sphere(_torso, Vector3(0, 1.28, 0), 0.4, Vector3.ONE, _mat)
 	# 다리
@@ -47,151 +49,125 @@ func build(character_id: String) -> void:
 	_right_arm = _limb(_torso, Vector3(0.31, 0.86, 0), 0.09, 0.4, _mat)
 	_left_arm.rotation.z = -0.25
 	_right_arm.rotation.z = 0.25
-	# 엉덩이 (춤출 때만 보임). 뒤쪽은 -Z
+	# 엉덩이: 몸통 뒤 아래쪽이 살짝 동그랗게 나온 모양 (항상 몸의 일부, 춤출 때 실룩실룩)
 	_hips = Node3D.new()
-	_hips.position = Vector3(0, 0.42, -0.12)
+	_hips.position = Vector3(0, 0.47, -0.06)
 	add_child(_hips)
-	for x in [-0.11, 0.11]:
-		_sphere(_hips, Vector3(x, 0, -0.06), 0.15, Vector3(1.0, 0.95, 1.0), _mat)
-	_hips.visible = false
+	_sphere(_hips, Vector3(0, 0, 0), 0.27, Vector3(1.12, 0.78, 0.88), _mat)
+	Cosmetics.apply(self, cos)
 
-	_face(character_id)
 
-	match character_id:
-		"chameleon":
-			# 볏 달린 후드
-			_sphere(_torso, Vector3(0, 1.32, -0.04), 0.43, Vector3(1.0, 0.95, 1.0), _accent)
-			for i in 3:
-				var crest := PrismMesh.new()
-				crest.size = Vector3(0.05, 0.16 - i * 0.03, 0.14)
-				_part(_torso, Vector3(0, 1.74 - i * 0.07, -0.05 - i * 0.12), crest, _accent).rotation.x = -0.3 - i * 0.35
-		"space":
-			# 망토 + 손목의 빛나는 링
-			var cape := _box(_torso, Vector3(0, 0.62, -0.3), Vector3(0.62, 0.8, 0.04), _accent)
-			cape.rotation.x = 0.18
-			var glow := _glow(Color(0.8, 0.5, 1.0))
-			for arm in [_left_arm, _right_arm]:
-				var ring := TorusMesh.new()
-				ring.inner_radius = 0.09
-				ring.outer_radius = 0.13
-				_part(arm, Vector3(0, -0.3, 0), ring, glow)
-		"cameraman":
-			# 가슴의 카메라 + 이마의 헤드램프
-			var dark := _clay(Color(0.15, 0.15, 0.17))
-			_box(_torso, Vector3(0, 0.78, 0.3), Vector3(0.3, 0.2, 0.14), dark)
-			var lens := CylinderMesh.new()
-			lens.top_radius = 0.07
-			lens.bottom_radius = 0.07
-			lens.height = 0.1
-			_part(_torso, Vector3(0, 0.78, 0.4), lens, dark).rotation.x = PI / 2.0
-			var band := TorusMesh.new()
-			band.inner_radius = 0.38
-			band.outer_radius = 0.42
-			_part(_torso, Vector3(0, 1.36, 0), band, dark)
-			var lamp := CylinderMesh.new()
-			lamp.top_radius = 0.06
-			lamp.bottom_radius = 0.06
-			lamp.height = 0.06
-			_part(_torso, Vector3(0, 1.38, 0.4), lamp, _glow(Color(1, 0.95, 0.7))).rotation.x = PI / 2.0
-		"medic":
-			# 가슴의 빨간 십자 + 간호 모자
-			var red := _clay(Color(0.9, 0.15, 0.15))
-			_box(_torso, Vector3(0, 0.75, 0.29), Vector3(0.18, 0.06, 0.04), red)
-			_box(_torso, Vector3(0, 0.75, 0.29), Vector3(0.06, 0.18, 0.04), red)
-			_box(_torso, Vector3(0, 1.7, 0.05), Vector3(0.36, 0.14, 0.28), _clay(Color(1, 1, 1)))
-			_box(_torso, Vector3(0, 1.72, 0.2), Vector3(0.08, 0.03, 0.02), red)
-		"shadow":
-			# 깊게 눌러쓴 후드 + 빛나는 눈 + 목도리
-			_sphere(_torso, Vector3(0, 1.33, -0.05), 0.44, Vector3(1.0, 0.98, 1.0), _accent)
-			for x in [-0.12, 0.12]:
-				_box(_torso, Vector3(x, 1.3, 0.38), Vector3(0.1, 0.03, 0.02), _glow(Color(0.7, 0.85, 1.0)))
-			var scarf := TorusMesh.new()
-			scarf.inner_radius = 0.2
-			scarf.outer_radius = 0.3
-			_part(_torso, Vector3(0, 0.95, 0), scarf, _clay(Color(0.5, 0.1, 0.12)))
-		"hunter":
-			# 챙 넓은 모자 + 등의 배낭
-			var brim := CylinderMesh.new()
-			brim.top_radius = 0.58
-			brim.bottom_radius = 0.58
-			brim.height = 0.04
-			_part(_torso, Vector3(0, 1.58, 0), brim, _accent)
-			var crown := CylinderMesh.new()
-			crown.top_radius = 0.26
-			crown.bottom_radius = 0.32
-			crown.height = 0.26
-			_part(_torso, Vector3(0, 1.72, 0), crown, _accent)
-			_box(_torso, Vector3(0, 0.75, -0.33), Vector3(0.4, 0.45, 0.2), _clay(Color(0.4, 0.28, 0.15)))
-		"bard":
-			# 배에 멘 북 + 깃털 모자
-			var drum := CylinderMesh.new()
-			drum.top_radius = 0.2
-			drum.bottom_radius = 0.2
-			drum.height = 0.2
-			_part(_torso, Vector3(0, 0.62, 0.32), drum, _clay(Color(0.8, 0.2, 0.2))).rotation.x = PI / 2.0
-			_box(_torso, Vector3(0, 1.66, 0), Vector3(0.5, 0.12, 0.4), _accent)
-			var feather := PrismMesh.new()
-			feather.size = Vector3(0.05, 0.4, 0.12)
-			_part(_torso, Vector3(0.18, 1.85, -0.05), feather, _clay(Color(0.3, 0.8, 0.9))).rotation.z = -0.4
-		"mechanic":
-			# 이마의 고글 + 손에 든 렌치
-			var dark := _clay(Color(0.2, 0.2, 0.22))
-			for x in [-0.14, 0.14]:
-				var lens := CylinderMesh.new()
-				lens.top_radius = 0.1
-				lens.bottom_radius = 0.1
-				lens.height = 0.06
-				_part(_torso, Vector3(x, 1.48, 0.33), lens, _glow(Color(0.5, 0.9, 1.0))).rotation.x = PI / 2.0 - 0.4
-			var strap := TorusMesh.new()
-			strap.inner_radius = 0.38
-			strap.outer_radius = 0.42
-			_part(_torso, Vector3(0, 1.45, 0), strap, dark)
-			_box(_right_arm, Vector3(0, -0.45, 0.08), Vector3(0.06, 0.06, 0.36), _clay(Color(0.7, 0.7, 0.75)))
-		"keeper":
-			# 손에 든 등불 (진짜 빛이 남) + 두건
-			var lantern := _sphere(_right_arm, Vector3(0, -0.5, 0.05), 0.12, Vector3(1, 1.2, 1), _glow(Color(1.0, 0.8, 0.4)))
-			var lamp_light := OmniLight3D.new()
-			lamp_light.light_color = Color(1.0, 0.75, 0.4)
-			lamp_light.omni_range = 3.5
-			lamp_light.light_energy = 1.2
-			lantern.add_child(lamp_light)
-			_sphere(_torso, Vector3(0, 1.36, -0.06), 0.42, Vector3(1.0, 0.9, 1.0), _accent)
-		"gravity":
-			# 우주비행사: 투명 헬멧 + 남색 바이저 + 등의 산소통 + 주위를 도는 빨강·파랑 구슬
-			var glass := StandardMaterial3D.new()
-			glass.albedo_color = Color(0.7, 0.85, 1.0, 0.22)
-			glass.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-			glass.roughness = 0.05
-			glass.metallic = 0.5
-			glass.rim_enabled = true
-			_sphere(_torso, Vector3(0, 1.3, 0), 0.5, Vector3.ONE, glass)
-			_sphere(_torso, Vector3(0, 1.32, 0.18), 0.34, Vector3(1.0, 0.7, 0.6), _glow(Color(0.15, 0.25, 0.7)))
-			var tank := CapsuleMesh.new()
-			tank.radius = 0.13
-			tank.height = 0.55
-			for x in [-0.12, 0.12]:
-				_part(_torso, Vector3(x, 0.78, -0.33), tank, _clay(Color(0.75, 0.75, 0.8)))
-			_orbit = Node3D.new()
-			_orbit.position = Vector3(0, 1.0, 0)
-			add_child(_orbit)
-			for pair in [[Color(0.25, 0.55, 1.0), 1.0], [Color(1.0, 0.2, 0.2), -1.0]]:
-				var orb := _sphere(_orbit, Vector3(0.6 * pair[1], 0, 0), 0.1, Vector3.ONE, _glow(pair[0]))
-				var light := OmniLight3D.new()
-				light.light_color = pair[0]
-				light.omni_range = 1.5
-				orb.add_child(light)
-		"brute":
-			# 큰 장갑 + 머리띠
-			for arm in [_left_arm, _right_arm]:
-				_sphere(arm, Vector3(0, -0.42, 0), 0.15, Vector3.ONE, _accent)
-			var band := TorusMesh.new()
-			band.inner_radius = 0.38
-			band.outer_radius = 0.43
-			_part(_torso, Vector3(0, 1.4, 0), band, _clay(Color(0.95, 0.95, 0.95)))
+var _body_mi: MeshInstance3D
+var _body_color: Color
+var _dress_mat: ShaderMaterial
+
+const DRESS_SHADER := """
+shader_type spatial;
+render_mode diffuse_burley;
+uniform vec3 top_col = vec3(1.0);
+uniform vec3 bottom_col = vec3(1.0);
+uniform float split = -0.05;      // 몸통 구(반지름 0.32) 안의 높이: 이보다 위는 상의
+uniform vec4 stripe_col = vec4(0.0);
+uniform float stripe_freq = 22.0;
+uniform vec4 belly_col = vec4(0.0);
+uniform vec4 front_col = vec4(0.0);  // 앞판 (조끼 앞, 턱시도 셔츠 등): 가운데 세로 V
+uniform sampler2D grain : hint_normal;
+varying vec3 lp;
+void vertex() { lp = VERTEX; }
+void fragment() {
+	float k = smoothstep(split - 0.006, split + 0.006, lp.y);
+	vec3 c = mix(bottom_col, top_col, k);
+	if (stripe_col.a > 0.0 && lp.y > split + 0.02) {
+		float st = smoothstep(0.45, 0.55, fract(lp.y * stripe_freq));
+		c = mix(c, stripe_col.rgb, st * stripe_col.a);
+	}
+	if (front_col.a > 0.0 && lp.z > 0.0 && lp.y > split) {
+		float w = 0.03 + (0.32 - lp.y) * 0.22;
+		float f = 1.0 - smoothstep(w - 0.006, w + 0.006, abs(lp.x));
+		c = mix(c, front_col.rgb, f * front_col.a);
+	}
+	if (belly_col.a > 0.0 && lp.z > 0.0) {
+		float d = length(vec2(lp.x / 0.2, (lp.y + 0.02) / 0.25));
+		c = mix(c, belly_col.rgb, belly_col.a * (1.0 - smoothstep(0.95, 1.02, d)));
+	}
+	ALBEDO = c;
+	ROUGHNESS = 0.72;
+	RIM = 0.3;
+	RIM_TINT = 0.5;
+	NORMAL_MAP = texture(grain, UV * vec2(6.0, 3.0)).rgb;
+	NORMAL_MAP_DEPTH = 0.18;
+}
+"""
+
+## 옷 입히기: 몸통 위(상의)·아래(하의) 색, 줄무늬, 앞판, 배 무늬. 팔(소매)·다리(바지) 색
+## top/bottom 에 Color(0,0,0,0) 을 주면 그 부분은 몸 색 그대로
+func dress(top: Color, bottom: Color, split := -0.05, stripes := Color(0, 0, 0, 0), front := Color(0, 0, 0, 0), belly := Color(0, 0, 0, 0)) -> void:
+	if _dress_mat == null:
+		_dress_mat = ShaderMaterial.new()
+		var sh := Shader.new()
+		sh.code = DRESS_SHADER
+		_dress_mat.shader = sh
+		_clay(_body_color)  # 결 텍스처 준비
+		_dress_mat.set_shader_parameter("grain", _grain)
+	var tc := top if top.a > 0.0 else _body_color
+	var bc := bottom if bottom.a > 0.0 else _body_color
+	_dress_mat.set_shader_parameter("top_col", Vector3(tc.r, tc.g, tc.b))
+	_dress_mat.set_shader_parameter("bottom_col", Vector3(bc.r, bc.g, bc.b))
+	_dress_mat.set_shader_parameter("split", split)
+	_dress_mat.set_shader_parameter("stripe_col", stripes)
+	_dress_mat.set_shader_parameter("front_col", front)
+	_dress_mat.set_shader_parameter("belly_col", belly)
+	_body_mi.material_override = _dress_mat
+
+
+func dress_limbs(arm_col: Color, leg_col: Color) -> void:
+	if arm_col.a > 0.0:
+		var m := _clay(arm_col)
+		for a in [_left_arm, _right_arm]:
+			(a.get_child(0) as MeshInstance3D).material_override = m
+	if leg_col.a > 0.0:
+		var m := _clay(leg_col)
+		for l in [_left_leg, _right_leg]:
+			(l.get_child(0) as MeshInstance3D).material_override = m
+
+
+## 치장 중 움직이는 것들 (프로펠러, 꼬리, 망토 등): [노드, 종류]
+var _cos_anim: Array = []
+
+func _animate_cosmetics(delta: float) -> void:
+	var t := Time.get_ticks_msec() / 1000.0
+	for e in _cos_anim:
+		var n: Node3D = e[0]
+		if not is_instance_valid(n):
+			continue
+		match e[1]:
+			"spin":
+				n.rotate_y(delta * 14.0)
+			"bob":
+				n.position.y += sin(t * 3.0) * 0.0015
+			"sway":
+				n.rotation.z = sin(t * 2.4 + n.position.x * 5.0) * 0.12 + (0.25 * signf(n.position.x) if absf(n.position.x) > 0.3 else 0.0)
+			"wag":
+				n.rotation.y = sin(t * 5.0) * 0.45
+			"flap":
+				n.rotation.y = -0.25 + sin(t * 6.0) * 0.25
+			"flapl":
+				n.rotation.y = 0.25 - sin(t * 6.0) * 0.25
+			"cape":
+				n.rotation.x = 0.18 + absf(sin(t * 2.0)) * 0.06 + clampf(_last_speed / 6.0, 0.0, 1.0) * 0.6
+			"balloon":
+				n.rotation.z = sin(t * 1.3) * 0.12
+				n.rotation.x = cos(t * 1.1) * 0.08
+			"upright":
+				n.global_rotation = Vector3(0, n.global_rotation.y, 0)
 
 
 ## 매 프레임: speed = 수평 이동 속도
+var _last_speed := 0.0
+
 func animate(delta: float, speed: float, frozen: bool) -> void:
+	_last_speed = speed
+	_animate_cosmetics(delta)
 	if _orbit:
 		_orbit.rotate_y(delta * 2.5)
 		_orbit.position.y = 1.0 + sin(Time.get_ticks_msec() / 400.0) * 0.08
@@ -205,8 +181,6 @@ func animate(delta: float, speed: float, frozen: bool) -> void:
 	if emote != "":
 		_emote_anim(delta)
 		return
-	if _hips:
-		_hips.visible = false
 	_last_emote = ""
 	if _dance_t > 0.0:
 		# 이모트가 끝나면 자세를 원래대로
@@ -218,6 +192,10 @@ func animate(delta: float, speed: float, frozen: bool) -> void:
 		_right_arm.rotation.y = 0.0
 		_left_leg.rotation.y = 0.0
 		_right_leg.rotation.y = 0.0
+		if _hips:
+			_hips.position = HIPS_BASE
+			_hips.rotation = Vector3.ZERO
+			_hips.scale = Vector3.ONE
 	_dance_t = 0.0
 	_torso.rotation.y = 0.0
 	_torso.rotation.z = 0.0
@@ -252,27 +230,32 @@ func animate(delta: float, speed: float, frozen: bool) -> void:
 		_right_leg.rotation.x = 0.35 * k
 
 
-## 엉덩이 춤: 상체를 숙이고 엉덩이를 좌우로 실룩실룩
+const HIPS_BASE := Vector3(0, 0.47, -0.06)
+
+## 엉덩이 춤: 무릎을 살짝 굽히고 상체를 숙여서 엉덩이를 박자에 맞춰 좌우로 실룩실룩
+## (노래 150BPM: 한 박자에 한쪽씩. 엉덩이는 몸의 일부라 튀어나오지 않고 자연스럽게 흔들림)
 func _dance(delta: float) -> void:
 	_dance_t += delta
-	var w := _dance_t * 13.0
-	var wig := sin(w)
+	var ph := _dance_t * TAU * 1.25
+	var raw := sin(ph)
+	var wig := signf(raw) * pow(absf(raw), 0.65)  # 끝에서 살짝 멈칫하는 리듬감
+	var bounce := absf(cos(ph))
+	var lean := minf(1.0, _dance_t * 4.0)  # 처음에 부드럽게 숙임
+	_torso.rotation.x = 0.38 * lean
+	_torso.position.z = -0.05 * lean
+	_torso.position.y = -0.05 * lean + bounce * 0.025
+	_torso.rotation.z = -wig * 0.1
+	_torso.rotation.y = wig * 0.12
+	_torso.position.x = -wig * 0.02
 	if _hips:
-		_hips.visible = true
-		_hips.position.x = wig * 0.12
-		_hips.position.y = 0.42 + absf(wig) * 0.04
-		_hips.rotation.z = wig * 0.5
-	_torso.rotation.x = 0.42
-	_torso.position.z = -0.16
-	_torso.position.y = absf(wig) * 0.05
-	_torso.rotation.z = wig * 0.32
-	_torso.rotation.y = wig * 0.22
-	_torso.position.x = wig * 0.07
-	_left_leg.rotation = Vector3(-0.2 + wig * 0.18, 0, -0.08 + wig * 0.12)
-	_right_leg.rotation = Vector3(-0.2 - wig * 0.18, 0, 0.08 + wig * 0.12)
-	var flap := absf(sin(w * 0.5))
-	_left_arm.rotation = Vector3(0.35, 0, -0.55 - flap * 0.5)
-	_right_arm.rotation = Vector3(0.35, 0, 0.55 + flap * 0.5)
+		_hips.position = HIPS_BASE + Vector3(wig * 0.07, -0.04 * lean + bounce * 0.02, -0.05 * lean)
+		_hips.rotation = Vector3(0.0, -wig * 0.35, wig * 0.28)
+		_hips.scale = Vector3(1.0 + bounce * 0.05, 1.0 - bounce * 0.04, 1.0)
+	_left_leg.rotation = Vector3(-0.28 * lean + wig * 0.1, 0, -0.06 + wig * 0.08)
+	_right_leg.rotation = Vector3(-0.28 * lean - wig * 0.1, 0, 0.06 + wig * 0.08)
+	# 손은 무릎 위에 얹고 박자에 맞춰 톡톡
+	_left_arm.rotation = Vector3(-0.55 * lean - bounce * 0.12, 0, -0.18)
+	_right_arm.rotation = Vector3(-0.55 * lean - bounce * 0.12, 0, 0.18)
 
 
 ## 이모트 동작 (점토 인형이라 팔·다리·몸통 관절만 돌려서 표현)
@@ -283,7 +266,7 @@ func _emote_anim(delta: float) -> void:
 		_last_emote = emote
 		_dance_t = 0.0
 		if _hips:
-			_hips.position = Vector3(0, 0.42, -0.12)
+			_hips.position = HIPS_BASE
 			_hips.rotation = Vector3.ZERO
 			_hips.scale = Vector3.ONE
 	if emote == "butt_dance":
@@ -291,8 +274,7 @@ func _emote_anim(delta: float) -> void:
 		return
 	_dance_t += delta
 	var t := _dance_t
-	if _hips:
-		_hips.visible = emote in ["fart", "butt_slap"]
+
 	# 기본 자세로 시작해서 이모트마다 덮어씀
 	_torso.position = Vector3.ZERO
 	_torso.rotation = Vector3.ZERO
@@ -303,6 +285,10 @@ func _emote_anim(delta: float) -> void:
 	_right_leg.rotation = Vector3.ZERO
 	_left_arm.rotation = Vector3(0, 0, -0.25)
 	_right_arm.rotation = Vector3(0, 0, 0.25)
+	if _hips:
+		_hips.position = HIPS_BASE
+		_hips.rotation = Vector3.ZERO
+		_hips.scale = Vector3.ONE
 	match emote:
 		"fart":
 			# 엉덩이를 쭉 빼고 힘주다가 뿡! 하고 시원해함
@@ -317,37 +303,11 @@ func _emote_anim(delta: float) -> void:
 				_torso.position.x = sin(t * 60.0) * 0.012 * push  # 힘주며 부들부들
 			elif t < 1.0:
 				var k := (t - 0.6) / 0.4
-				_hips.position.z = -0.12 - 0.08 * sin(k * PI)  # 뿡 반동
+				_hips.position.z = HIPS_BASE.z - 0.06 * sin(k * PI)  # 뿡 반동
 				_torso.position.y = 0.06 * sin(k * PI)
 			else:
 				_torso.rotation.z = sin(t * 3.0) * 0.12  # 후련하게 살랑
-				_hips.position = Vector3(0, 0.42, -0.12)
-		"nose_pick":
-			# 오른손 검지로 코 후비기 → 빼서 보기 → 튕기기
-			_torso.rotation.z = 0.08
-			if t < 1.6:
-				_right_arm.rotation = Vector3(-2.35, 0.0, -0.55 + sin(t * 18.0) * 0.06)
-				_torso.rotation.x = -0.05 + sin(t * 18.0) * 0.015
-			elif t < 1.9:
-				_right_arm.rotation = Vector3(-1.7, 0.0, -0.3)  # 손가락 들여다보기
-				_torso.rotation.x = 0.12
-			else:
-				var k := clampf((t - 1.9) / 0.15, 0.0, 1.0)
-				_right_arm.rotation = Vector3(-1.7 + 0.4 * k, 0.0, -0.3 + 0.6 * k)  # 휙 튕김
-		"butt_slap":
-			# 엉덩이 내밀고 손바닥으로 팡팡
-			var slap := sin(t * 8.0)
-			_torso.rotation.x = 0.38
-			_torso.position.z = -0.12
-			_torso.rotation.z = slap * 0.1
-			_right_arm.rotation = Vector3(0.9 + maxf(0.0, slap) * 0.9, 0.0, 0.5)
-			_left_arm.rotation = Vector3(0.3, 0.0, -0.9 + sin(t * 4.0) * 0.4)  # 약 올리듯 흔듦
-			_hips.position.x = 0.0
-			_hips.position.y = 0.42
-			_hips.rotation.z = maxf(0.0, -slap) * 0.25
-			_hips.scale = Vector3.ONE * (1.0 + maxf(0.0, -slap) * 0.08)
-			_left_leg.rotation.x = -0.15
-			_right_leg.rotation.x = -0.15
+				_hips.position = HIPS_BASE
 		"poop":
 			# 쪼그려 앉아 끙끙 → 뿌직! → 개운
 			var sq := clampf(t / 0.35, 0.0, 1.0)
@@ -364,13 +324,6 @@ func _emote_anim(delta: float) -> void:
 				_torso.position.y += 0.05 * sin((t - 1.6) / 0.4 * PI)
 			else:
 				_torso.rotation.z = sin(t * 4.0) * 0.06
-		"armpit_fart":
-			# 오른팔 들고 왼손을 겨드랑이에 넣어 펌프질 (뿡뿡뿡)
-			var pump := maxf(0.0, sin(t * 7.85))
-			_right_arm.rotation = Vector3(0.0, 0.0, 2.2 - pump * 1.0)
-			_left_arm.rotation = Vector3(-1.2, 0.0, 1.25)
-			_torso.rotation.z = -0.12 + pump * 0.05
-			_torso.position.y = pump * 0.02
 		"dead":
 			# 뒤로 벌러덩 → 팔다리 쭉 → 가끔 다리 파르르
 			var fall := clampf(t / 0.35, 0.0, 1.0)
@@ -399,15 +352,61 @@ func _emote_anim(delta: float) -> void:
 			_torso.position.y = 0.03 if step % 2 == 0 else 0.0
 			_left_leg.rotation.z = -0.12 if step % 2 == 0 else 0.0
 			_right_leg.rotation.z = 0.0 if step % 2 == 0 else 0.12
-		"seal_clap":
-			# 물개처럼 몸 젖히고 팔을 쭉 뻗어 짝짝짝 + 콩콩 뜀
-			var clap := absf(sin(t * 11.0))
-			_torso.rotation.x = -0.22
-			_torso.position.y = absf(sin(t * 5.5)) * 0.06
-			_left_arm.rotation = Vector3(-1.35, 0.0, -0.75 + clap * 0.85)
-			_right_arm.rotation = Vector3(-1.35, 0.0, 0.75 - clap * 0.85)
-			_left_leg.rotation.z = -0.1
-			_right_leg.rotation.z = 0.1
+		"disco":
+			# 디스코: 한 박자마다 오른손을 하늘로 콕 → 반대쪽 아래로 콕, 옆으로 스텝 (120BPM)
+			var beat := t * 2.0
+			var k := fmod(beat, 2.0)
+			var up := k < 1.0
+			var snap := clampf(fmod(beat, 1.0) / 0.18, 0.0, 1.0)
+			var step := sin(beat * PI) 
+			_torso.position.x = step * 0.07
+			_torso.rotation.z = -step * 0.12
+			_torso.position.y = absf(sin(beat * PI)) * 0.03
+			if up:
+				_right_arm.rotation = Vector3(0.0, 0.0, lerpf(0.6, 2.75, snap))
+				_left_arm.rotation = Vector3(-0.3, 0.0, -0.35)
+				_torso.rotation.y = -0.2
+			else:
+				_right_arm.rotation = Vector3(-0.2, 0.0, lerpf(2.75, -0.55, snap))
+				_left_arm.rotation = Vector3(-0.3, 0.0, -0.35)
+				_torso.rotation.y = 0.25
+			_left_leg.rotation = Vector3(0, 0, -0.12 - maxf(0.0, step) * 0.18)
+			_right_leg.rotation = Vector3(0, 0, 0.12 - minf(0.0, step) * 0.18)
+		"trot":
+			# 트로트 어깨춤: 팔 벌리고 어깨를 번갈아 들썩들썩, 몸은 좌우로 살랑 (뽕짝 135BPM)
+			var b := t * 2.25
+			var sh := sin(b * PI)
+			_left_arm.rotation = Vector3(-0.35, 0.0, -1.15 - maxf(0.0, sh) * 0.35)
+			_right_arm.rotation = Vector3(-0.35, 0.0, 1.15 + maxf(0.0, -sh) * 0.35)
+			_torso.rotation.z = sh * 0.14
+			_torso.position.x = sh * 0.04
+			_torso.position.y = absf(sin(b * PI * 2.0)) * 0.025
+			_torso.rotation.y = sin(b * PI * 0.5) * 0.25
+			_left_leg.rotation.x = -absf(sin(b * PI * 2.0)) * 0.15
+			_right_leg.rotation.x = -absf(sin(b * PI * 2.0)) * 0.15
+		"chicken":
+			# 닭 흉내: 팔꿈치 날개 파닥파닥 + 고개 콕콕 + 종종걸음
+			var flap := sin(t * 22.0)
+			_left_arm.rotation = Vector3(0.5, 0.0, -0.9 - flap * 0.35)
+			_right_arm.rotation = Vector3(0.5, 0.0, 0.9 + flap * 0.35)
+			var peck := fmod(t * 2.6, 1.0)
+			_torso.rotation.x = (0.45 if peck < 0.12 else 0.05) if t < 2.4 else -0.25  # 마지막엔 가슴 펴고 꼬끼오
+			_torso.position.z = 0.08 if peck < 0.12 else 0.0
+			var strut := sin(t * 10.0)
+			_left_leg.rotation.x = maxf(0.0, strut) * -0.6
+			_right_leg.rotation.x = maxf(0.0, -strut) * -0.6
+			_torso.position.y = absf(strut) * 0.03
+		"gaedari":
+			# 개다리 춤: 무릎을 안팎으로 후들후들 + 팔 흐느적 + 몸 들썩
+			var w := sin(t * 16.0)
+			_left_leg.rotation = Vector3(-0.2, 0.0, -0.15 + w * 0.45)
+			_right_leg.rotation = Vector3(-0.2, 0.0, 0.15 + w * 0.45)
+			_torso.position.y = -0.06 + absf(sin(t * 8.0)) * 0.05
+			_torso.position.x = w * 0.03
+			_torso.rotation.z = -w * 0.08
+			_left_arm.rotation = Vector3(sin(t * 5.0) * 0.6, 0.0, -0.9 + sin(t * 7.0) * 0.5)
+			_right_arm.rotation = Vector3(-sin(t * 5.0) * 0.6, 0.0, 0.9 + cos(t * 7.0) * 0.5)
+			_torso.rotation.y = sin(t * 4.0) * 0.3
 		"dizzy":
 			# 팽이처럼 빙글빙글 돌다가 어질어질 비틀
 			if t < 1.3:
@@ -426,6 +425,9 @@ func _emote_anim(delta: float) -> void:
 				_left_leg.rotation.z = -0.15 + sin(w * 5.0) * 0.1
 				_right_leg.rotation.z = 0.15 + sin(w * 5.0) * 0.1
 
+	if _hips and emote != "fart":
+		_hips.position += _torso.position  # 엉덩이가 몸통을 따라감 (쪼그려 앉기 등)
+
 
 ## 사나이 강펀치: 왼팔(뒤에서 보면 화면 오른쪽)을 앞으로 쭉 내지름
 func punch(seconds: float) -> void:
@@ -435,9 +437,17 @@ func punch(seconds: float) -> void:
 
 ## 반투명 (카멜레온 동화 등). alpha 1 = 원래대로
 func set_alpha(alpha: float) -> void:
-	for m in [_mat, _accent]:
-		m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA if alpha < 1.0 else BaseMaterial3D.TRANSPARENCY_DISABLED
-		m.albedo_color.a = alpha
+	if _dress_mat and _body_mi:
+		_body_mi.material_override = _mat if alpha < 1.0 else _dress_mat
+	for mi in find_children("*", "MeshInstance3D", true, false):
+		var m := (mi as MeshInstance3D).material_override as StandardMaterial3D
+		if m == null:
+			continue
+		if not m.has_meta("base_alpha"):
+			m.set_meta("base_alpha", m.albedo_color.a)
+			m.set_meta("base_transp", m.transparency)
+		m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA if alpha < 1.0 else int(m.get_meta("base_transp"))
+		m.albedo_color.a = float(m.get_meta("base_alpha")) * alpha
 
 
 # ---------------------------------------------------------------- 도형 도우미
@@ -474,37 +484,6 @@ func _clay(c: Color) -> StandardMaterial3D:
 
 
 ## 귀여운 얼굴: 반짝이는 큰 눈 + 발그레한 볼 + 작은 웃는 입 (얼굴이 가려지는 캐릭터는 제외)
-func _face(character_id: String) -> void:
-	if character_id in ["shadow", "gravity"]:
-		return
-	var z := 0.035 if character_id in ["chameleon", "keeper"] else 0.0  # 후드를 쓴 캐릭터는 조금 앞으로
-	var eye := StandardMaterial3D.new()
-	eye.albedo_color = Color(0.07, 0.05, 0.09)
-	eye.roughness = 0.2
-	var shine := StandardMaterial3D.new()
-	shine.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	shine.albedo_color = Color(1, 1, 1)
-	var blush := StandardMaterial3D.new()
-	blush.albedo_color = Color(1.0, 0.45, 0.52, 0.6)
-	blush.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	blush.roughness = 0.9
-	var mouth := StandardMaterial3D.new()
-	mouth.albedo_color = Color(0.25, 0.08, 0.1)
-	for side in [-1.0, 1.0]:
-		_sphere(_torso, Vector3(0.135 * side, 1.27, 0.35 + z), 0.08, Vector3(0.85, 1.15, 0.45), eye)
-		_sphere(_torso, Vector3(0.135 * side + 0.026, 1.31, 0.386 + z), 0.023, Vector3(1, 1, 0.5), shine)
-		_sphere(_torso, Vector3(0.135 * side - 0.02, 1.245, 0.39 + z), 0.011, Vector3(1, 1, 0.5), shine)
-		_sphere(_torso, Vector3(0.235 * side, 1.17, 0.3 + z), 0.06, Vector3(1.25, 0.7, 0.35), blush)
-	# 작은 웃는 입 (짧은 선 3개로 만든 곡선)
-	for k in 3:
-		var t := (k - 1) * 0.026
-		var seg := CapsuleMesh.new()
-		seg.radius = 0.009
-		seg.height = 0.04
-		var mi := _part(_torso, Vector3(t, 1.155 + absf(t) * 0.5, 0.378 + z), seg, mouth)
-		mi.rotation = Vector3(0, 0, PI / 2.0 + (k - 1) * -0.55)
-
-
 func _glow(c: Color) -> StandardMaterial3D:
 	var m := StandardMaterial3D.new()
 	m.albedo_color = c

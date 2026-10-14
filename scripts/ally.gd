@@ -120,9 +120,40 @@ func _physics_process(delta: float) -> void:
 
 	if not moving:
 		_update_stamina(delta, "idle")
+	_check_bot_stuck(delta, moving)
 	velocity += take_external_pull()
 	_footsteps(delta, moving, GameConfig.num("player", "walk_noise", 9.0), 0.45, -6.0)
 	move_and_slide()
+
+
+## 가려고 하는데 1.5초 동안 거의 못 움직였거나, 길 끝에 왔는데 봉인석에 손이 안 닿으면 → 다른 곳으로
+var _stuck_t := 0.0
+var _stuck_at := Vector3.ZERO
+
+func _check_bot_stuck(delta: float, moving: bool) -> void:
+	var waiting := (mode == "rescue" and _rescue_target and global_position.distance_to(_rescue_target.global_position) < 2.0) \
+			or (mode == "repair" and is_instance_valid(_goal_generator) and global_position.distance_to(_goal_generator.global_position) <= REPAIR_REACH)
+	if waiting:
+		_stuck_t = 0.0
+		_stuck_at = global_position
+		return
+	_stuck_t += delta
+	if _stuck_t < 1.5:
+		return
+	if global_position.distance_to(_stuck_at) < 0.4:
+		if mode == "repair" and is_instance_valid(_goal_generator):
+			# 봉인석 다른 쪽으로 다시 시도, 두 번째부터는 잠시 다른 봉인석으로
+			if _goal_spot != Vector3.INF and global_position.distance_to(_goal_generator.global_position) < 6.0:
+				_goal_spot = NavigationServer3D.map_get_closest_point(agent.get_navigation_map(), _goal_generator.global_position + Vector3(randf_range(-1, 1), 0, randf_range(-1, 1)).normalized() * 1.2)
+				agent.target_position = _goal_spot
+			else:
+				_avoid[_goal_generator] = Time.get_ticks_msec() / 1000.0 + 20.0
+				_goal_generator = null
+		var a := randf() * TAU
+		agent.target_position = NavigationServer3D.map_get_closest_point(agent.get_navigation_map(), global_position + Vector3(cos(a), 0, sin(a)) * 4.0)
+		_think_timer = 0.6
+	_stuck_t = 0.0
+	_stuck_at = global_position
 
 
 func _decide() -> void:
@@ -179,14 +210,51 @@ func _decide() -> void:
 		mode = "rescue"
 		return
 
-	# 4. 봉인석 가동하러 가기
-	_goal_generator = _nearest_generator(INF)
+	# 4. 봉인석 가동하러 가기: 다른 봇이 이미 가는 곳은 피해서 흩어짐 (줄지어 다니지 않게)
+	var g := _pick_generator()
+	if g != _goal_generator:
+		_goal_generator = g
+		_goal_spot = Vector3.INF
 	if _goal_generator:
-		agent.target_position = _goal_generator.global_position
+		if _goal_spot == Vector3.INF:
+			# 봉인석 둘레의 내 자리 (봇마다 다른 방향)
+			var a := float(get_index() % 7) * 1.7 + randf() * 0.4
+			var want := _goal_generator.global_position + Vector3(cos(a), 0, sin(a)) * 1.6
+			_goal_spot = NavigationServer3D.map_get_closest_point(agent.get_navigation_map(), want)
+		agent.target_position = _goal_spot
 		mode = "repair"
 		return
 
+	# 할 일이 없으면 제자리에 서 있지 않고 주변을 살피며 돌아다님
+	if agent.is_navigation_finished() or mode != "idle":
+		var a := randf() * TAU
+		agent.target_position = NavigationServer3D.map_get_closest_point(agent.get_navigation_map(), global_position + Vector3(cos(a), 0, sin(a)) * randf_range(6.0, 14.0))
 	mode = "idle"
+
+
+## 갈 봉인석 고르기: 가까울수록 좋고, 다른 봇이 이미 맡은 곳·못 가는 곳은 피함
+var _goal_spot := Vector3.INF
+var _avoid := {}  # 봉인석 → 피할 시각 (길이 막혀 못 갔던 곳)
+
+func _pick_generator() -> Generator:
+	var now := Time.get_ticks_msec() / 1000.0
+	var best: Generator = null
+	var best_score := INF
+	for node in get_tree().get_nodes_in_group("generator"):
+		var g := node as Generator
+		if g == null or g.completed or float(_avoid.get(g, 0.0)) > now:
+			continue
+		var claims := 0
+		for other in get_tree().get_nodes_in_group("survivor"):
+			if other != self and other.get("_goal_generator") == g and not other.is_dead and not other.is_frozen:
+				claims += 1
+		var score := global_position.distance_to(g.global_position) + claims * 35.0
+		if g == _goal_generator:
+			score -= 8.0  # 하던 일은 웬만하면 계속
+		if score < best_score:
+			best = g
+			best_score = score
+	return best
 
 
 ## 구하러 가도 안전한 얼음 동료 중 가장 가까운 대상
@@ -201,6 +269,14 @@ func _find_frozen_friend(seeker: Seeker) -> Survivor:
 		if seeker and seeker.is_active() and seeker.global_position.distance_to(s.global_position) < safe_dist:
 			continue  # 술래가 지키고 있으면 위험하니 패스
 		var d := global_position.distance_to(s.global_position)
+		# 더 가까운 다른 봇이 이미 구하러 가는 중이면 나는 다른 일
+		var taken := false
+		for other in get_tree().get_nodes_in_group("survivor"):
+			if other != self and other.get("_rescue_target") == s and other.global_position.distance_to(s.global_position) < d:
+				taken = true
+				break
+		if taken:
+			continue
 		if d < best_d:
 			best = s
 			best_d = d

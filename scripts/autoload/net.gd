@@ -58,7 +58,7 @@ func host(player_name: String) -> bool:
 	multiplayer.multiplayer_peer = peer
 	active = true
 	my_name = player_name
-	players = {1: {"name": player_name, "character": "", "ready": true, "in_game": false}}
+	players = {1: {"name": player_name, "character": "", "ready": true, "in_game": false, "cos": SaveData.equipped.duplicate()}}
 	status_changed.emit("방을 만들었어요! 친구에게 IP를 알려 주세요")
 	lobby_changed.emit()
 	return true
@@ -99,7 +99,7 @@ func local_ips() -> Array:
 
 func _on_connected() -> void:
 	status_changed.emit("접속 성공!")
-	register.rpc_id(1, my_name)
+	register.rpc_id(1, my_name, SaveData.equipped.duplicate())
 
 
 func _on_connection_failed() -> void:
@@ -137,14 +137,14 @@ func _on_peer_disconnected(id: int) -> void:
 # ---------------------------------------------------------------- 로비
 
 @rpc("any_peer", "reliable")
-func register(player_name: String) -> void:
+func register(player_name: String, cos := {}) -> void:
 	if not multiplayer.is_server():
 		return
 	var id := multiplayer.get_remote_sender_id()
 	if in_match() or players.size() >= MAX_PLAYERS:
 		kicked.rpc_id(id, "방이 가득 찼거나 이미 게임 중이에요")
 		return
-	players[id] = {"name": player_name, "character": "", "ready": false, "in_game": false}
+	players[id] = {"name": player_name, "character": "", "ready": false, "in_game": false, "cos": cos}
 	sync_players.rpc(players)
 
 
@@ -235,7 +235,7 @@ func start_match() -> void:
 	var ids: Array = players.keys()
 	ids.sort()
 	for pid in ids:
-		slots.append({"peer": pid, "character": players[pid]["character"], "name": players[pid]["name"]})
+		slots.append({"peer": pid, "character": players[pid]["character"], "name": players[pid]["name"], "cos": players[pid].get("cos", {})})
 		used.append(players[pid]["character"])
 	var free: Array = CharacterDB.ORDER.filter(func(c): return not used.has(c) and not CharacterDB.is_hidden(c))
 	free.shuffle()
@@ -251,7 +251,7 @@ func start_match() -> void:
 	sync_players.rpc(players)
 	var cfg := {
 		"seed": randi(),
-		"map": ["city", "forest"][randi() % 2],
+		"map": SaveData.test_map if SaveData.test_map != "" else ["city", "forest"][randi() % 2],
 		"stage": SaveData.stage,
 		"slots": slots,
 	}

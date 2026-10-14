@@ -305,20 +305,17 @@ func _physics_process(delta: float) -> void:
 				else:
 					_move_to_destination(delta, GameConfig.num("seeker", "investigate_speed", 4.8))
 			State.SEARCH:
-				_stop()
-				# 두리번두리번: 빙글빙글 돌지 않고 좌우로 고개를 돌려 봄
+				# 수색: 멈춰 서 있지 않고 주변(풀숲·사물함·구석)을 빠르게 돌며 살핌
 				_search_t += delta
-				rotation.y = lerp_angle(rotation.y, _search_yaw + sin(_search_t * 2.0) * 1.1, 6.0 * delta)
 				_timer -= delta
-				if _timer <= 0.0:
-					# 똑똑한 수색: 근처 숨을 만한 곳(풀숲)을 하나씩 확인한 뒤 순찰로
-					if not _search_points.is_empty():
-						var next: Vector3 = _search_points.pop_front()
-						_investigate(next)
-						_searching_spots = true
+				if _destination_reached() or _timer <= 0.0:
+					if not _search_points.is_empty() and _timer > -4.0:
+						_set_destination(_search_points.pop_front())
 					else:
-						_searching_spots = false
 						_enter_patrol()
+				_move_to_destination(delta, GameConfig.num("seeker", "investigate_speed", 4.8) * 0.9)
+				# 걸으면서 좌우로 고개를 돌려 봄
+				body.rotation.y = sin(_search_t * 3.0) * 0.45
 			State.CAMP:
 				_stop()
 				_timer -= delta
@@ -333,18 +330,36 @@ func _physics_process(delta: float) -> void:
 	_update_label()
 
 
-## 가려고 하는데 4초 동안 거의 못 움직였으면 (자동차 등에 끼임) 다른 곳으로
+## 가려고 하는데 잘 못 움직이면(차·벽에 끼임, 길이 막힘) 1초 안에 길을 다시 찾고, 그래도 안 되면 다른 곳으로
+var _stuck_tries := 0
+var _since_contact := 0.0
+
 func _check_stuck(delta: float) -> void:
-	var trying := state == State.PATROL or state == State.INVESTIGATE or state == State.CHASE
-	if not trying or _lock_left > 0.0:
+	if state == State.CHASE or state == State.INVESTIGATE:
+		_since_contact = 0.0
+	else:
+		_since_contact += delta
+	var trying := state == State.PATROL or state == State.INVESTIGATE or state == State.CHASE or state == State.SEARCH
+	if not trying or _lock_left > 0.0 or _attack_left > 0.0:
 		_stuck_timer = 0.0
 		_stuck_pos = global_position
 		return
 	_stuck_timer += delta
-	if _stuck_timer >= 4.0:
-		if global_position.distance_to(_stuck_pos) < 1.0:
-			chase_target = null
-			_enter_patrol()
+	if _stuck_timer >= 1.0:
+		if global_position.distance_to(_stuck_pos) < 0.5:
+			_stuck_tries += 1
+			if _stuck_tries == 1 and state != State.CHASE:
+				# 옆으로 살짝 비켜서 다시 길 찾기
+				var side := global_basis.x * (2.5 if randf() < 0.5 else -2.5)
+				_set_destination(NavigationServer3D.map_get_closest_point(agent.get_navigation_map(), global_position + side))
+			elif _stuck_tries >= 2:
+				_stuck_tries = 0
+				if state == State.CHASE and chase_target:
+					_set_destination(chase_target.global_position)
+				else:
+					_enter_patrol()
+		else:
+			_stuck_tries = 0
 		_stuck_timer = 0.0
 		_stuck_pos = global_position
 
@@ -388,6 +403,8 @@ func _destination_reached() -> bool:
 func _move_to_destination(delta: float, speed: float) -> void:
 	if agent.is_navigation_finished():
 		_stop()
+		if state == State.PATROL:
+			_pick_patrol_point()  # 도착하면 바로 다음 곳으로 (멍하니 서 있지 않음)
 		return
 	var next := agent.get_next_path_position()
 	_move_dir(next - global_position, delta, speed)
@@ -601,7 +618,8 @@ func _kill_survivor(s: Survivor) -> void:
 	s.die()
 	if s.is_dead and s == chase_target:
 		chase_target = null
-		_enter_search()
+		_since_contact = 99.0  # 바로 다음 생존자를 찾아 압박
+		_enter_patrol()
 
 
 ## 멀티: 방장이 보낸 술래 상태
@@ -709,11 +727,16 @@ func _enter_search() -> void:
 	state = State.SEARCH
 	_search_yaw = rotation.y
 	_search_t = 0.0
-	_timer = GameConfig.num("seeker", "search_time", 4.0)
-	if not _searching_spots:
-		_search_points = _nearby_hiding_spots(GameConfig.num("seeker", "search_radius", 14.0), int(GameConfig.num("seeker", "search_spots", 2)))
-	else:
-		_timer *= 0.5
+	_timer = GameConfig.num("seeker", "search_time", 4.0) + 3.0
+	# 근처 숨을 곳(풀숲·사물함) + 주변 3곳을 빙 돌아봄
+	_search_points = _nearby_hiding_spots(GameConfig.num("seeker", "search_radius", 14.0), int(GameConfig.num("seeker", "search_spots", 2)))
+	var map := agent.get_navigation_map()
+	var a0 := randf() * TAU
+	for i in 3:
+		var a := a0 + i * TAU / 3.0
+		var p := global_position + Vector3(cos(a), 0, sin(a)) * randf_range(3.5, 6.5)
+		_search_points.append(NavigationServer3D.map_get_closest_point(map, p))
+	_set_destination(_search_points.pop_front())
 
 
 ## 근처 풀숲(숨을 만한 곳) 위치들, 가까운 순서로 최대 count 개
@@ -722,6 +745,9 @@ func _nearby_hiding_spots(radius: float, count: int) -> Array:
 	for g in get_tree().current_scene.find_children("*", "Area3D", true, false):
 		if g is GrassPatch and (g as Node3D).global_position.distance_to(global_position) <= radius:
 			spots.append((g as Node3D).global_position)
+	for pr in get_tree().get_nodes_in_group("prop"):
+		if pr.get("kind") == "locker" and (pr as Node3D).global_position.distance_to(global_position) <= radius:
+			spots.append(pr.call("front_point"))
 	spots.sort_custom(func(a, b): return a.distance_to(global_position) < b.distance_to(global_position))
 	return spots.slice(0, count)
 
@@ -818,18 +844,21 @@ func _pick_patrol_point() -> void:
 		if closest.y < 1.0 and closest.distance_to(global_position) > 8.0:
 			_set_destination(closest)
 			return
-	_set_destination(global_position)
+	var a := randf() * TAU
+	_set_destination(NavigationServer3D.map_get_closest_point(map, global_position + Vector3(cos(a), 0, sin(a)) * 7.0))
 
 
 ## 사냥 지점: hunt_chance 확률로 랜덤 생존자 주변 hunt_radius 안의 한 곳. 아니면 Vector3.INF
 func _hunt_point() -> Vector3:
-	if randf() >= GameConfig.num("seeker", "hunt_chance", 0.35):
+	# 한동안 아무도 못 만났으면 생존자 쪽으로 더 가까이 압박해 감
+	var pressing := _since_contact > GameConfig.num("seeker", "pressure_time", 15.0)
+	if not pressing and randf() >= GameConfig.num("seeker", "hunt_chance", 0.35):
 		return Vector3.INF
 	var targets := get_tree().get_nodes_in_group("survivor").filter(func(n): return _is_targetable(n as Survivor))
 	if targets.is_empty():
 		return Vector3.INF
 	var t: Node3D = targets[randi() % targets.size()]
-	var r := GameConfig.num("seeker", "hunt_radius", 12.0)
+	var r := GameConfig.num("seeker", "hunt_radius", 12.0) * (0.55 if pressing else 1.0)
 	var p := t.global_position + Vector3(randf_range(-r, r), 0.0, randf_range(-r, r))
 	return Vector3(clampf(p.x, -map_half_size, map_half_size), 0.0, clampf(p.z, -map_half_size, map_half_size))
 
