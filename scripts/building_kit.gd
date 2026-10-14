@@ -685,6 +685,19 @@ func furnish(room: Rect2, y: float, kind: String, keep_center := false) -> Vecto
 			for i in int(inner.size.x / 6.0):
 				var px := inner.position.x + (i + 0.5) * inner.size.x / int(inner.size.x / 6.0)
 				part(Vector3(px, y + 1.6, c.y), Vector3(0.5, 3.2, 0.5), Color(0.45, 0.45, 0.43), "trim", true)  # 기둥
+				for k in 4:
+					part(Vector3(px, y + 0.15 + k * 0.2, c.y), Vector3(0.52, 0.1, 0.52), Color(0.85, 0.7, 0.1) if k % 2 == 0 else Color(0.08, 0.08, 0.08), "trim")
+				var pl := Label3D.new()
+				pl.text = "B1-%s" % char(65 + i)
+				pl.font_size = 64
+				pl.pixel_size = 0.005
+				pl.modulate = Color(0.95, 0.85, 0.3)
+				pl.position = Vector3(px, y + 2.0, c.y + 0.27)
+				pl.visibility_range_end = 20.0
+				lb.region.add_child(pl)
+			# 바닥 화살표·주차면 번호, 기름 얼룩
+			for k in int(inner.size.x / 4.0):
+				decal(Vector3(rng.randf_range(inner.position.x + 1, inner.end.x - 1), y + 0.01, rng.randf_range(inner.position.y + 1, inner.end.y - 1)), Vector3.UP, rng.randf_range(1.2, 2.4), "stain")
 		"gym_storage":
 			for i in 4:
 				_crate(Vector3(rng.randf_range(inner.position.x + 0.5, inner.end.x - 0.5), y, rng.randf_range(inner.position.y + 0.5, inner.end.y - 0.5)), 0.6)
@@ -1323,6 +1336,7 @@ func _classroom(room: Rect2, y: float) -> void:
 	# 학생 책상 + 의자 (2개씩 짝, 가운데 통로)
 	var cols := clampi(int(width / 1.35), 4, 7)
 	var rows := clampi(int((depth - 3.4) / 1.25), 3, 7)
+	var chairs_up := rng.randf() < 0.3
 	for r in rows:
 		for c in cols:
 			if rng.randf() < 0.1:
@@ -1336,7 +1350,16 @@ func _classroom(room: Rect2, y: float) -> void:
 			if rng.randf() < 0.08:
 				jy += rng.randf_range(0.6, 1.4)  # 삐뚤어진 책상
 			_student_desk(p, jy)
-			_chair(_local(p, jy, Vector3(0, 0, 0.55)), jy, Color(0.55, 0.42, 0.28), rng.randf() < 0.12)
+			if chairs_up:
+				# 청소 시간처럼 의자를 책상 위에 거꾸로 올려 둔 교실
+				var cu := p + Vector3.UP * 1.18
+				_yawbox(_local(cu, jy, Vector3(0, -0.4, 0)), Vector3(0.4, 0.035, 0.4), jy, Color(0.55, 0.42, 0.28), false)
+				_yawbox(_local(cu, jy, Vector3(0, -0.66, 0.19)), Vector3(0.4, 0.3, 0.03), jy, Color(0.55, 0.42, 0.28), false)
+				for sx in [-1.0, 1.0]:
+					for sz in [-1.0, 1.0]:
+						_yawbox(_local(cu, jy, Vector3(0.17 * sx, -0.17, 0.17 * sz)), Vector3(0.03, 0.44, 0.03), jy, Color(0.3, 0.3, 0.32), false, "metal")
+			else:
+				_chair(_local(p, jy, Vector3(0, 0, 0.55)), jy, Color(0.55, 0.42, 0.28), rng.randf() < 0.12)
 	# 뒤쪽: 사물함 줄 (하나는 진짜 숨는 사물함) + 게시판
 	var back := Vector3(inner.end.x - 0.32, y, inner.get_center().y) if along_x else Vector3(inner.get_center().x, y, inner.end.y - 0.32)
 	var n := mini(8, int(width / 0.62) - 2)
@@ -1471,6 +1494,15 @@ func _ward(room: Rect2, y: float) -> void:
 				var iv := _local(p, yaw, Vector3(0.6, 0, -0.85))
 				part(iv + Vector3.UP * 0.95, Vector3(0.03, 1.9, 0.03), Color(0.7, 0.7, 0.72), "metal")
 				part(iv + Vector3.UP * 1.75, Vector3(0.14, 0.24, 0.06), Color(0.8, 0.9, 1.0), "glass")
+	# 침대에서 문 쪽으로 끌린 핏자국 (가끔)
+	if door_at != Vector3.INF and rng.randf() < 0.35:
+		var c0 := room.get_center()
+		var from := Vector3(c0.x + rng.randf_range(-2, 2), y + 0.01, c0.y + rng.randf_range(-2, 2))
+		var to := Vector3(door_at.x, y + 0.01, door_at.z)
+		var steps := int(from.distance_to(to) / 0.7)
+		for k in steps:
+			var q := from.lerp(to, float(k) / maxf(1, steps)) + Vector3(rng.randf_range(-0.15, 0.15), 0, rng.randf_range(-0.15, 0.15))
+			decal(q, Vector3.UP, rng.randf_range(0.5, 0.9), "blood")
 	# 가운데: 바퀴 달린 식탁 / 넘어진 링거대 / 핏자국
 	if rng.randf() < 0.7:
 		var c := room.get_center()
@@ -1575,8 +1607,7 @@ func room_sign(at: Vector3, text: String, normal: Vector3) -> void:
 	l.outline_size = 8
 	l.visibility_range_end = 22.0  # 최적화: 멀리선 안 그림
 	l.position = at + normal * 0.12
-	l.look_at_from_position(l.position, l.position + normal, Vector3.UP)
-	l.rotate_y(PI)
+	l.rotation.y = atan2(normal.x, normal.z)  # 글자 앞면이 normal 쪽을 봄 (씬 트리 밖에서도 됨)
 	lb.region.add_child(l)
 	part(at + normal * 0.1, Vector3(0.9, 0.28, 0.04) if absf(normal.z) > 0.5 else Vector3(0.04, 0.28, 0.9), Color(0.2, 0.3, 0.35))
 

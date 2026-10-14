@@ -17,7 +17,7 @@ func build(target: Node3D, map_seed: int) -> void:
 	survivor_spawns = [Vector3(-2, 0.3, 64), Vector3(2, 0.3, 64), Vector3(-2, 0.3, 67), Vector3(2, 0.3, 67)]
 	seeker_spawns = [Vector3(-39, 0.3, -52), Vector3(60, 0.3, -50), Vector3(-62, 0.3, -20)]
 	floor_levels = [0.0, FH]
-	debug_views = [[Vector3(64, 1.7, -42), Vector3(58, 2.5, -60)], [Vector3(-38, 5.7, -50), Vector3(-20, 5.0, -52)], [Vector3(0, 1.7, -18), Vector3(0, 4, -50)], [Vector3(28, 1.7, -22), Vector3(0, 4, -50)], [Vector3(40, 1.7, -30), Vector3(60, 4, -53)], [Vector3(-20, 1.7, 10), Vector3(0, 1, 30)], [Vector3(45, 1.7, 20), Vector3(55, 1, 12)]]
+	debug_views = [[Vector3(1, 1.8, -39.5), Vector3(1, 1.5, -52)], [Vector3(-6, 1.8, -51.2), Vector3(-6.0, 2.4, -54)], [Vector3(64, 1.7, -42), Vector3(58, 2.5, -60)], [Vector3(-38, 5.7, -50), Vector3(-20, 5.0, -52)], [Vector3(0, 1.7, -18), Vector3(0, 4, -50)], [Vector3(28, 1.7, -22), Vector3(0, 4, -50)], [Vector3(40, 1.7, -30), Vector3(60, 4, -53)], [Vector3(-20, 1.7, 10), Vector3(0, 1, 30)], [Vector3(45, 1.7, 20), Vector3(55, 1, 12)]]
 	_make_materials()
 	_mat["dirt_field"] = _noise_mat(Color(0.42, 0.33, 0.24), 0.35, 1.0, 5.0)
 	_mat["school_wall"] = _pattern_mat("plaster", Color(0.78, 0.74, 0.62), 3.0)
@@ -268,6 +268,8 @@ func _main_building() -> void:
 				kit.wall(Vector3(xw, 0, z0), Vector3(xw, 0, z1), y, FH - 0.2, _mat["school_in"], "w_inner", [[1.0, 2.5, 0.0, BuildingKit.DOOR_H]] if side > 0 else [], 0.18)
 		var fy := y + (0.07 if k == 0 else 0.01)
 		_corridor_dressing(core, inner, corr_z, corr_w, y, fy, rooms)
+		if k == 0:
+			_entrance_hall(Rect2(core.position.x + 33.5, corr_z + corr_w * 0.5, 7.5, inner.end.y - corr_z - corr_w * 0.5), fy)
 		for sx in [-1.0, 1.0]:
 			var wx: float = core.position.x - 0.1 if sx < 0 else core.end.x + 0.1
 			_floor_sign(Vector3(wx, y + 2.5, corr_z - corr_w * 0.5 - 2.2), Vector3(sx, 0, 0), "%d층" % (k + 1))
@@ -290,6 +292,36 @@ func _main_building() -> void:
 	nm.outline_size = 0
 	nm.position = Vector3(-14, y0 + FH * 2 - 0.55, r.end.y + 0.16)
 	region.add_child(nm)
+
+
+## 중앙 현관: 양옆 신발장, 거울, 교훈 액자, 우산꽂이, 발판
+func _entrance_hall(r: Rect2, y: float) -> void:
+	kit.floor_overlay(r, y - 0.005, _mat["hall_floor"])
+	for s in [-1.0, 1.0]:
+		var x: float = r.position.x + 0.35 if s < 0 else r.end.x - 0.35
+		for i in 5:
+			var z := r.position.y + 1.4 + i * 1.6
+			if z > r.end.y - 2.2:
+				break
+			kit.part(Vector3(x, y + 0.9, z), Vector3(0.6, 1.8, 1.5), Color(0.45, 0.33, 0.22), "trim", true)
+			for row in 5:
+				kit.part(Vector3(x - s * 0.31, y + 0.25 + row * 0.33, z), Vector3(0.02, 0.02, 1.45), Color(0.3, 0.22, 0.15), "trim")
+				if rng.randf() < 0.35:
+					kit.part(Vector3(x - s * 0.15, y + 0.12 + row * 0.33, z + rng.randf_range(-0.5, 0.5)), Vector3(0.25, 0.09, 0.1), [Color(0.9, 0.9, 0.9), Color(0.2, 0.2, 0.25), Color(0.8, 0.2, 0.2)][rng.randi() % 3], "trim")
+	# 거울 + 교훈 액자 (복도 쪽 벽 위)
+	kit.part(Vector3(r.get_center().x, y + 2.9, r.position.y + 0.1), Vector3(3.0, 0.9, 0.05), Color(0.45, 0.33, 0.22), "trim")
+	var motto := Label3D.new()
+	motto.text = "바르게  슬기롭게  튼튼하게"
+	motto.font_size = 64
+	motto.pixel_size = 0.005
+	motto.modulate = Color(0.95, 0.9, 0.75)
+	motto.position = Vector3(r.get_center().x, y + 2.9, r.position.y + 0.14)
+	motto.visibility_range_end = 22.0
+	region.add_child(motto)
+	kit.part(Vector3(r.get_center().x, y + 1.5, r.end.y - 0.4), Vector3(0.9, 0.04, 0.6), Color(0.25, 0.2, 0.15), "trim")
+	kit.part(Vector3(r.end.x - 0.6, y + 0.35, r.end.y - 0.8), Vector3(0.35, 0.7, 0.35), Color(0.3, 0.3, 0.32), "metal", true)
+	kit.part(Vector3(r.get_center().x, y + 0.01, r.end.y - 1.2), Vector3(2.4, 0.02, 1.2), Color(0.15, 0.25, 0.18), "trim")
+	kit.grime(r, y + 0.005, FH, 0.6, 0.15)
 
 
 ## 학교 실내 마감: 아래쪽 연녹색 페인트 판 + 나무 몰딩, 위는 크림색 벽

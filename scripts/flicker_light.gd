@@ -1,4 +1,4 @@
-extends OmniLight3D
+extends Light3D
 ## 고장 난 형광등처럼 가끔 지직거리며 깜빡이는 불빛
 
 var _base := 1.0

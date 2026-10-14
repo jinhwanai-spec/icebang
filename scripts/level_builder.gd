@@ -60,9 +60,11 @@ func _moon_shaft(at: Vector3, inward: Vector3) -> void:
 	sl.distance_fade_enabled = true
 	sl.distance_fade_begin = 35.0
 	sl.distance_fade_length = 10.0
+	# (맵을 만드는 중엔 아직 씬 트리 밖이라 global_* 대신 직접 변환을 계산)
+	var from := at - inward * 1.2 + Vector3.UP * 1.0
+	var to := at + inward * 3.0 + Vector3.DOWN * 1.8
+	sl.transform = Transform3D(Basis.looking_at(to - from, Vector3.UP), from)
 	region.add_child(sl)
-	sl.global_position = at - inward * 1.2 + Vector3.UP * 1.0
-	sl.look_at(at + inward * 3.0 + Vector3.DOWN * 1.8, Vector3.UP)
 
 
 ## 층 표시 (계단실 벽에 큰 글자 + 판)
