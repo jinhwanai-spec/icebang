@@ -222,6 +222,9 @@ func _hospital() -> void:
 				var z1 := inner.position.y if side < 0 else inner.end.y
 				kit.wall(Vector3(xw, 0, z0), Vector3(xw, 0, z1), ry, h - 0.2, _mat["base_wall"] if base else _mat["hosp_in"], "w_inner", [[1.2, 2.7, 0.0, BuildingKit.DOOR_H]] if side > 0 else [], 0.18)
 		_hosp_corridor(core, corr_z, corr_w, ry, h, rooms, base)
+		for sx in [-1.0, 1.0]:
+			var wx: float = core.position.x - 0.1 if sx < 0 else core.end.x + 0.1
+			_floor_sign(Vector3(wx, ry + 2.5, corr_z - corr_w * 0.5 - 2.2), Vector3(sx, 0, 0), "B1" if base else ("1F" if fy < 1.0 else "2F"), Color(0.55, 0.12, 0.1) if base else Color(0.15, 0.35, 0.45))
 		# 계단실 끝에 사물함 (숨는 곳) + 엘리베이터
 		props.append(["locker", Vector3(inner.end.x - 0.5, ry, corr_z + corr_w * 0.5 + 2.5), -PI / 2.0])
 		props.append(["locker", Vector3(inner.position.x + 0.5, ry, corr_z + corr_w * 0.5 + 2.5), PI / 2.0])

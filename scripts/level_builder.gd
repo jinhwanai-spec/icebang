@@ -44,6 +44,22 @@ var use_shacks := false
 var debug_rooms: Array = []
 ## (테스트용) 복도 한쪽 끝 위치 (x, z). 없으면 Vector3.INF
 var corridor_probe := Vector3.INF
+## 층 표시 (계단실 벽에 큰 글자 + 판)
+func _floor_sign(p: Vector3, facing: Vector3, text: String, col := Color(0.2, 0.45, 0.4)) -> void:
+	var yaw := atan2(facing.x, facing.z)
+	if kit:
+		kit.part(p, Vector3(1.0, 0.7, 0.04), col, "trim", false, yaw)
+	var l := Label3D.new()
+	l.text = text
+	l.font_size = 128
+	l.pixel_size = 0.004
+	l.modulate = Color(0.95, 0.95, 0.9)
+	l.position = p + facing * 0.04
+	l.rotation.y = yaw
+	l.visibility_range_end = 25.0
+	region.add_child(l)
+
+
 ## (테스트용) 바깥 풍경 확인 위치 [[카메라, 보는 곳], ...]
 var debug_views: Array = []
 var kit: BuildingKit

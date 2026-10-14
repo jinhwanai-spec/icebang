@@ -717,7 +717,7 @@ func _local(base: Vector3, yaw: float, off: Vector3) -> Vector3:
 
 # ================================================================ 자세한 방 꾸미기 (학교·병원·도시 공통)
 
-const RICH_KINDS := ["teachers", "nurse", "toilet", "library", "music", "lab", "computer", "office", "nurse_station", "pharmacy", "operating", "morgue", "boiler", "storage"]
+const RICH_KINDS := ["art", "teachers", "nurse", "toilet", "library", "music", "lab", "computer", "office", "nurse_station", "pharmacy", "operating", "morgue", "boiler", "storage"]
 
 
 ## 벽을 따라 u(0~1) 위치, 벽에서 depth/2 떨어진 곳. 반환 [위치, yaw(앞=방 안쪽)]
@@ -760,6 +760,34 @@ func _furnish_rich(room: Rect2, y: float, kind: String) -> void:
 	var sides: Array = [0, 1, 2, 3].filter(func(s): return s != ds and s != ws)
 	var big := inner.grow(-1.3)
 	match kind:
+		"art":
+			# 이젤 + 그림판, 석고상, 물감 선반, 바닥에 튄 물감
+			for i in 8:
+				var a := TAU * i / 8.0
+				var p := Vector3(c.x + cos(a) * minf(3.2, inner.size.x * 0.35), y, c.y + sin(a) * minf(3.2, inner.size.y * 0.35))
+				if blocks_door(p, Vector3(0.8, 1, 0.8)) or _keep.has_point(Vector2(p.x, p.z)):
+					continue
+				var face := atan2(c.x - p.x, c.y - p.z) + PI
+				if rng.randf() < 0.15:
+					_yawbox(_local(p, face, Vector3(0, 0.1, 0)), Vector3(0.7, 0.05, 1.5), face + 0.5, Color(0.45, 0.32, 0.2), false)
+					continue
+				for s in [-1.0, 1.0]:
+					_yawbox(_local(p, face, Vector3(0.28 * s, 0.8, 0.1)), Vector3(0.04, 1.6, 0.04), face, Color(0.45, 0.32, 0.2), false)
+				_yawbox(_local(p, face, Vector3(0, 0.75, -0.25)), Vector3(0.04, 1.5, 0.04), face, Color(0.45, 0.32, 0.2), false)
+				_yawbox(_local(p, face, Vector3(0, 1.25, 0.12)), Vector3(0.7, 0.55, 0.03), face, Color(0.92, 0.9, 0.85), false)
+				for k in 3:
+					_yawbox(_local(p, face, Vector3(rng.randf_range(-0.25, 0.25), 1.25 + rng.randf_range(-0.18, 0.18), 0.14)), Vector3(rng.randf_range(0.08, 0.25), rng.randf_range(0.05, 0.2), 0.005), face, Color.from_hsv(rng.randf(), 0.7, 0.8), false)
+				_chair(_local(p, face, Vector3(0, 0, 0.75)), face + PI, Color(0.45, 0.32, 0.2), rng.randf() < 0.15)
+			var bust := Vector3(c.x, y, c.y)
+			if not _keep.has_point(Vector2(c.x, c.y)):
+				part(bust + Vector3.UP * 0.45, Vector3(0.5, 0.9, 0.5), Color(0.85, 0.85, 0.82), "trim", true)
+				part(bust + Vector3.UP * 1.05, Vector3(0.3, 0.3, 0.25), Color(0.95, 0.95, 0.92), "trim")
+				part(bust + Vector3.UP * 1.32, Vector3(0.2, 0.26, 0.22), Color(0.95, 0.95, 0.92), "trim")
+			for sd in sides:
+				_along_wall(inner, sd, 0.45, 1.9, y, func(p, yw): if rng.randf() < 0.5: _rack(p, yw))
+			for k in 8:
+				part(Vector3(rng.randf_range(inner.position.x + 0.5, inner.end.x - 0.5), y + 0.005, rng.randf_range(inner.position.y + 0.5, inner.end.y - 0.5)), Vector3(rng.randf_range(0.2, 0.6), 0.005, rng.randf_range(0.2, 0.6)), Color.from_hsv(rng.randf(), 0.75, 0.7), "trim", false, rng.randf() * PI)
+			_curtains(room, y, ws)
 		"teachers", "office":
 			# 책상 섬 (2줄로 마주 보는 책상 + 칸막이), 벽에는 서류함
 			var cols := maxi(1, int(big.size.x / 1.5))
@@ -1433,8 +1461,12 @@ func _ward(room: Rect2, y: float) -> void:
 			if rng.randf() < 0.6:
 				var cp := _local(p, yaw, Vector3(0.75, room_h * 0.5 - 0.1, 0.0))
 				_yawbox(Vector3(cp.x, y + room_h - 0.25 - (room_h - 0.6) * 0.5, cp.z), Vector3(0.03, room_h - 0.8, 2.0), yaw, Color(0.55, 0.72, 0.68).darkened(rng.randf() * 0.25), false)
-			# 머리맡 협탁 + 링거대
+			# 머리맡 협탁 + 링거대 (+ 가끔 켜진 심전도 모니터)
 			_yawbox(_local(p, yaw, Vector3(-0.75, 0.4, -0.75)), Vector3(0.45, 0.8, 0.45), yaw, Color(0.82, 0.82, 0.8), true)
+			if rng.randf() < 0.45:
+				_yawbox(_local(p, yaw, Vector3(-0.75, 1.05, -0.8)), Vector3(0.4, 0.3, 0.12), yaw + 0.3, Color(0.18, 0.2, 0.22), false, "metal")
+				var on := rng.randf() < 0.5
+				_yawbox(_local(p, yaw, Vector3(-0.73, 1.05, -0.73)), Vector3(0.32, 0.22, 0.01), yaw + 0.3, Color(0.2, 0.95, 0.4) if on else Color(0.03, 0.04, 0.04), false, "lit" if on else "glass")
 			if rng.randf() < 0.6:
 				var iv := _local(p, yaw, Vector3(0.6, 0, -0.85))
 				part(iv + Vector3.UP * 0.95, Vector3(0.03, 1.9, 0.03), Color(0.7, 0.7, 0.72), "metal")

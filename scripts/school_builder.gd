@@ -237,7 +237,7 @@ func _main_building() -> void:
 	var floors := [
 		[[12, "teachers", "교무실"], [8, "nurse", "보건실"], [7, "toilet", "화장실"], [11, "classroom", "1-1"], [11, "classroom", "1-2"], [12, "lab", "과학실"], [12, "classroom", "1-3"]],
 		[[10, "office", "행정실"], [12, "computer", "컴퓨터실"], [11.5, "music", "음악실"], [7.5, "", ""], [11, "classroom", "1-4"], [11, "classroom", "1-5"], [10, "office", "방송실"]],
-		[[11, "classroom", "2-1"], [11, "classroom", "2-2"], [7, "toilet", "화장실"], [11, "classroom", "2-3"], [12, "classroom", "미술실"], [11, "classroom", "2-4"], [10, "office", "교장실"]],
+		[[11, "classroom", "2-1"], [11, "classroom", "2-2"], [7, "toilet", "화장실"], [11, "classroom", "2-3"], [12, "art", "미술실"], [11, "classroom", "2-4"], [10, "office", "교장실"]],
 		[[11, "classroom", "2-5"], [14, "library", "도서실"], [11, "classroom", "3-1"], [11, "classroom", "3-2"], [10, "teachers", "연구실"], [12, "classroom", "3-3"]],
 	]
 	for k in 2:
@@ -246,7 +246,7 @@ func _main_building() -> void:
 		for rm in rooms:
 			var rr: Rect2 = rm["rect"]
 			var kind: String = rm["kind"]
-			kit.floor_overlay(rr, y + (0.06 if k == 0 else 0.0), _mat["wood"] if kind in ["classroom", "music", "library", "teachers"] else (_mat["wtile_floor"] if kind == "toilet" else _mat["lino"]))
+			kit.floor_overlay(rr, y + (0.06 if k == 0 else 0.0), _mat["wood"] if kind in ["classroom", "music", "library", "teachers", "art"] else (_mat["wtile_floor"] if kind == "toilet" else _mat["lino"]))
 			var spot := kit.furnish_room(rm, y, rng.randf() < 0.35)
 			debug_rooms.append([rm, y])
 			kit.grime(rr, y + (0.07 if k == 0 else 0.01), FH, 0.8, 0.12)
@@ -266,6 +266,9 @@ func _main_building() -> void:
 				kit.wall(Vector3(xw, 0, z0), Vector3(xw, 0, z1), y, FH - 0.2, _mat["school_in"], "w_inner", [[1.0, 2.5, 0.0, BuildingKit.DOOR_H]] if side > 0 else [], 0.18)
 		var fy := y + (0.07 if k == 0 else 0.01)
 		_corridor_dressing(core, inner, corr_z, corr_w, y, fy, rooms)
+		for sx in [-1.0, 1.0]:
+			var wx: float = core.position.x - 0.1 if sx < 0 else core.end.x + 0.1
+			_floor_sign(Vector3(wx, y + 2.5, corr_z - corr_w * 0.5 - 2.2), Vector3(sx, 0, 0), "%d층" % (k + 1))
 		# 끝 칸(계단실)에 사물함 하나씩 + 청소도구
 		props.append(["locker", Vector3(inner.end.x - 0.5, y, corr_z + corr_w * 0.5 + 2.2), -PI / 2.0])
 		props.append(["locker", Vector3(inner.position.x + 0.5, y, corr_z + corr_w * 0.5 + 2.2), PI / 2.0])
