@@ -93,7 +93,8 @@ func build(target: Node3D, map_seed: int) -> void:
 	rng.seed = map_seed
 	_make_materials()
 	kit = BuildingKit.new(self)
-	floor_levels = [0.0, 3.2]
+	floor_levels = [0.0, CURB + 3.5]
+	debug_views = [[Vector3(-16, 1.7, -66), Vector3(-16, 2, -30)], [Vector3(-12, 1.7, -16), Vector3(20, 3, -16)], [Vector3(16, 1.7, 10), Vector3(16, 3, 40)], [Vector3(-48, 1.7, 30), Vector3(-30, 4, 30)]]
 	_ground()
 	_outer_walls()
 	_blocks()
@@ -903,6 +904,37 @@ func _road_props() -> void:
 				_lamp(Vector3(c + ROAD_HALF - 0.6, 0, t))
 				_lamp(Vector3(t, 0, c - ROAD_HALF + 0.6))
 			t += 17.0
+	# 도로 위 얼룩·금·종이, 비 온 뒤 물웅덩이 (밤 불빛이 반사됨)
+	var puddle := StandardMaterial3D.new()
+	puddle.albedo_color = Color(0.03, 0.035, 0.05)
+	puddle.metallic = 0.6
+	puddle.roughness = 0.05
+	for i in 140:
+		var c: float = ROAD_CENTERS[rng.randi() % ROAD_CENTERS.size()]
+		var along := rng.randf_range(-HALF + 4.0, HALF - 4.0)
+		var off := rng.randf_range(-ROAD_HALF + 0.5, ROAD_HALF - 0.5)
+		var pos := Vector3(c + off, 0.012, along) if rng.randf() < 0.5 else Vector3(along, 0.012, c + off)
+		var r := rng.randf()
+		if r < 0.35:
+			kit.decal(pos, Vector3.UP, rng.randf_range(1.0, 2.6), "crack")
+		elif r < 0.7:
+			kit.decal(pos, Vector3.UP, rng.randf_range(1.2, 2.8), "stain")
+		elif r < 0.85:
+			kit.decal(pos, Vector3.UP, rng.randf_range(0.8, 1.4), "papers")
+		elif r < 0.9:
+			kit.decal(pos, Vector3.UP, rng.randf_range(1.0, 2.0), "blood")
+		else:
+			_box(pos + Vector3.UP * 0.002, Vector3(rng.randf_range(1.2, 3.0), 0.01, rng.randf_range(0.8, 2.2)), puddle, false, rng.randf() * PI)
+	# 쓰레기 봉투 더미 (건물 앞 보도)
+	for i in 30:
+		var c: float = ROAD_CENTERS[rng.randi() % ROAD_CENTERS.size()]
+		var along := rng.randf_range(-HALF + 6.0, HALF - 6.0)
+		var side := ROAD_HALF + 1.6 if rng.randf() < 0.5 else -ROAD_HALF - 1.6
+		var pos := Vector3(c + side, 0.05, along) if rng.randf() < 0.5 else Vector3(along, 0.05, c + side)
+		if _near_spawn(pos, 6.0) or not _far_from_roads(along, 6.0):
+			continue
+		for k in rng.randi_range(2, 5):
+			kit.part(pos + Vector3(rng.randf_range(-0.6, 0.6), 0.25, rng.randf_range(-0.6, 0.6)), Vector3(0.55, 0.5, 0.5), Color(0.06, 0.06, 0.07), "trim", false, rng.randf() * PI)
 	# 도로 가장자리에 자란 잡초
 	for i in 25:
 		var c: float = ROAD_CENTERS[rng.randi() % ROAD_CENTERS.size()]
