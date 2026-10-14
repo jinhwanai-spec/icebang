@@ -17,7 +17,7 @@ func build(target: Node3D, map_seed: int) -> void:
 	survivor_spawns = [Vector3(-2, 0.3, 64), Vector3(2, 0.3, 64), Vector3(-2, 0.3, 67), Vector3(2, 0.3, 67)]
 	seeker_spawns = [Vector3(-39, 0.3, -52), Vector3(60, 0.3, -50), Vector3(-62, 0.3, -20)]
 	floor_levels = [0.0, FH]
-	debug_views = [[Vector3(0, 1.7, -18), Vector3(0, 4, -50)], [Vector3(28, 1.7, -22), Vector3(0, 4, -50)], [Vector3(40, 1.7, -30), Vector3(60, 4, -53)], [Vector3(-20, 1.7, 10), Vector3(0, 1, 30)], [Vector3(45, 1.7, 20), Vector3(55, 1, 12)]]
+	debug_views = [[Vector3(64, 1.7, -42), Vector3(58, 2.5, -60)], [Vector3(-38, 5.7, -50), Vector3(-20, 5.0, -52)], [Vector3(0, 1.7, -18), Vector3(0, 4, -50)], [Vector3(28, 1.7, -22), Vector3(0, 4, -50)], [Vector3(40, 1.7, -30), Vector3(60, 4, -53)], [Vector3(-20, 1.7, 10), Vector3(0, 1, 30)], [Vector3(45, 1.7, 20), Vector3(55, 1, 12)]]
 	_make_materials()
 	_mat["dirt_field"] = _noise_mat(Color(0.42, 0.33, 0.24), 0.35, 1.0, 5.0)
 	_mat["school_wall"] = _pattern_mat("plaster", Color(0.78, 0.74, 0.62), 3.0)
@@ -32,6 +32,7 @@ func build(target: Node3D, map_seed: int) -> void:
 	_mat["wood"] = _pattern_mat("woodfloor", Color(0.55, 0.4, 0.26), 2.0)
 	_mat["lino"] = _pattern_mat("lino", Color(0.5, 0.5, 0.48), 1.2)
 	_mat["wtile_floor"] = _pattern_mat("wtile", Color(0.6, 0.62, 0.62), 0.6)
+	_mat["gym_pad"] = _pattern_mat("paint", Color(0.2, 0.32, 0.6), 2.0)
 	kit = BuildingKit.new(self)
 	_mark_indestructible(_box(Vector3(0, -0.5, 0), Vector3(half * 2, 1, half * 2), _mat["grass_ground"]))
 	_school_fence()
@@ -272,6 +273,7 @@ func _main_building() -> void:
 			kit.grime(Rect2(ex, corr_z + corr_w * 0.5, bay, inner.end.y - corr_z - corr_w * 0.5), fy, FH, 0.6, 0.1)
 	kit.wainscot_mat = null
 	kit.lining_mat = null
+	kit.corridor_windows = false
 	# 옥상: 난간·물탱크·실외기 + 학교 이름 글자 (정면 2층 위)
 	_rooftop(r, y0 + FH * 2 + 0.2)
 	_rooftop(r.grow(-6.0), y0 + FH * 2 + 0.2)
@@ -291,6 +293,7 @@ func _school_finish() -> void:
 	kit.lining_mat = _mat["school_in"]
 	kit.wainscot_h = 1.2
 	kit.room_h = FH
+	kit.corridor_windows = true
 	kit.trim_col = Color(0.36, 0.27, 0.18)
 
 
@@ -395,7 +398,16 @@ func _gym() -> void:
 			var gc := a + dir * u
 			gc.y = y0 + 6.2
 			kit.block(gc, Vector3(2.4, 2.0, 0.04), _deco_mat("glass"), "b_glass", true, Basis(dir, Vector3.UP, dir.cross(Vector3.UP).normalized()), false, Color(0.08, 0.1, 0.12))
-		kit.wall(a, b, y0, h, _mat["concrete"], "w_gym", ops, 0.35)
+		# 체육관 안쪽: 파란 벽 보호대(매트) + 흰 벽
+		kit.wainscot_mat = _mat["gym_pad"]
+		kit.wainscot_h = 1.9
+		kit.trim_col = Color(0.2, 0.22, 0.3)
+		kit.lining_mat = _mat["school_in"]
+		var gn := Vector3(0, 0, -1) if si == 0 else (Vector3(1, 0, 0) if si == 1 else (Vector3(0, 0, 1) if si == 2 else Vector3(-1, 0, 0)))
+		var in_side := -1 if dir.cross(Vector3.UP).dot(gn) > 0.0 else 1
+		kit.wall(a, b, y0, h, _mat["concrete"], "w_gym", ops, 0.35, in_side)
+		kit.wainscot_mat = null
+		kit.lining_mat = null
 	kit.slab(r.grow(-0.2), y0 + 0.06, _mat["gym_floor"], "w_gymfloor", [], false, 0.06)
 	kit.slab(r.grow(0.3), y0 + h + 0.3, _mat["roof"] if _mat.has("roof") else _mat["concrete"], "w_roof", [], true, 0.4)
 	# 아치형 지붕 느낌 (보이기만)

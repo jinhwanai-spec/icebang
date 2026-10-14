@@ -29,6 +29,8 @@ var wainscot_h := 1.1
 var trim_col := Color(0.3, 0.27, 0.24)
 ## 바깥벽 안쪽 면에 덧바르는 실내 벽지 (바깥 재질이 안에서 보이지 않게)
 var lining_mat: Material = null
+## 복도식 건물(학교): 교실 복도 벽에 높은 창문을 낼지
+var corridor_windows := false
 var _lining_side := 0
 
 
@@ -475,6 +477,22 @@ func partition(w: Array, y: float, h: float, mat: Material, key: String, cut: Ar
 	var L := Vector2(b.x - a.x, b.z - a.z).length()
 	var du: float = w[2]
 	var ops := [[du - DOOR_W * 0.5, du + DOOR_W * 0.5, 0.0, DOOR_H]]
+	# 복도 쪽 높은 창 (학교 교실처럼): 문 주변은 피해서
+	if corridor_windows and w.size() > 3 and w[3]:
+		var dirw := (b - a).normalized()
+		var basis_w := Basis(dirw, Vector3.UP, dirw.cross(Vector3.UP).normalized())
+		var u := 1.0
+		while u + 1.2 < L - 0.6:
+			if absf(u + 0.6 - du) > DOOR_W * 0.5 + 0.9:
+				ops.append([u, u + 1.2, 1.5, 2.35])
+				var gc := a + dirw * (u + 0.6)
+				gc.y = y + 1.925
+				block(gc, Vector3(1.2, 0.85, 0.03), lb._deco_mat("glass"), "b_glass", true, basis_w, false, Color(0.12, 0.15, 0.2))
+				var yaw := atan2(-dirw.z, dirw.x)
+				part(gc + Vector3.UP * -0.44, Vector3(1.26, 0.05, 0.24), Color(0.36, 0.27, 0.18), "trim", false, yaw)
+				part(gc + Vector3.UP * 0.44, Vector3(1.26, 0.05, 0.24), Color(0.36, 0.27, 0.18), "trim", false, yaw)
+				part(gc, Vector3(0.04, 0.85, 0.24), Color(0.36, 0.27, 0.18), "trim", false, yaw)
+			u += 1.6
 	for c in cut:
 		var cr: Rect2 = (c as Rect2).grow(0.15)
 		# 벽 선분이 영역과 겹치는 구간을 구멍으로
@@ -1498,7 +1516,7 @@ func wing(r: Rect2, y: float, fh: float, along_x: bool, corridor_w: float, left:
 				a = Vector3(x, 0, rr.position.y)
 				b = Vector3(x, 0, rr.end.y)
 			var du := clampf(L * rng.randf_range(0.25, 0.75), 1.0, L - 1.0)
-			partition([a, b, du], y, fh - FLOOR_T, wall_mat, "w_inner", [], door_chance)
+			partition([a, b, du, true], y, fh - FLOOR_T, wall_mat, "w_inner", [], door_chance)
 			var door_at := a + (b - a).normalized() * du
 			# 방 사이 벽 (다음 방과의 경계, 문 없음)
 			if i < list.size() - 1:
