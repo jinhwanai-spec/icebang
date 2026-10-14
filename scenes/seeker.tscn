@@ -4,14 +4,14 @@
 [ext_resource type="Script" path="res://scripts/seeker_body.gd" id="2_body"]
 
 [sub_resource type="CapsuleShape3D" id="Shape_body"]
-radius = 0.55
-height = 2.6
+radius = 0.45
+height = 2.1
 
 [node name="Seeker" type="CharacterBody3D"]
 script = ExtResource("1_script")
 
 [node name="Collision" type="CollisionShape3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.3, 0)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.05, 0)
 shape = SubResource("Shape_body")
 
 [node name="Body" type="Node3D" parent="."]
@@ -44,4 +44,4 @@ attenuation_filter_cutoff_hz = 7000.0
 [node name="NavigationAgent3D" type="NavigationAgent3D" parent="."]
 path_desired_distance = 0.6
 target_desired_distance = 0.8
-radius = 0.55
+radius = 0.45

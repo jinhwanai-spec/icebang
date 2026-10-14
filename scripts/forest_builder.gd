@@ -454,11 +454,11 @@ func _cabin(spot: Vector3) -> void:
 		var dir := (b - a).normalized()
 		var ops := []
 		if si == door_side:
-			ops.append([L * 0.5 - 0.75, L * 0.5 + 0.75, 0.0, 2.3])
+			ops.append([L * 0.5 - 0.9, L * 0.5 + 0.9, 0.0, 2.3])
 			var dc := a + dir * (L * 0.5)
 			kit._door_frame(dc, dir, Color(0.25, 0.17, 0.1))
 			if rng.randf() < 0.6:
-				props.append(["door", dc, atan2(dir.z, -dir.x) + PI])
+				props.append(["door", dc, atan2(dir.z, -dir.x) + PI, 1.7])
 		else:
 			ops.append([L * 0.5 - 0.6, L * 0.5 + 0.6, 1.0, 2.0])
 			var gc := a + dir * (L * 0.5)

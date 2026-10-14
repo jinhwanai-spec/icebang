@@ -53,6 +53,11 @@ func setup(prop_kind: String, mats: Dictionary) -> void:
 				for y in [-0.7, 0.7]:
 					_deco(_door_body, Vector3(-0.6, y, z * 1.25), Vector3(0.28, 0.07, 0.02), _mat_col(Color(0.15, 0.15, 0.15)))
 				_deco(_door_body, Vector3(0.55, 0.0, z * 1.6), Vector3(0.06, 0.06, 0.08), _mat_col(Color(0.55, 0.45, 0.2), 0.6))
+			# 문틀이 넓으면 문짝도 넓게 (경첩은 문틀 한쪽 끝)
+			var dw := float(get_meta("door_w", 1.4))
+			if absf(dw - 1.4) > 0.01:
+				_hinge.position.x = -dw * 0.5
+				_hinge.scale.x = dw / 1.4
 			_set_door(true, false)
 		"pallet":
 			add_to_group("prop")
@@ -171,6 +176,9 @@ func _update_door(delta: float) -> void:
 
 func _set_door(open: bool, sound: bool) -> void:
 	_open = open
+	# 열린 문짝은 부딪히지 않음 (벽에 붙어 있는 셈이라 봇·사람이 걸리지 않게)
+	if _door_body:
+		_door_body.collision_layer = 0 if open else 1
 	var tw := create_tween()
 	tw.tween_property(_hinge, "rotation:y", -1.6 if open else 0.0, 0.25)
 	if sound:

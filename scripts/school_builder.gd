@@ -5,9 +5,9 @@ extends LevelBuilder
 ## - 체육관(농구 코트·관람석·무대·체육 창고), 넓은 운동장(트랙·축구 골대·스탠드·놀이터·국기 게양대)
 ## - 학교 담장과 정문. 생존자는 정문에서 시작
 
-const FH := 3.6
-const MAIN := Rect2(-34.0, -60.0, 68.0, 21.0)
-const GYM := Rect2(40.0, -60.0, 26.0, 24.0)
+const FH := 4.0
+const MAIN := Rect2(-44.0, -66.0, 88.0, 28.0)
+const GYM := Rect2(48.0, -66.0, 24.0, 26.0)
 
 
 func build(target: Node3D, map_seed: int) -> void:
@@ -15,7 +15,7 @@ func build(target: Node3D, map_seed: int) -> void:
 	rng.seed = map_seed
 	half = 74.0
 	survivor_spawns = [Vector3(-2, 0.3, 64), Vector3(2, 0.3, 64), Vector3(-2, 0.3, 67), Vector3(2, 0.3, 67)]
-	seeker_spawns = [Vector3(-30, 0.3, -48), Vector3(53, 0.3, -46), Vector3(-62, 0.3, -20)]
+	seeker_spawns = [Vector3(-39, 0.3, -52), Vector3(60, 0.3, -50), Vector3(-62, 0.3, -20)]
 	floor_levels = [0.0, FH]
 	_make_materials()
 	_mat["dirt_field"] = _noise_mat(Color(0.42, 0.33, 0.24), 0.35, 1.0, 5.0)
@@ -24,6 +24,13 @@ func build(target: Node3D, map_seed: int) -> void:
 	_mat["hall_floor"] = _pattern_mat("tile", Color(0.55, 0.55, 0.5), 1.2)
 	_mat["gym_floor"] = _pattern_mat("planks", Color(0.62, 0.45, 0.28), 1.6)
 	_mat["grass_ground"] = _noise_mat(Color(0.16, 0.24, 0.12), 0.5, 1.0, 3.0)
+	_mat["school_in"] = _pattern_mat("paint", Color(0.74, 0.71, 0.62), 2.5)
+	_mat["wains"] = _pattern_mat("paint", Color(0.42, 0.55, 0.45), 2.5)
+	_mat["hall_floor"] = _pattern_mat("terrazzo", Color(0.58, 0.57, 0.53), 1.5)
+	_mat["ceil"] = _pattern_mat("ceiling", Color(0.66, 0.66, 0.63), 1.2)
+	_mat["wood"] = _pattern_mat("woodfloor", Color(0.55, 0.4, 0.26), 2.0)
+	_mat["lino"] = _pattern_mat("lino", Color(0.5, 0.5, 0.48), 1.2)
+	_mat["wtile_floor"] = _pattern_mat("wtile", Color(0.6, 0.62, 0.62), 0.6)
 	kit = BuildingKit.new(self)
 	_mark_indestructible(_box(Vector3(0, -0.5, 0), Vector3(half * 2, 1, half * 2), _mat["grass_ground"]))
 	_school_fence()
@@ -111,13 +118,13 @@ func _playground() -> void:
 	for k in 4:
 		_box(Vector3(field.position.x - 1.5 - k * 0.9, 0.25 + k * 0.45, cz), Vector3(0.9, 0.5 + k * 0.9, 40.0), _mat["concrete"])
 	# 국기 게양대 (본관 앞)
-	_box(Vector3(-6, 4.5, -36), Vector3(0.12, 9.0, 0.12), _mat["metal"])
-	_box(Vector3(-6, 0.25, -36), Vector3(1.2, 0.5, 1.2), _mat["concrete"])
+	_box(Vector3(-12, 4.5, -33), Vector3(0.12, 9.0, 0.12), _mat["metal"])
+	_box(Vector3(-12, 0.25, -33), Vector3(1.2, 0.5, 1.2), _mat["concrete"])
 	var flag := _flat_mat(Color(0.85, 0.85, 0.82), 0.9)
 	flag.cull_mode = BaseMaterial3D.CULL_DISABLED
-	_box(Vector3(-5.3, 8.3, -36), Vector3(1.4, 0.9, 0.02), flag, false)
+	_box(Vector3(-11.3, 8.3, -33), Vector3(1.4, 0.9, 0.02), flag, false)
 	# 조회대 (본관 앞 단상)
-	_box(Vector3(2, 0.5, -36), Vector3(6, 1.0, 3), _mat["concrete"])
+	_box(Vector3(12, 0.5, -32), Vector3(6, 1.0, 3), _mat["concrete"])
 	generator_spots.append(Vector3(cx, 0.05, cz))
 	generator_spots.append(Vector3(cx - 15, 0.05, cz + 24))
 	generator_spots.append(Vector3(cx + 15, 0.05, cz - 24))
@@ -130,24 +137,30 @@ func _main_building() -> void:
 	var y0 := 0.05
 	var inner := r.grow(-BuildingKit.WALL_T)
 	var corr_z := r.get_center().y
-	var corr_w := 3.0
-	# 계단: 양 끝 칸 (서쪽·동쪽). 북쪽에서 복도 쪽(+z)으로 올라감
-	var stair_w := Rect2(inner.position.x + 0.4, corr_z - corr_w * 0.5 - 7.2, 1.8, 6.0)
-	var stair_e := Rect2(inner.end.x - 2.2, corr_z - corr_w * 0.5 - 7.2, 1.8, 6.0)
-	# 외벽
+	corridor_probe = Vector3(inner.position.x + 3.5, 0, corr_z)
+	var corr_w := 4.0
+	var bay := 7.5  # 양 끝 계단실 칸 길이
+	# 계단: 양 끝 칸. 북쪽에서 복도 쪽(+z)으로 올라감 (폭 2.4m)
+	var run := 7.0
+	var zs := corr_z - corr_w * 0.5 - 1.4 - run
+	var stair_w := Rect2(inner.position.x + 0.6, zs, 2.4, run)
+	var stair_e := Rect2(inner.end.x - 3.0, zs, 2.4, run)
+	var trim := Color(0.55, 0.5, 0.42)
+	# 외벽 (안쪽 면에는 실내 마감)
 	var sides := [
 		[Vector3(r.position.x, 0, r.position.y), Vector3(r.end.x, 0, r.position.y), Vector3(0, 0, -1)],
 		[Vector3(r.end.x, 0, r.position.y), Vector3(r.end.x, 0, r.end.y), Vector3(1, 0, 0)],
 		[Vector3(r.end.x, 0, r.end.y), Vector3(r.position.x, 0, r.end.y), Vector3(0, 0, 1)],
 		[Vector3(r.position.x, 0, r.end.y), Vector3(r.position.x, 0, r.position.y), Vector3(-1, 0, 0)],
 	]
-	var trim := Color(0.55, 0.5, 0.42)
+	_school_finish()
 	for si in 4:
 		var a: Vector3 = sides[si][0]
 		var b: Vector3 = sides[si][1]
 		var n: Vector3 = sides[si][2]
 		var L := Vector2(b.x - a.x, b.z - a.z).length()
 		var dir := (b - a).normalized()
+		var in_side := -1 if dir.cross(Vector3.UP).dot(n) > 0.0 else 1
 		for k in 2:
 			var y := y0 + k * FH
 			var ops := []
@@ -158,32 +171,37 @@ func _main_building() -> void:
 				elif si == 1 or si == 3:
 					doors = [L - (corr_z - r.position.y) if si == 3 else (corr_z - r.position.y)]  # 복도 끝 문
 			for du in doors:
-				ops.append([du - 0.75, du + 0.75, 0.0, BuildingKit.DOOR_H])
+				ops.append([du - 0.9, du + 0.9, 0.0, BuildingKit.DOOR_H])
 				var dc: Vector3 = a + dir * du
 				dc.y = y
 				kit._door_frame(dc, dir, trim.darkened(0.4))
+				_exit_sign(dc + Vector3.UP * (BuildingKit.DOOR_H + 0.35) - n * 0.2, -n)
 				if rng.randf() < 0.5:
-					props.append(["door", dc, atan2(dir.z, -dir.x) + PI])
-			var count := int((L - 1.0) / 2.2)
+					props.append(["door", dc, atan2(dir.z, -dir.x) + PI, 1.7])
+			var count := int((L - 1.0) / 2.4)
 			var gap := (L - 1.0) / count
 			for i in count:
 				var u := 0.5 + gap * (i + 0.5)
 				var near_door := false
 				for du in doors:
-					if absf(u - du) < 1.5:
+					if absf(u - du) < 1.6:
 						near_door = true
 				if near_door:
 					continue
-				ops.append([u - 0.75, u + 0.75, 0.9, 2.6])
+				ops.append([u - 0.8, u + 0.8, 0.95, 2.95])
 				var gc := a + dir * u
-				gc.y = y + 1.75
-				var lit := rng.randf() < 0.06
-				kit.block(gc, Vector3(1.5, 1.7, 0.04), _deco_mat("lit" if lit else "glass"), "b_" + ("lit" if lit else "glass"), true, Basis(dir, Vector3.UP, dir.cross(Vector3.UP).normalized()), false, Color(0.9, 0.85, 0.6) if lit else Color(0.08, 0.1, 0.12))
+				gc.y = y + 1.95
+				var lit := rng.randf() < 0.05
+				kit.block(gc, Vector3(1.6, 2.0, 0.04), _deco_mat("lit" if lit else "glass"), "b_" + ("lit" if lit else "glass"), true, Basis(dir, Vector3.UP, dir.cross(Vector3.UP).normalized()), false, Color(0.9, 0.85, 0.6) if lit else Color(0.08, 0.1, 0.12))
 				var fn := gc + n * (BuildingKit.WALL_T * 0.5)
 				var tt := Vector3.UP.cross(n)
-				_bx("trim", fn + n * 0.03, tt, n, Vector3(0.06, 1.7, 0.05), Color(0.2, 0.2, 0.22))
-				_bx("trim", fn + Vector3.UP * -0.9 + n * 0.08, tt, n, Vector3(1.7, 0.08, 0.2), trim)
-			kit.wall(a, b, y, FH, _mat["school_wall"], "w_school", ops)
+				_bx("trim", fn + n * 0.03, tt, n, Vector3(0.06, 2.0, 0.05), Color(0.2, 0.2, 0.22))
+				_bx("trim", fn + n * 0.03 + Vector3.UP * 0.35, tt, n, Vector3(1.6, 0.05, 0.05), Color(0.2, 0.2, 0.22))
+				_bx("trim", fn + Vector3.UP * -1.05 + n * 0.08, tt, n, Vector3(1.8, 0.08, 0.2), trim)
+				# 안쪽 창턱
+				var fi := gc - n * (BuildingKit.WALL_T * 0.5)
+				_bx("trim", fi + Vector3.UP * -1.0 - n * 0.08, tt, -n, Vector3(1.7, 0.05, 0.18), Color(0.75, 0.72, 0.65))
+			kit.wall(a, b, y, FH, _mat["school_wall"], "w_school", ops, BuildingKit.WALL_T, in_side)
 		# 층 띠·처마
 		var face := (a + b) * 0.5 + n * (BuildingKit.WALL_T * 0.5)
 		var tt := Vector3.UP.cross(n)
@@ -191,62 +209,144 @@ func _main_building() -> void:
 		_bx("trim", face + n * 0.14 + Vector3.UP * (y0 + FH * 2 + 0.2), tt, n, Vector3(L + 0.4, 0.45, 0.3), trim.darkened(0.1))
 		_bx("trim", face + n * 0.06 + Vector3.UP * (y0 + 0.3), tt, n, Vector3(L, 0.6, 0.12), Color(0.35, 0.33, 0.3))
 	# 현관 차양 + 학교 이름·시계
-	_bx("trim", Vector3(0, y0 + 3.1, r.end.y + 1.6), Vector3.RIGHT, Vector3.BACK, Vector3(6.0, 0.25, 3.2), Color(0.5, 0.47, 0.42))
-	for x in [-2.7, 2.7]:
-		kit.part(Vector3(x, y0 + 1.5, r.end.y + 3.0), Vector3(0.3, 3.0, 0.3), Color(0.55, 0.52, 0.47), "trim", true)
-	kit.part(Vector3(0, y0 + 6.2, r.end.y + 0.2), Vector3(1.2, 1.2, 0.15), Color(0.95, 0.95, 0.9))
-	kit.part(Vector3(0, y0 + 6.3, r.end.y + 0.29), Vector3(0.05, 0.45, 0.02), Color(0.1, 0.1, 0.1))
-	kit.part(Vector3(0.12, y0 + 6.2, r.end.y + 0.29), Vector3(0.3, 0.05, 0.02), Color(0.1, 0.1, 0.1))
+	_bx("trim", Vector3(0, y0 + 3.4, r.end.y + 1.8), Vector3.RIGHT, Vector3.BACK, Vector3(7.0, 0.25, 3.6), Color(0.5, 0.47, 0.42))
+	for x in [-3.2, 3.2]:
+		kit.part(Vector3(x, y0 + 1.7, r.end.y + 3.4), Vector3(0.3, 3.4, 0.3), Color(0.55, 0.52, 0.47), "trim", true)
+	kit.part(Vector3(0, y0 + 6.6, r.end.y + 0.2), Vector3(1.2, 1.2, 0.15), Color(0.95, 0.95, 0.9))
+	kit.part(Vector3(0, y0 + 6.7, r.end.y + 0.29), Vector3(0.05, 0.45, 0.02), Color(0.1, 0.1, 0.1))
+	kit.part(Vector3(0.12, y0 + 6.6, r.end.y + 0.29), Vector3(0.3, 0.05, 0.02), Color(0.1, 0.1, 0.1))
 	# 바닥·천장·지붕
 	kit.slab(inner, y0 + 0.06, _mat["hall_floor"], "w_hall", [], false, 0.06)
 	kit.slab(inner, y0 + FH, _mat["hall_floor"], "w_hall", [stair_w, stair_e])
 	kit.slab(r.grow(0.3), y0 + FH * 2 + 0.2, _mat["concrete"], "w_concrete", [], true, 0.3)
+	kit.ceiling(inner, y0 + FH - BuildingKit.FLOOR_T, _mat["ceil"], [stair_w, stair_e])
+	kit.ceiling(inner, y0 + FH * 2 - 0.1, _mat["ceil"])
 	for st in [stair_w, stair_e]:
-		kit.stairs(st, false, true, y0, FH)
+		kit.stairs(st, false, true, y0, FH, Color(0.55, 0.53, 0.5))
 		kit.hole_rail(st, y0 + FH, "z+")
+		# 계단 옆 벽 (난간 대신 막힌 벽 + 손잡이)
+		var sx: float = st.end.x + 0.15 if st.position.x < 0.0 else st.position.x - 0.15
+		kit.wall(Vector3(sx, 0, st.position.y), Vector3(sx, 0, st.end.y), y0, 1.0, _mat["school_in"], "w_inner", [], 0.12, 2)
 	# 층별 방 (복도 양쪽)
-	var core := Rect2(inner.position.x + 6.0, inner.position.y, inner.size.x - 12.0, inner.size.y)
+	var core := Rect2(inner.position.x + bay, inner.position.y, inner.size.x - bay * 2.0, inner.size.y)
 	var floors := [
-		[[10, "teachers", "교무실"], [7, "nurse", "보건실"], [6, "toilet", "화장실"], [9, "classroom", "1-1"], [9, "classroom", "1-2"], [9, "lab", "과학실"]],
-		[[9, "classroom", "1-3"], [9, "classroom", "1-4"], [9, "computer", "컴퓨터실"], [6, "", ""], [9, "office", "행정실"], [9, "music", "음악실"]],
-		[[9, "classroom", "2-1"], [9, "classroom", "2-2"], [6, "toilet", "화장실"], [14, "library", "도서실"], [9, "classroom", "2-3"]],
-		[[9, "classroom", "2-4"], [9, "classroom", "2-5"], [9, "classroom", "미술실"], [9, "office", "방송실"], [9, "classroom", "3-1"]],
+		[[12, "teachers", "교무실"], [8, "nurse", "보건실"], [7, "toilet", "화장실"], [11, "classroom", "1-1"], [11, "classroom", "1-2"], [12, "lab", "과학실"], [12, "classroom", "1-3"]],
+		[[10, "office", "행정실"], [12, "computer", "컴퓨터실"], [11.5, "music", "음악실"], [7.5, "", ""], [11, "classroom", "1-4"], [11, "classroom", "1-5"], [10, "office", "방송실"]],
+		[[11, "classroom", "2-1"], [11, "classroom", "2-2"], [7, "toilet", "화장실"], [11, "classroom", "2-3"], [12, "classroom", "미술실"], [11, "classroom", "2-4"], [10, "office", "교장실"]],
+		[[11, "classroom", "2-5"], [14, "library", "도서실"], [11, "classroom", "3-1"], [11, "classroom", "3-2"], [10, "teachers", "연구실"], [12, "classroom", "3-3"]],
 	]
 	for k in 2:
 		var y := y0 + k * FH
 		var rooms: Array = kit.wing(core, y, FH, true, corr_w, floors[k * 2], floors[k * 2 + 1], _mat["school_in"], [], 0.45)
 		for rm in rooms:
 			var rr: Rect2 = rm["rect"]
+			var kind: String = rm["kind"]
+			kit.floor_overlay(rr, y + (0.06 if k == 0 else 0.0), _mat["wood"] if kind in ["classroom", "music", "library", "teachers"] else (_mat["wtile_floor"] if kind == "toilet" else _mat["lino"]))
 			var spot := kit.furnish_room(rm, y, rng.randf() < 0.35)
 			debug_rooms.append([rm, y])
-			if rm["kind"] in ["classroom", "library", "teachers"] and rng.randf() < 0.3:
+			kit.grime(rr, y + (0.07 if k == 0 else 0.01), FH, 0.8, 0.12)
+			if kind in ["classroom", "library", "teachers"] and rng.randf() < 0.3:
 				generator_spots.append(Vector3(rr.get_center().x, y, rr.get_center().y))
-			kit.ceiling_light(Vector3(rr.get_center().x, y + FH - 0.2, rr.get_center().y), Color(0.85, 0.95, 1.0), 0.8, 0.35)
+			for li in maxi(1, int(rr.size.x / 6.0)):
+				var lx := rr.position.x + (li + 0.5) * rr.size.x / maxi(1, int(rr.size.x / 6.0))
+				kit.ceiling_light(Vector3(lx, y + FH - 0.25, rr.get_center().y), Color(0.85, 0.95, 1.0), 0.75, 0.3)
 			var dn := Vector3(0, 0, 1) if rr.get_center().y < corr_z else Vector3(0, 0, -1)
-			kit.room_sign((rm["door"] as Vector3) + Vector3(1.4, y + 2.45, 0) + dn * 0.0, rm["name"], dn)
+			var da: Vector3 = rm["door_at"]
+			kit.room_sign(Vector3(da.x + 1.25, y + 2.6, da.z), rm["name"], dn)
 		# 복도 끝 칸과 계단실 사이 벽 (복도 쪽은 열림)
 		for xw in [core.position.x, core.end.x]:
 			for side in [-1.0, 1.0]:
 				var z0: float = corr_z + side * corr_w * 0.5
 				var z1 := inner.position.y if side < 0 else inner.end.y
 				kit.wall(Vector3(xw, 0, z0), Vector3(xw, 0, z1), y, FH - 0.2, _mat["school_in"], "w_inner", [[1.0, 2.5, 0.0, BuildingKit.DOOR_H]] if side > 0 else [], 0.18)
-		# 복도: 신발장·소화기·게시판
-		for i in 6:
-			var x := core.position.x + 4.0 + i * (core.size.x - 8.0) / 5.0
-			# 신발장은 교실 문 앞을 피해서 (문과 겹치면 옆으로 비킴)
-			var rack_x := x
-			for rm in rooms:
-				var da: Vector3 = rm["door_at"]
-				if da.z > corr_z and absf(da.x - rack_x) < 2.0:
-					rack_x = da.x + (2.2 if rack_x >= da.x else -2.2)
-			kit.part(Vector3(rack_x, y + 0.5, corr_z + corr_w * 0.5 - 0.25), Vector3(1.6, 1.0, 0.35), Color(0.4, 0.3, 0.2), "trim", true)
-			kit.part(Vector3(x + 1.2, y + 1.6, corr_z - corr_w * 0.5 + 0.05), Vector3(1.2, 0.8, 0.04), Color(0.55, 0.4, 0.25))
-			if i % 2 == 0:
-				kit.part(Vector3(x - 1.3, y + 0.3, corr_z - corr_w * 0.5 + 0.2), Vector3(0.18, 0.55, 0.18), Color(0.85, 0.1, 0.1), "metal")
-			kit.ceiling_light(Vector3(x, y + FH - 0.2, corr_z), Color(0.8, 0.95, 1.0), 0.6, 0.25)
-		# 끝 칸(계단실)에 사물함 하나씩
-		props.append(["locker", Vector3(inner.end.x - 0.5, y, corr_z + corr_w * 0.5 + 2.0), -PI / 2.0])
-		props.append(["locker", Vector3(inner.position.x + 0.5, y, corr_z + corr_w * 0.5 + 2.0), PI / 2.0])
+		var fy := y + (0.07 if k == 0 else 0.01)
+		_corridor_dressing(core, inner, corr_z, corr_w, y, fy, rooms)
+		# 끝 칸(계단실)에 사물함 하나씩 + 청소도구
+		props.append(["locker", Vector3(inner.end.x - 0.5, y, corr_z + corr_w * 0.5 + 2.2), -PI / 2.0])
+		props.append(["locker", Vector3(inner.position.x + 0.5, y, corr_z + corr_w * 0.5 + 2.2), PI / 2.0])
+		for ex in [inner.position.x, inner.end.x - bay]:
+			kit.grime(Rect2(ex, corr_z + corr_w * 0.5, bay, inner.end.y - corr_z - corr_w * 0.5), fy, FH, 0.6, 0.1)
+	kit.wainscot_mat = null
+	kit.lining_mat = null
+
+
+## 학교 실내 마감: 아래쪽 연녹색 페인트 판 + 나무 몰딩, 위는 크림색 벽
+func _school_finish() -> void:
+	kit.wainscot_mat = _mat["wains"]
+	kit.lining_mat = _mat["school_in"]
+	kit.wainscot_h = 1.2
+	kit.room_h = FH
+	kit.trim_col = Color(0.36, 0.27, 0.18)
+
+
+## 비상구 표시등 (초록 불빛)
+func _exit_sign(p: Vector3, facing: Vector3) -> void:
+	var yaw := atan2(facing.x, facing.z)
+	kit.part(p, Vector3(0.6, 0.22, 0.06), Color(0.1, 0.9, 0.35), "lit", false, yaw)
+	var l := Label3D.new()
+	l.text = "비상구"
+	l.font_size = 32
+	l.pixel_size = 0.005
+	l.modulate = Color(0.95, 1.0, 0.95)
+	l.position = p + facing * 0.04
+	l.rotation.y = yaw
+	l.visibility_range_end = 20.0
+	region.add_child(l)
+
+
+## 복도 꾸미기: 신발장·사물함 줄, 게시판, 소화전, 손 씻는 곳, 쓰레기통, 얼룩
+func _corridor_dressing(core: Rect2, inner: Rect2, corr_z: float, corr_w: float, y: float, fy: float, rooms: Array) -> void:
+	var doors := []
+	for rm in rooms:
+		doors.append(rm["door_at"])
+	var free := func(x: float, z_side: float, half_w: float) -> bool:
+		for d in doors:
+			var dv: Vector3 = d
+			if signf(dv.z - corr_z) == signf(z_side) and absf(dv.x - x) < half_w + 1.1:
+				return false
+		return true
+	# 남쪽 벽: 개인 사물함 줄 (장식), 북쪽 벽: 게시판·소화전
+	var x := core.position.x + 1.5
+	while x < core.end.x - 1.5:
+		var zs := corr_z + corr_w * 0.5 - 0.22
+		if free.call(x, 1.0, 1.4):
+			for i in 4:
+				var lx: float = x - 0.9 + i * 0.6
+				kit.part(Vector3(lx, y + 0.9, zs), Vector3(0.58, 1.8, 0.4), Color(0.36, 0.48, 0.62).darkened(rng.randf() * 0.15), "metal", true)
+				kit.part(Vector3(lx, y + 1.55, zs - 0.205), Vector3(0.36, 0.1, 0.01), Color(0.08, 0.08, 0.08))
+				if rng.randf() < 0.15:
+					kit.part(Vector3(lx - 0.2, y + 0.95, zs - 0.45), Vector3(0.02, 1.7, 0.56), Color(0.36, 0.48, 0.62), "metal", false, 0.6)
+		x += 3.2
+	x = core.position.x + 2.5
+	var i2 := 0
+	while x < core.end.x - 2.0:
+		var zn := corr_z - corr_w * 0.5 + 0.03
+		if free.call(x, -1.0, 1.0):
+			match i2 % 3:
+				0:  # 게시판 + 종이
+					kit.part(Vector3(x, y + 1.6, zn + 0.02), Vector3(1.8, 1.0, 0.04), Color(0.55, 0.4, 0.25))
+					kit.part(Vector3(x, y + 1.6, zn + 0.045), Vector3(1.65, 0.85, 0.01), Color(0.25, 0.35, 0.28))
+					for j in 4:
+						kit.decal(Vector3(x - 0.6 + j * 0.4 + rng.randf_range(-0.05, 0.05), y + 1.6 + rng.randf_range(-0.2, 0.2), zn + 0.05), Vector3.BACK, 0.45, "papers")
+				1:  # 소화전함
+					kit.part(Vector3(x, y + 1.2, zn + 0.1), Vector3(0.8, 1.2, 0.2), Color(0.75, 0.1, 0.08), "metal", true)
+					kit.part(Vector3(x, y + 1.2, zn + 0.205), Vector3(0.5, 0.7, 0.01), Color(0.1, 0.12, 0.14), "glass")
+				_:  # 손 씻는 곳
+					kit.part(Vector3(x, y + 0.8, zn + 0.25), Vector3(1.6, 0.15, 0.5), Color(0.82, 0.82, 0.8), "trim", true)
+					for j in 3:
+						kit.part(Vector3(x - 0.5 + j * 0.5, y + 1.0, zn + 0.08), Vector3(0.05, 0.25, 0.12), Color(0.7, 0.7, 0.72), "metal")
+					kit.part(Vector3(x, y + 1.5, zn + 0.02), Vector3(1.4, 0.6, 0.02), Color(0.55, 0.6, 0.65), "glass")
+			i2 += 1
+		x += 6.0
+	# 복도 바닥 얼룩·종이, 천장 조명 (일부 깜빡임)
+	kit.grime(Rect2(core.position.x, corr_z - corr_w * 0.5, core.size.x, corr_w), fy, FH, 0.35, 0.08)
+	for i in 9:
+		var lx := core.position.x + 3.0 + i * (core.size.x - 6.0) / 8.0
+		kit.ceiling_light(Vector3(lx, y + FH - 0.25, corr_z), Color(0.8, 0.95, 1.0), 0.6, 0.3)
+	# 쓰러진 의자·쓰레기통
+	for i in 3:
+		var p := Vector3(rng.randf_range(core.position.x + 2, core.end.x - 2), fy, corr_z + rng.randf_range(-0.8, 0.8))
+		kit.part(p + Vector3.UP * 0.2, Vector3(0.4, 0.4, 0.04), Color(0.55, 0.45, 0.32), "trim", false, rng.randf() * TAU)
 
 
 # ================================================================ 체육관
@@ -362,9 +462,9 @@ func _yard_props() -> void:
 	for p in [Vector3(-10, 0, -32), Vector3(10, 0, -32), Vector3(-30, 0, 50), Vector3(30, 0, 50), Vector3(0, 0, 55), Vector3(45, 0, -30), Vector3(-55, 0, 10), Vector3(40, 0, 30)]:
 		_lamp(p)
 	# 창고 (들어갈 수 있는 작은 건물)
-	var spots := kit.city_building(Rect2(-66, 40, 9, 8), 0.05, 4.2, _mat["school_wall"], Color(0.5, 0.47, 0.42), "shop")
+	var spots := kit.city_building(Rect2(-66, 40, 9, 8), 0.05, 4.2, _mat["school_wall"], Color(0.5, 0.47, 0.42), "storage")
 	for sp in spots:
 		generator_spots.append(sp)
 	# 화단 풀숲
-	for p in [Vector3(-20, 0, -37), Vector3(20, 0, -37), Vector3(-40, 0, -34), Vector3(36, 0, -34)]:
+	for p in [Vector3(-22, 0, -35), Vector3(22, 0, -35), Vector3(-36, 0, -35), Vector3(36, 0, -35)]:
 		_grass(p, Vector2(6, 2.5))

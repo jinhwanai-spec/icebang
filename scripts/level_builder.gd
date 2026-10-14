@@ -42,6 +42,8 @@ var half := HALF
 var use_shacks := false
 ## (테스트용) 복도식 건물의 방 목록 [방 정보, 바닥 높이]
 var debug_rooms: Array = []
+## (테스트용) 복도 한쪽 끝 위치 (x, z). 없으면 Vector3.INF
+var corridor_probe := Vector3.INF
 var kit: BuildingKit
 var _building_mats: Array[StandardMaterial3D] = []
 var _rust_mats: Array[StandardMaterial3D] = []

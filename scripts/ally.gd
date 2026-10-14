@@ -87,6 +87,7 @@ func _physics_process(delta: float) -> void:
 	if web and can_interact():
 		web.call("clear_web")
 
+	_flee_age += delta
 	_think_timer -= delta
 	if _think_timer <= 0.0:
 		_think_timer = 0.25
@@ -102,8 +103,9 @@ func _physics_process(delta: float) -> void:
 	elif mode == "repair" and is_instance_valid(_goal_generator) and not _goal_generator.completed and can_interact() \
 			and global_position.distance_to(_goal_generator.global_position) <= REPAIR_REACH:
 		_goal_generator.repair(delta, self)  # 도착했으면 봉인석 가동
-	elif not agent.is_navigation_finished():
-		var next := agent.get_next_path_position()
+	elif not agent.is_navigation_finished() or (mode == "repair" and is_instance_valid(_goal_generator) and not _goal_generator.completed):
+		# 길 끝까지 왔는데 봉인석에 손이 안 닿으면 봉인석 쪽으로 곧장 붙음 (멍하니 서 있지 않게)
+		var next := agent.get_next_path_position() if not agent.is_navigation_finished() else _goal_generator.global_position
 		var dir := next - global_position
 		dir.y = 0.0
 		if dir.length() > 0.05:
@@ -179,9 +181,10 @@ func _decide() -> void:
 			return
 		# 2. 술래가 가까움 → 도망
 		if d < GameConfig.num("ally", "fear_distance", 8.0):
-			var away := global_position - seeker.global_position
-			away.y = 0.0
-			agent.target_position = global_position + away.normalized() * 8.0
+			# 길 위의 실제로 갈 수 있는 곳 중 술래에게서 가장 멀어지는 곳으로 (벽에 막혀 제자리걸음하지 않게)
+			if mode != "flee" or agent.is_navigation_finished() or _flee_age > 1.0:
+				agent.target_position = _flee_point(seeker.global_position)
+				_flee_age = 0.0
 			mode = "flee"
 			return
 
@@ -226,10 +229,43 @@ func _decide() -> void:
 		return
 
 	# 할 일이 없으면 제자리에 서 있지 않고 주변을 살피며 돌아다님
-	if agent.is_navigation_finished() or mode != "idle":
+	if agent.is_navigation_finished() or mode != "idle" or agent.target_position.distance_to(global_position) < 2.0:
 		var a := randf() * TAU
 		agent.target_position = NavigationServer3D.map_get_closest_point(agent.get_navigation_map(), global_position + Vector3(cos(a), 0, sin(a)) * randf_range(6.0, 14.0))
 	mode = "idle"
+
+
+var _flee_age := 0.0
+
+## 도망칠 곳: 사방 12곳을 길 위로 맞춘 뒤, 술래와 멀고 실제로 걸어갈 수 있는 곳
+func _flee_point(from: Vector3) -> Vector3:
+	var map := agent.get_navigation_map()
+	var away := global_position - from
+	away.y = 0.0
+	away = away.normalized() if away.length() > 0.01 else Vector3.FORWARD
+	var best := global_position + away * 6.0
+	var best_score := -INF
+	for i in 12:
+		var a := i * TAU / 12.0 + randf() * 0.3
+		var dir := Vector3(cos(a), 0, sin(a))
+		var cand := NavigationServer3D.map_get_closest_point(map, global_position + dir * randf_range(7.0, 11.0))
+		var path := NavigationServer3D.map_get_path(map, global_position, cand, true)
+		if path.size() < 2 or path[path.size() - 1].distance_to(cand) > 1.0:
+			continue
+		var plen := 0.0
+		for k in path.size() - 1:
+			plen += path[k].distance_to(path[k + 1])
+		if plen < 3.0:
+			continue
+		# 첫 걸음이 술래 쪽이면 감점, 도착점이 술래와 멀수록 가점
+		var first: Vector3 = path[1] - global_position
+		first.y = 0.0
+		var toward := first.normalized().dot((from - global_position).normalized()) if first.length() > 0.01 else 0.0
+		var score := cand.distance_to(from) - toward * 6.0 - plen * 0.15
+		if score > best_score:
+			best_score = score
+			best = cand
+	return best
 
 
 ## 갈 봉인석 고르기: 가까울수록 좋고, 다른 봇이 이미 맡은 곳·못 가는 곳은 피함

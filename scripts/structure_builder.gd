@@ -54,6 +54,8 @@ func spawn_props(main: Node3D) -> void:
 		main.add_child(node)
 		node.global_position = p[1]
 		node.rotation.y = p[2]
+		if p.size() > 3:
+			node.set_meta("door_w", p[3])
 		node.call("setup", p[0], _builder._mat)
 
 

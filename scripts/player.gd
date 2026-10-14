@@ -73,6 +73,9 @@ func _ready() -> void:
 	flashlight.spot_angle = GameConfig.num("horror", "flashlight_angle", 26.0)
 	flashlight.spot_attenuation = 1.2
 	flashlight.shadow_enabled = true
+	# 벽에 줄무늬 그림자(그림자 여드름)가 생기지 않게 살짝 띄움
+	flashlight.shadow_bias = 0.12
+	flashlight.shadow_normal_bias = 2.0
 	flashlight.position = Vector3(0.3, -0.2, -0.5)
 	camera.add_child(flashlight)
 	# 손전등이 바로 앞의 내 캐릭터 등을 하얗게 비추지 않도록 (내 몸은 2번 레이어, 손전등은 2번 레이어 제외)
