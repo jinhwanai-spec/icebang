@@ -508,6 +508,24 @@ func _gym() -> void:
 # ================================================================ 운동장 소품 (놀이터·농구장·벤치·가로등·창고)
 
 func _yard_props() -> void:
+	# 정문 안쪽: 멈춰 선 학교 버스, 자전거 거치대, 안내판
+	_bus(Vector3(-14, 0, 58), PI / 2.0 + 0.1)
+	for i in 6:
+		var bx := 9.0 + i * 0.9
+		_box(Vector3(bx, 0.4, 60), Vector3(0.05, 0.8, 0.9), _mat["metal"], false)
+	_box(Vector3(11.25, 0.8, 60), Vector3(5.0, 0.05, 0.05), _mat["metal"], false)
+	_box(Vector3(11.25, 0.05, 60), Vector3(5.0, 0.1, 0.9), _mat["concrete"])
+	var board := _prop(Vector3(5, 0, 62), PI, Vector3(2.2, 2.2, 0.3))
+	_part(board, Vector3(0, 1.4, 0), _box_mesh(Vector3(2.2, 1.2, 0.08)), _flat_mat(Color(0.18, 0.3, 0.42), 0.7))
+	_part(board, Vector3(0, 0.6, 0), _box_mesh(Vector3(0.1, 1.2, 0.1)), _mat["metal"])
+	var bl := Label3D.new()
+	bl.text = "교내 안내도\n본관 ↑   체육관 ↗"
+	bl.font_size = 40
+	bl.pixel_size = 0.006
+	bl.position = Vector3(5, 1.45, 61.94)
+	bl.rotation.y = PI
+	bl.visibility_range_end = 20.0
+	region.add_child(bl)
 	# 놀이터 (동쪽)
 	var pg := Vector3(55, 0.0, 12)
 	_box(pg + Vector3(0, 0.02, 0), Vector3(18, 0.04, 16), _noise_mat(Color(0.42, 0.37, 0.28), 0.4, 1.0, 2.0))  # 모래

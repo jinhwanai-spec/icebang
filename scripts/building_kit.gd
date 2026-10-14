@@ -103,8 +103,17 @@ func furnish_room(rm: Dictionary, y: float, keep_center := false) -> Vector3:
 		var along_x: bool = rm.get("door_along_x", true)
 		door_clear = Rect2(d.x - 1.2, d.z - 2.6, 2.4, 5.2) if along_x else Rect2(d.x - 2.6, d.z - 1.2, 5.2, 2.4)
 	door_at = d
+	# 가운데(봉인석 자리)를 비우는 방: 문에서 가운데까지 ㄱ자 통로도 비워 둠 (봇이 봉인석에 갈 수 있게)
+	if keep_center and d != Vector3.INF:
+		var c: Vector2 = (rm["rect"] as Rect2).get_center()
+		var ax: bool = rm.get("door_along_x", true)
+		if ax:
+			door_clears = [Rect2(d.x - 0.9, minf(d.z, c.y) - 0.9, 1.8, absf(c.y - d.z) + 1.8), Rect2(minf(d.x, c.x) - 0.9, c.y - 0.9, absf(c.x - d.x) + 1.8, 1.8)]
+		else:
+			door_clears = [Rect2(minf(d.x, c.x) - 0.9, d.z - 0.9, absf(c.x - d.x) + 1.8, 1.8), Rect2(c.x - 0.9, minf(d.z, c.y) - 0.9, 1.8, absf(c.y - d.z) + 1.8)]
 	var out := furnish(rm["rect"], y, rm["kind"], keep_center)
 	door_clear = Rect2()
+	door_clears = []
 	door_at = Vector3.INF
 	return out
 

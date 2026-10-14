@@ -455,6 +455,15 @@ func _parking_lot() -> void:
 		cyl.bottom_radius = 0.8
 		cyl.height = 4.0
 		_part(tank, Vector3(0, 2.0, 0), cyl, _mat["paint"])
+		# 산소 탱크 띠 + 위 밸브 + 경고 표시
+		var band := CylinderMesh.new()
+		band.top_radius = 0.82
+		band.bottom_radius = 0.82
+		band.height = 0.25
+		for by in [1.0, 3.2]:
+			_part(tank, Vector3(0, by, 0), band, _flat_mat(Color(0.15, 0.45, 0.25), 0.6))
+		_part(tank, Vector3(0, 4.15, 0), _box_mesh(Vector3(0.3, 0.3, 0.3)), _mat["metal"])
+		_part(tank, Vector3(0, 2.2, 0.81), _box_mesh(Vector3(0.5, 0.35, 0.02)), _flat_mat(Color(0.9, 0.75, 0.1), 0.6))
 
 
 func _ambulance(pos: Vector3, yaw: float) -> void:
