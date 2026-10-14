@@ -237,6 +237,18 @@ func _hospital() -> void:
 			var dn := Vector3(0, 0, 1) if rr.get_center().y < corr_z else Vector3(0, 0, -1)
 			var da: Vector3 = rm["door_at"]
 			kit.room_sign(Vector3(da.x + 1.25, ry + 2.6, da.z), rm["name"], dn)
+			if kind == "operating":
+				# 문 위 "수술중" 빨간 불 (켜져 있거나 꺼져 있음)
+				var on := rng.randf() < 0.6
+				kit.part(Vector3(da.x, ry + 2.55, da.z) + dn * 0.12, Vector3(0.9, 0.28, 0.06), Color(1.0, 0.1, 0.08) if on else Color(0.25, 0.05, 0.05), "lit" if on else "trim")
+				var ol := Label3D.new()
+				ol.text = "수 술 중"
+				ol.font_size = 40
+				ol.pixel_size = 0.005
+				ol.position = Vector3(da.x, ry + 2.55, da.z) + dn * 0.16
+				ol.rotation.y = atan2(dn.x, dn.z)
+				ol.visibility_range_end = 20.0
+				region.add_child(ol)
 		# 1층 로비 (현관 앞 빈 칸): 접수대·대기 의자·안내판
 		if fy == Y0:
 			var lob := Rect2(-2.75 + core.position.x + 33.75 - 0.0, corr_z + corr_w * 0.5, 12.0, inner.end.y - corr_z - corr_w * 0.5)
@@ -257,7 +269,7 @@ func _hospital() -> void:
 		_elevator(Vector3(inner.position.x + bay * 0.5, ry, inner.end.y - 0.15), Vector3(0, 0, -1))
 		_elevator(Vector3(inner.end.x - bay * 0.5, ry, inner.end.y - 0.15), Vector3(0, 0, -1))
 		for ex in [inner.position.x, inner.end.x - bay]:
-			kit.grime(Rect2(ex, corr_z + corr_w * 0.5, bay, inner.end.y - corr_z - corr_w * 0.5), ry + 0.005, h, 0.6, 0.2)
+			kit.grime(Rect2(ex, corr_z + corr_w * 0.5, bay, inner.end.y - corr_z - corr_w * 0.5), ry + 0.005, h, 0.6, 0.2, [0, 1, 3])
 	kit.wainscot_mat = null
 	kit.lining_mat = null
 	_rooftop(r, Y0 + FH * 2 + 0.2)
@@ -375,7 +387,7 @@ func _hosp_corridor(core: Rect2, corr_z: float, corr_w: float, y: float, h: floa
 		for k in 3:
 			kit.part(Vector3(core.get_center().x, y + h - 0.45 - k * 0.22, corr_z - 1.2 + k * 0.5), Vector3(core.size.x, 0.16, 0.16), [Color(0.45, 0.32, 0.22), Color(0.35, 0.4, 0.45), Color(0.6, 0.55, 0.2)][k], "metal")
 	# 핏자국 끌린 자국
-	kit.grime(Rect2(core.position.x, corr_z - corr_w * 0.5, core.size.x, corr_w), y + 0.005, h, 0.3, 0.4)
+	kit.grime(Rect2(core.position.x, corr_z - corr_w * 0.5, core.size.x, corr_w), y + 0.005, h, 0.3, 0.4, [2, 3])
 
 
 func _wheelchair(p: Vector3) -> void:

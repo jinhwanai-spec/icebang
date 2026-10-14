@@ -281,7 +281,7 @@ func _main_building() -> void:
 		props.append(["locker", Vector3(inner.end.x - 0.5, y, corr_z + corr_w * 0.5 + 2.2), -PI / 2.0])
 		props.append(["locker", Vector3(inner.position.x + 0.5, y, corr_z + corr_w * 0.5 + 2.2), PI / 2.0])
 		for ex in [inner.position.x, inner.end.x - bay]:
-			kit.grime(Rect2(ex, corr_z + corr_w * 0.5, bay, inner.end.y - corr_z - corr_w * 0.5), fy, FH, 0.6, 0.1)
+			kit.grime(Rect2(ex, corr_z + corr_w * 0.5, bay, inner.end.y - corr_z - corr_w * 0.5), fy, FH, 0.6, 0.1, [0, 1, 3])
 	kit.wainscot_mat = null
 	kit.lining_mat = null
 	kit.corridor_windows = false
@@ -325,7 +325,7 @@ func _entrance_hall(r: Rect2, y: float) -> void:
 	kit.part(Vector3(r.get_center().x, y + 1.5, r.end.y - 0.4), Vector3(0.9, 0.04, 0.6), Color(0.25, 0.2, 0.15), "trim")
 	kit.part(Vector3(r.end.x - 0.6, y + 0.35, r.end.y - 0.8), Vector3(0.35, 0.7, 0.35), Color(0.3, 0.3, 0.32), "metal", true)
 	kit.part(Vector3(r.get_center().x, y + 0.01, r.end.y - 1.2), Vector3(2.4, 0.02, 1.2), Color(0.15, 0.25, 0.18), "trim")
-	kit.grime(r, y + 0.005, FH, 0.6, 0.15)
+	kit.grime(r, y + 0.005, FH, 0.6, 0.15, [0, 1, 3])
 
 
 ## 학교 실내 마감: 아래쪽 연녹색 페인트 판 + 나무 몰딩, 위는 크림색 벽
@@ -397,8 +397,24 @@ func _corridor_dressing(core: Rect2, inner: Rect2, corr_z: float, corr_w: float,
 					kit.part(Vector3(x, y + 1.5, zn + 0.02), Vector3(1.4, 0.6, 0.02), Color(0.55, 0.6, 0.65), "glass")
 			i2 += 1
 		x += 6.0
+	# 표어·포스터 (복도 북쪽 벽 높은 곳)
+	var slogans := ["복도에서 뛰지 맙시다", "바른 말 고운 말", "꿈을 키우는 새빛 어린이", "조용히 걸어요", "손을 깨끗이 씻어요", "학교 폭력 NO!"]
+	for i in 5:
+		var px := core.position.x + 6.0 + i * (core.size.x - 12.0) / 4.0
+		var zn := corr_z - corr_w * 0.5 + 0.03
+		var col: Color = [Color(0.85, 0.75, 0.3), Color(0.4, 0.65, 0.85), Color(0.85, 0.45, 0.4), Color(0.55, 0.75, 0.45)][i % 4]
+		kit.part(Vector3(px, y + 2.75, zn + 0.01), Vector3(2.2, 0.45, 0.02), col)
+		var sl := Label3D.new()
+		sl.text = slogans[(i + int(y)) % slogans.size()]
+		sl.font_size = 48
+		sl.pixel_size = 0.005
+		sl.modulate = Color(0.12, 0.12, 0.14)
+		sl.outline_size = 0
+		sl.position = Vector3(px, y + 2.75, zn + 0.03)
+		sl.visibility_range_end = 20.0
+		region.add_child(sl)
 	# 복도 바닥 얼룩·종이, 천장 조명 (일부 깜빡임)
-	kit.grime(Rect2(core.position.x, corr_z - corr_w * 0.5, core.size.x, corr_w), fy, FH, 0.35, 0.08)
+	kit.grime(Rect2(core.position.x, corr_z - corr_w * 0.5, core.size.x, corr_w), fy, FH, 0.35, 0.08, [2, 3])
 	for i in 9:
 		var lx := core.position.x + 3.0 + i * (core.size.x - 6.0) / 8.0
 		kit.ceiling_light(Vector3(lx, y + FH - 0.25, corr_z), Color(0.8, 0.95, 1.0), 0.6, 0.3)

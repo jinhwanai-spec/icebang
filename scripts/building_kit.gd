@@ -266,7 +266,7 @@ func decal(p: Vector3, normal: Vector3, size: float, kind: String, spin := -1.0)
 
 
 ## 방 안에 지저분한 흔적 몇 개 (바닥 얼룩·종이·핏자국, 벽 금·물 얼룩)
-func grime(room: Rect2, y: float, h: float, amount := 1.0, blood := 0.25) -> void:
+func grime(room: Rect2, y: float, h: float, amount := 1.0, blood := 0.25, wall_sides: Array = [0, 1, 2, 3]) -> void:
 	var n := int(round((room.size.x * room.size.y) / 14.0 * amount))
 	for i in n:
 		var p := Vector3(rng.randf_range(room.position.x + 0.4, room.end.x - 0.4), y + 0.002, rng.randf_range(room.position.y + 0.4, room.end.y - 0.4))
@@ -274,21 +274,21 @@ func grime(room: Rect2, y: float, h: float, amount := 1.0, blood := 0.25) -> voi
 		var kind := "blood" if r < blood else ("papers" if r < blood + 0.35 else "stain")
 		decal(p, Vector3.UP, rng.randf_range(0.8, 1.8) if kind != "papers" else rng.randf_range(0.9, 1.4), kind)
 	# 벽: 네 벽 중 몇 곳에 금·얼룩
-	for i in maxi(1, n / 2):
-		var s := rng.randi() % 4
+	for i in (maxi(1, n / 2) if not wall_sides.is_empty() else 0):
+		var s: int = wall_sides[rng.randi() % wall_sides.size()]
 		var u := rng.randf_range(0.15, 0.85)
 		var wy := y + rng.randf_range(0.6, h - 0.6)
 		var pos: Vector3
 		var nr: Vector3
 		match s:
 			0:
-				pos = Vector3(room.position.x + 0.13, wy, lerpf(room.position.y, room.end.y, u)); nr = Vector3.RIGHT
+				pos = Vector3(room.position.x + 0.11, wy, lerpf(room.position.y, room.end.y, u)); nr = Vector3.RIGHT
 			1:
-				pos = Vector3(room.end.x - 0.13, wy, lerpf(room.position.y, room.end.y, u)); nr = Vector3.LEFT
+				pos = Vector3(room.end.x - 0.11, wy, lerpf(room.position.y, room.end.y, u)); nr = Vector3.LEFT
 			2:
-				pos = Vector3(lerpf(room.position.x, room.end.x, u), wy, room.position.y + 0.13); nr = Vector3.BACK
+				pos = Vector3(lerpf(room.position.x, room.end.x, u), wy, room.position.y + 0.11); nr = Vector3.BACK
 			_:
-				pos = Vector3(lerpf(room.position.x, room.end.x, u), wy, room.end.y - 0.13); nr = Vector3.FORWARD
+				pos = Vector3(lerpf(room.position.x, room.end.x, u), wy, room.end.y - 0.11); nr = Vector3.FORWARD
 		var wk := "crack" if rng.randf() < 0.5 else ("blood" if rng.randf() < blood * 0.6 else "stain")
 		decal(pos, nr, rng.randf_range(0.8, 1.6), wk)
 
