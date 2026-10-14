@@ -1,0 +1,58 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scripts/ally.gd" id="1_script"]
+[ext_resource type="Script" path="res://scripts/clay_body.gd" id="2_clay"]
+
+[sub_resource type="CapsuleShape3D" id="Shape_body"]
+radius = 0.36
+height = 1.66
+
+[sub_resource type="SphereMesh" id="Mesh_ice"]
+radius = 0.72
+height = 1.95
+
+[sub_resource type="StandardMaterial3D" id="Mat_ice"]
+transparency = 1
+albedo_color = Color(0.6, 0.9, 1, 0.45)
+roughness = 0.1
+rim_enabled = true
+rim = 0.6
+
+[node name="Ally" type="CharacterBody3D"]
+script = ExtResource("1_script")
+
+[node name="Collision" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.83, 0)
+shape = SubResource("Shape_body")
+
+[node name="Body" type="Node3D" parent="."]
+script = ExtResource("2_clay")
+
+[node name="Ice" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.92, 0)
+mesh = SubResource("Mesh_ice")
+surface_material_override/0 = SubResource("Mat_ice")
+
+[node name="EmoteLabel" type="Label3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.2, 0)
+billboard = 1
+no_depth_test = true
+font_size = 72
+outline_size = 18
+text = ""
+
+[node name="Footstep" type="AudioStreamPlayer3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.1, 0)
+unit_size = 4.0
+max_db = 2.0
+attenuation_filter_cutoff_hz = 9000.0
+
+[node name="Sfx" type="AudioStreamPlayer3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.2, 0)
+unit_size = 5.0
+max_distance = 30.0
+
+[node name="NavigationAgent3D" type="NavigationAgent3D" parent="."]
+path_desired_distance = 0.6
+target_desired_distance = 1.4
+radius = 0.4

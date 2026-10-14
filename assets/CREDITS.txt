@@ -1,0 +1,4 @@
+에셋 출처 (모두 CC0, 출처 표기 의무 없음)
+- Poly Haven (polyhaven.com): Forest Ground 01, Brown Mud Leaves 01, Forest Ground 04, Moss Wood, Rock Moss Set 01
+  원본 8K 를 게임용으로 2K/1K 로 줄이고, 높이(displacement) 지도로 노멀맵을 만들어 씀
+- models/rocks/rock01~06.obj: Rock Moss Set 01 by Poly Haven (CC0) https://polyhaven.com/a/rock_moss_set_01
