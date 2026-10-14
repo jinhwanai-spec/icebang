@@ -203,7 +203,7 @@ func _hospital() -> void:
 	# 층별 방
 	var core := Rect2(inner.position.x + bay, inner.position.y, inner.size.x - bay * 2.0, inner.size.y)
 	var plans := {
-		YB: [[[16, "morgue", "영안실"], [12, "boiler", "보일러실"], [8, "storage", "창고"], [10, "storage", "세탁실"], [12, "boiler", "발전기실"]],
+		YB: [[[16, "morgue", "영안실"], [12, "boiler", "보일러실"], [8, "storage", "창고"], [10, "laundry", "세탁실"], [12, "boiler", "발전기실"]],
 			[[34, "parking", "지하 주차장"], [11, "storage", "의료폐기물"], [12, "office", "시설관리실"]]],
 		Y0: [[[14, "ward", "응급실"], [9, "nurse", "처치실"], [10, "pharmacy", "약제실"], [7, "toilet", "화장실"], [12, "lab", "영상의학과"], [10, "office", "원무과"]],
 			[[10, "office", "진료실 1"], [10, "office", "진료실 2"], [11, "lobby", "외래 대기실"], [12, "", ""], [10, "pharmacy", "매점"], [10, "nurse", "주사실"]]],

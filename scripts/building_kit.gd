@@ -732,7 +732,7 @@ func _local(base: Vector3, yaw: float, off: Vector3) -> Vector3:
 
 # ================================================================ 자세한 방 꾸미기 (학교·병원·도시 공통)
 
-const RICH_KINDS := ["art", "teachers", "nurse", "toilet", "library", "music", "lab", "computer", "office", "nurse_station", "pharmacy", "operating", "morgue", "boiler", "storage"]
+const RICH_KINDS := ["laundry", "broadcast", "art", "teachers", "nurse", "toilet", "library", "music", "lab", "computer", "office", "nurse_station", "pharmacy", "operating", "morgue", "boiler", "storage"]
 
 
 ## 벽을 따라 u(0~1) 위치, 벽에서 depth/2 떨어진 곳. 반환 [위치, yaw(앞=방 안쪽)]
@@ -775,6 +775,40 @@ func _furnish_rich(room: Rect2, y: float, kind: String) -> void:
 	var sides: Array = [0, 1, 2, 3].filter(func(s): return s != ds and s != ws)
 	var big := inner.grow(-1.3)
 	match kind:
+		"laundry":
+			# 세탁기 줄 (둥근 문) + 빨래 바구니 + 걸린 흰 시트
+			for sd in sides:
+				_along_wall(inner, sd, 0.7, 0.85, y, func(p, yw):
+					_yawbox(_local(p, yw, Vector3(0, 0.5, 0)), Vector3(0.75, 1.0, 0.7), yw, Color(0.88, 0.88, 0.86), true)
+					_yawbox(_local(p, yw, Vector3(0, 0.55, 0.36)), Vector3(0.42, 0.42, 0.02), yw, Color(0.1, 0.12, 0.14), false, "glass")
+					var on := rng.randf() < 0.3
+					_yawbox(_local(p, yw, Vector3(-0.22, 0.92, 0.36)), Vector3(0.2, 0.06, 0.02), yw, Color(0.3, 0.9, 0.4) if on else Color(0.2, 0.2, 0.2), false, "lit" if on else "metal"))
+			for k in 3:
+				var bp := Vector3(rng.randf_range(big.position.x, big.end.x), y, rng.randf_range(big.position.y, big.end.y))
+				if not _keep.has_point(Vector2(bp.x, bp.z)) and not blocks_door(bp, Vector3(0.7, 1, 0.7)):
+					part(bp + Vector3.UP * 0.3, Vector3(0.6, 0.6, 0.45), Color(0.35, 0.5, 0.65), "trim", true)
+					part(bp + Vector3.UP * 0.62, Vector3(0.5, 0.1, 0.4), Color(0.92, 0.92, 0.9), "trim")
+			for k in 4:
+				var lp := Vector3(c.x - 2.0 + k * 1.3, y + room_h - 1.2, c.y)
+				part(lp + Vector3.UP * 0.75, Vector3(0.02, 0.02, 3.0), Color(0.4, 0.4, 0.42), "metal")
+				part(lp, Vector3(0.9, 1.4, 0.02), Color(0.9, 0.9, 0.88).darkened(rng.randf() * 0.15), "trim", false, rng.randf_range(-0.1, 0.1) + PI / 2.0)
+		"broadcast":
+			# 방송 장비 책상 + 마이크 + 스피커 + 방음벽(벽 아래 계란판) + 모니터
+			var dp := _wall_item(inner, sides[0] if not sides.is_empty() else 2, 0.5, 0.8)
+			var dpp: Vector3 = dp[0]
+			dpp.y = y
+			if not blocks_door(dpp, Vector3(2.4, 1, 1)):
+				_yawbox(_local(dpp, dp[1], Vector3(0, 0.45, 0)), Vector3(2.4, 0.9, 0.8), dp[1], Color(0.2, 0.2, 0.22), true, "metal")
+				for k in 12:
+					_yawbox(_local(dpp, dp[1], Vector3(-1.0 + k * 0.18, 0.92, 0.1)), Vector3(0.05, 0.03, 0.3), dp[1], Color(0.7, 0.7, 0.7), false, "metal")
+				_yawbox(_local(dpp, dp[1], Vector3(0.6, 1.2, 0.1)), Vector3(0.03, 0.5, 0.03), dp[1], Color(0.15, 0.15, 0.15), false, "metal")
+				_yawbox(_local(dpp, dp[1], Vector3(0.6, 1.47, 0.12)), Vector3(0.08, 0.12, 0.08), dp[1], Color(0.1, 0.1, 0.1), false, "metal")
+				_yawbox(_local(dpp, dp[1], Vector3(-0.6, 1.15, -0.2)), Vector3(0.6, 0.4, 0.04), dp[1], Color(0.3, 0.5, 0.9) if rng.randf() < 0.4 else Color(0.05, 0.05, 0.06), false, "lit")
+				_chair(_local(dpp, dp[1], Vector3(0, 0, 0.9)), dp[1] + PI, Color(0.15, 0.15, 0.18))
+			for sd in sides:
+				_along_wall(inner, sd, 0.08, 0.6, y, func(p, yw):
+					_yawbox(_local(p, yw, Vector3(0, 2.0, 0)), Vector3(0.55, 0.55, 0.06), yw, Color(0.25, 0.25, 0.28), false))
+			part(Vector3(inner.end.x - 0.5, y + 0.5, inner.end.y - 0.5), Vector3(0.5, 1.0, 0.45), Color(0.08, 0.08, 0.09), "trim", true)
 		"art":
 			# 이젤 + 그림판, 석고상, 물감 선반, 바닥에 튄 물감
 			for i in 8:

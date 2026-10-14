@@ -241,7 +241,7 @@ func _main_building() -> void:
 	var core := Rect2(inner.position.x + bay, inner.position.y, inner.size.x - bay * 2.0, inner.size.y)
 	var floors := [
 		[[12, "teachers", "교무실"], [8, "nurse", "보건실"], [7, "toilet", "화장실"], [11, "classroom", "1-1"], [11, "classroom", "1-2"], [12, "lab", "과학실"], [12, "classroom", "1-3"]],
-		[[10, "office", "행정실"], [12, "computer", "컴퓨터실"], [11.5, "music", "음악실"], [7.5, "", ""], [11, "classroom", "1-4"], [11, "classroom", "1-5"], [10, "office", "방송실"]],
+		[[10, "office", "행정실"], [12, "computer", "컴퓨터실"], [11.5, "music", "음악실"], [7.5, "", ""], [11, "classroom", "1-4"], [11, "classroom", "1-5"], [10, "broadcast", "방송실"]],
 		[[11, "classroom", "2-1"], [11, "classroom", "2-2"], [7, "toilet", "화장실"], [11, "classroom", "2-3"], [12, "art", "미술실"], [11, "classroom", "2-4"], [10, "office", "교장실"]],
 		[[11, "classroom", "2-5"], [14, "library", "도서실"], [11, "classroom", "3-1"], [11, "classroom", "3-2"], [10, "teachers", "연구실"], [12, "classroom", "3-3"]],
 	]
