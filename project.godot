@@ -5,6 +5,7 @@ config_version=5
 [application]
 
 config/name="얼음땡 프로토타입"
+config/version="0.9.0"
 run/main_scene="res://scenes/menu.tscn"
 config/features=PackedStringArray("4.4", "Forward Plus")
 
@@ -14,6 +15,7 @@ GameConfig="*res://scripts/autoload/game_config.gd"
 SaveData="*res://scripts/autoload/save_data.gd"
 NoiseBus="*res://scripts/autoload/noise_bus.gd"
 Net="*res://scripts/autoload/net.gd"
+CrashLog="*res://scripts/autoload/crash_log.gd"
 
 [display]
 

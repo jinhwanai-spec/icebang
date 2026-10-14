@@ -101,6 +101,10 @@ func _ready() -> void:
 	glow.omni_range = 6.5 if is_in_group("player") else 3.0
 	glow.light_energy = 0.5 if is_in_group("player") else 0.3
 	glow.light_volumetric_fog_energy = 0.0  # 캐릭터 조명은 안개를 밝히지 않게 (뿌옇게 번지지 않도록)
+	if not is_in_group("player"):
+		glow.distance_fade_enabled = true  # 최적화: 멀리 있는 동료의 작은 조명은 생략
+		glow.distance_fade_begin = 30.0
+		glow.distance_fade_length = 8.0
 	add_child(glow)
 
 
@@ -782,6 +786,7 @@ var _net_pos := Vector3.ZERO
 var _net_yaw := 0.0
 var _net_speed := 0.0
 var _net_has_target := false
+var _smooth := NetSmooth.new()
 
 
 ## 방장 컴퓨터에서, 다른 사람이 조종하는 캐릭터에 생긴 일은 그 사람 컴퓨터로 보냄 (true = 보냈으니 여기선 하지 말 것)
@@ -818,7 +823,7 @@ func net_flags() -> int:
 
 ## 네트워크로 받은 위치·상태
 func net_target(pos: Vector3, yaw: float, speed: float, flags: int, thaw: float) -> void:
-	if not _net_has_target or pos.distance_to(_net_pos) > 6.0:
+	if _smooth.push(pos, yaw) or not _net_has_target:
 		global_position = pos  # 처음이거나 순간이동
 	_net_pos = pos
 	_net_yaw = yaw
@@ -865,8 +870,12 @@ func _net_puppet_update(delta: float) -> void:
 	if is_dead or escaped or not _net_has_target:
 		return
 	var prev := global_position
-	global_position = global_position.lerp(_net_pos, clampf(14.0 * delta, 0.0, 1.0))
-	body.rotation.y = lerp_angle(body.rotation.y, _net_yaw, clampf(14.0 * delta, 0.0, 1.0))
+	# 받은 위치들 사이를 살짝 늦게 따라 그림 (끊김 보정, net_smooth.gd)
+	var smp := _smooth.sample()
+	var tp: Vector3 = smp[0] if not smp.is_empty() else _net_pos
+	var ty: float = smp[1] if not smp.is_empty() else _net_yaw
+	global_position = global_position.lerp(tp, clampf(30.0 * delta, 0.0, 1.0))
+	body.rotation.y = lerp_angle(body.rotation.y, ty, clampf(20.0 * delta, 0.0, 1.0))
 	velocity = (global_position - prev) / maxf(delta, 0.001)
 	# 발소리: 헤드셋으로 들리게. 술래가 듣는 소리는 방장 컴퓨터에서만 의미 있음
 	var moving := _net_speed > 0.6

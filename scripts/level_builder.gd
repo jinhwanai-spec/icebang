@@ -30,6 +30,19 @@ var paintable: Array[GeometryInstance3D] = []
 var generator_spots: Array[Vector3] = []
 
 var _mat := {}
+## 문·사물함·넘는 창문 소품 [종류, 위치, 회전] (길 계산 뒤에 main 이 만듦)
+var props: Array = []
+## 걸을 수 있는 층 높이들 (술래·봇이 순찰할 층을 고를 때)
+var floor_levels: Array = [0.0]
+## 시작 위치·맵 크기 (맵마다 다르게 덮어씀)
+var survivor_spawns: Array = SURVIVOR_SPAWNS
+var seeker_spawns: Array = SEEKER_SPAWNS
+var half := HALF
+## 작은 폐가·담장(structure_builder)을 놓을지. 이제는 큰 건물 안에 문·사물함이 있어서 쓰지 않음
+var use_shacks := false
+## (테스트용) 복도식 건물의 방 목록 [방 정보, 바닥 높이]
+var debug_rooms: Array = []
+var kit: BuildingKit
 var _building_mats: Array[StandardMaterial3D] = []
 var _rust_mats: Array[StandardMaterial3D] = []
 
@@ -38,6 +51,8 @@ func build(target: Node3D, map_seed: int) -> void:
 	region = target
 	rng.seed = map_seed
 	_make_materials()
+	kit = BuildingKit.new(self)
+	floor_levels = [0.0, 3.2]
 	_ground()
 	_outer_walls()
 	_blocks()
@@ -54,6 +69,7 @@ func _make_materials() -> void:
 	_mat["dirt"] = _noise_mat(Color(0.2, 0.22, 0.14), 0.4, 1.0, 4.0)
 	_mat["wall"] = _pattern_mat("brick", Color(0.34, 0.31, 0.29), 1.5)
 	_mat["planks"] = _pattern_mat("planks", Color(0.4, 0.31, 0.22), 2.0)
+	_mat["interior"] = _pattern_mat("plaster", Color(0.62, 0.6, 0.54), 3.0)
 	var kinds := ["plaster", "brick", "plaster", "brick", "brick"]
 	var cols := [Color(0.5, 0.5, 0.47), Color(0.55, 0.49, 0.4), Color(0.38, 0.45, 0.44), Color(0.46, 0.3, 0.25), Color(0.42, 0.42, 0.45)]
 	for i in cols.size():
@@ -325,10 +341,10 @@ func _far_from_roads(value: float, margin: float) -> bool:
 
 func _outer_walls() -> void:
 	var h := 4.5
-	_mark_indestructible(_box(Vector3(0, h / 2, -HALF), Vector3(HALF * 2 + 1, h, 1), _mat["wall"]))
-	_mark_indestructible(_box(Vector3(0, h / 2, HALF), Vector3(HALF * 2 + 1, h, 1), _mat["wall"]))
-	_mark_indestructible(_box(Vector3(-HALF, h / 2, 0), Vector3(1, h, HALF * 2 + 1), _mat["wall"]))
-	_mark_indestructible(_box(Vector3(HALF, h / 2, 0), Vector3(1, h, HALF * 2 + 1), _mat["wall"]))
+	_mark_indestructible(_box(Vector3(0, h / 2, -half), Vector3(half * 2 + 1, h, 1), _mat["wall"]))
+	_mark_indestructible(_box(Vector3(0, h / 2, half), Vector3(half * 2 + 1, h, 1), _mat["wall"]))
+	_mark_indestructible(_box(Vector3(-half, h / 2, 0), Vector3(1, h, half * 2 + 1), _mat["wall"]))
+	_mark_indestructible(_box(Vector3(half, h / 2, 0), Vector3(1, h, half * 2 + 1), _mat["wall"]))
 
 
 ## 바닥과 바깥 울타리는 히든 캐릭터의 "붕괴"로도 부서지지 않게 표시
@@ -408,23 +424,17 @@ func _building_row(inner: Rect2) -> void:
 func _building(b: Rect2) -> void:
 	var h := rng.randf_range(6.5, 15.5)
 	var base_y := CURB
-	var c := b.get_center()
 	var ci := rng.randi() % _building_mats.size()
-	_box(Vector3(c.x, base_y + h / 2.0, c.y), Vector3(b.size.x, h, b.size.y), _building_mats[ci])
 	var trim: Color = _building_cols[ci].lightened(0.18)
-	_facade(b, base_y, h, true, _building_cols[ci], trim)
-	var top := b
-	var top_y := base_y + h
-	# 가끔 위에 한 덩어리 더 (계단식 건물)
-	if h > 9.0 and rng.randf() < 0.35 and minf(b.size.x, b.size.y) > 7.0:
-		var shrink := Vector2(b.size.x * rng.randf_range(0.15, 0.3), b.size.y * rng.randf_range(0.15, 0.3))
-		top = Rect2(b.position + shrink * Vector2(rng.randf(), rng.randf()), b.size - shrink)
-		var h2 := rng.randf_range(3.2, 6.2)
-		var tc := top.get_center()
-		_box(Vector3(tc.x, top_y + h2 / 2.0, tc.y), Vector3(top.size.x, h2, top.size.y), _building_mats[ci])
-		_facade(top, top_y, h2, false, _building_cols[ci], trim)
-		top_y += h2
-	_rooftop(top, top_y)
+	var kind: String = ["apartment", "office", "shop", "apartment"][rng.randi() % 4]
+	# 모든 건물에 들어갈 수 있음: 외벽(창문·출입구) + 방·계단·가구 (building_kit.gd)
+	var spots: Array = kit.city_building(b, base_y, h, _building_mats[ci], trim, kind)
+	for sp in spots:
+		if rng.randf() < 0.25:
+			generator_spots.append(sp)
+	# 바깥 장식: 모서리 기둥, 층 띠, 처마, 배관, 비상계단, 1층 차양·간판
+	_facade_trims(b, base_y, h, _building_cols[ci], trim)
+	_rooftop(b, base_y + h)
 
 
 # ---------------------------------------------------------------- 건물 꾸미기 (창틀·가게·옥상)
@@ -565,6 +575,75 @@ func _facade(b: Rect2, y0: float, h: float, ground: bool, wall: Color, trim: Col
 			_fire_escape(face, t, n, L, first, floors)
 
 
+## 들어갈 수 있는 건물의 바깥 장식 (창문은 building_kit 이 진짜 구멍으로 뚫음)
+func _facade_trims(b: Rect2, y0: float, h: float, wall: Color, trim: Color) -> void:
+	var c := b.get_center()
+	var dark := wall.darkened(0.45)
+	var pipe_side := rng.randi() % 4
+	var fire_side := rng.randi() % 4 if (h > 9.0 and rng.randf() < 0.4) else -1
+	var sides := [
+		[Vector3(1, 0, 0), b.size.y, b.size.x], [Vector3(-1, 0, 0), b.size.y, b.size.x],
+		[Vector3(0, 0, 1), b.size.x, b.size.y], [Vector3(0, 0, -1), b.size.x, b.size.y],
+	]
+	for si in 4:
+		var n: Vector3 = sides[si][0]
+		var L: float = sides[si][1]
+		var depth: float = sides[si][2]
+		var t := Vector3.UP.cross(n)
+		var face := Vector3(c.x, 0, c.y) + n * (depth / 2.0)
+		_bx("trim", face + n * 0.06 + Vector3.UP * (y0 + 0.25), t, n, Vector3(L + 0.12, 0.5, 0.14), dark)
+		_bx("trim", face + n * 0.12 + Vector3.UP * (y0 + h - 0.2), t, n, Vector3(L + 0.5, 0.4, 0.26), trim)
+		for e in [-1.0, 1.0]:
+			_bx("trim", face + t * e * (L / 2.0 - 0.15) + n * 0.08 + Vector3.UP * (y0 + h / 2.0), t, n, Vector3(0.42, h, 0.18), trim.darkened(0.08))
+		_bx("trim", face + n * 0.07 + Vector3.UP * (y0 + 3.2 - 0.1), t, n, Vector3(L - 0.3, 0.16, 0.14), trim.darkened(0.15))
+		if si == pipe_side:
+			var e := 1.0 if rng.randf() < 0.5 else -1.0
+			_pipe(face + t * e * (L / 2.0 - 0.6) + n * 0.2 + Vector3.UP * (y0 + h / 2.0), 0.07, h, Color(0.3, 0.3, 0.3))
+		if si == fire_side:
+			_fire_escape(face, t, n, L, y0 + 3.2, int((h - 3.4) / 3.0))
+		if L > 5.0 and rng.randf() < 0.35:
+			# 줄무늬 차양 (출입구가 있든 없든 1층 위)
+			var pal := [[Color(0.7, 0.15, 0.15), Color(0.9, 0.85, 0.75)], [Color(0.15, 0.4, 0.3), Color(0.85, 0.82, 0.7)], [Color(0.2, 0.3, 0.6), Color(0.9, 0.88, 0.8)]]
+			var pc: Array = pal[rng.randi() % pal.size()]
+			var w := minf(4.5, L - 2.0)
+			var stripes := int(w / 0.45)
+			var sw := w / stripes
+			for j in stripes:
+				var u := -w / 2.0 + sw * (j + 0.5)
+				_bx("trim", face + t * u + n * 0.6 + Vector3.UP * (y0 + 2.85), t, n, Vector3(sw, 0.05, 1.2), (pc[j % 2] as Color).darkened(0.25), 0.0, 0.42)
+			if rng.randf() < 0.5:
+				_sign(face + n * 0.12 + Vector3.UP * (y0 + 3.6), absf(n.z) > 0.5)
+
+
+## 진짜 창문 구멍 둘레의 바깥 창틀·창턱 (유리는 building_kit 이 넣음)
+func _window_frame_only(at: Vector3, t: Vector3, n0: Vector3, trim: Color) -> void:
+	var n := t.cross(Vector3.UP) * -1.0 if n0 == Vector3.ZERO else n0
+	var tt := Vector3.UP.cross(n)
+	var frame_col := Color(0.16, 0.14, 0.13).lerp(trim, 0.15)
+	var w := 1.1
+	var hh := 1.25
+	for s in [-1.0, 1.0]:
+		_bx("trim", at + tt * s * (w * 0.5 + 0.05) + n * 0.03, tt, n, Vector3(0.1, hh + 0.2, 0.08), frame_col)
+	_bx("trim", at + Vector3.UP * (hh * 0.5 + 0.05) + n * 0.03, tt, n, Vector3(w + 0.2, 0.1, 0.08), frame_col)
+	_bx("trim", at + Vector3.UP * (-hh * 0.5 - 0.06) + n * 0.1, tt, n, Vector3(w + 0.4, 0.09, 0.24), trim)
+	_bx("trim", at + n * 0.04, tt, n, Vector3(0.05, hh, 0.03), frame_col)
+
+
+## 실내가 없는 윗부분 벽면: 층 띠 + 가짜 창문 (불 켜진 창·커튼·판자 등)
+func _facade_side(face: Vector3, dir: Vector3, n: Vector3, L: float, y0: float, h: float, trim: Color) -> void:
+	var t := Vector3.UP.cross(n)
+	var frame_col := Color(0.16, 0.14, 0.13).lerp(trim, 0.15)
+	var floors := int((h - 0.6) / 3.0)
+	var count := maxi(1, int((L - 1.6) / 2.4))
+	var gap := (L - 1.6) / count
+	for k in floors:
+		var wy := y0 + k * 3.0 + 1.55
+		_bx("trim", face + n * 0.07 + Vector3.UP * (y0 + k * 3.0 - 0.1), t, n, Vector3(L - 0.3, 0.16, 0.14), trim.darkened(0.15))
+		for i in count:
+			var u := -L / 2.0 + 0.8 + gap * (i + 0.5)
+			_window(face + t * u + Vector3.UP * wy, t, n, frame_col, trim)
+
+
 func _window(at: Vector3, t: Vector3, n: Vector3, frame_col: Color, trim: Color) -> void:
 	var w := 1.1
 	var hh := 1.55
@@ -700,6 +779,9 @@ func _sign(pos: Vector3, along_x: bool) -> void:
 		light.light_color = col
 		light.omni_range = 4.0
 		light.light_energy = 0.8
+		light.distance_fade_enabled = true
+		light.distance_fade_begin = 30.0
+		light.distance_fade_length = 8.0
 		region.add_child(light)
 		light.position = pos
 
@@ -851,5 +933,8 @@ func _lamp(pos: Vector3) -> void:
 		light.light_color = Color(1.0, 0.72, 0.4)
 		light.omni_range = 9.0
 		light.light_energy = 1.3
+		light.distance_fade_enabled = true  # 최적화: 먼 가로등 빛은 생략
+		light.distance_fade_begin = 45.0
+		light.distance_fade_length = 10.0
 		light.position = Vector3(0, 4.8, 0)
 		body.add_child(light)

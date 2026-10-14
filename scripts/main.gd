@@ -51,6 +51,8 @@ var paint_time_left := 0.0
 const MAPS := {
 	"city": {"name": "버려진 도시", "builder": preload("res://scripts/level_builder.gd")},
 	"forest": {"name": "숲속 폐캠핑장", "builder": preload("res://scripts/forest_builder.gd")},
+	"school": {"name": "밤의 폐교", "builder": preload("res://scripts/school_builder.gd")},
+	"hospital": {"name": "폐병원", "builder": preload("res://scripts/hospital_builder.gd")},
 }
 ## 이번 판 맵 이름 (HUD 표시용)
 var map_name := ""
@@ -196,7 +198,16 @@ func _bake_navigation() -> void:
 	_clear_around_generators()
 	# 추격전 구조물: 벽은 길 계산 전에, 문·판자·사물함은 길 계산 뒤에
 	var structures := StructureBuilderScript.new()
-	structures.build_shells(self, _builder, level_rng)
+	structures._builder = _builder
+	if _builder.use_shacks:
+		structures.build_shells(self, _builder, level_rng)
+	# 지붕 위 등은 길 계산에서 뺌 (nav_ignore). 나머지 맵 물체만 길 계산에 씀
+	var nm := _nav_region.navigation_mesh
+	nm.geometry_source_geometry_mode = NavigationMesh.SOURCE_GEOMETRY_GROUPS_WITH_CHILDREN
+	nm.geometry_source_group_name = &"navsrc"
+	for child in _nav_region.get_children():
+		if not child.has_meta("nav_ignore"):
+			child.add_to_group(&"navsrc")
 	await get_tree().physics_frame
 	_nav_region.bake_navigation_mesh(false)
 	await get_tree().physics_frame
@@ -206,17 +217,18 @@ func _bake_navigation() -> void:
 	while NavigationServer3D.map_get_iteration_id(map) == 0:
 		await get_tree().physics_frame
 	# 길 정보가 실제로 쓸 수 있게 될 때까지 (최대 약 3초)
-	var probe: Vector3 = LevelBuilder.SURVIVOR_SPAWNS[0]
+	var probe: Vector3 = _builder.survivor_spawns[0]
 	for i in 180:
 		if NavigationServer3D.map_get_closest_point(map, probe) != Vector3.ZERO:
 			break
 		await get_tree().physics_frame
 	await get_tree().physics_frame
+	structures._props.append_array(_builder.props)
 	structures.spawn_props(self)
 
 
 func _spawn_characters() -> void:
-	var spawns := LevelBuilder.SURVIVOR_SPAWNS
+	var spawns := _builder.survivor_spawns
 	if Net.in_match():
 		_net_spawn_characters()
 		return
@@ -267,9 +279,9 @@ func _spawn_characters() -> void:
 		node.set_script(SEEKER_TYPES[seeker_type])
 		var sk := node as Seeker
 		sk.seeker_type = seeker_type
-		sk.map_half_size = LevelBuilder.HALF - 3.0
+		sk.map_half_size = _builder.half - 3.0
 		add_child(sk)
-		sk.global_position = LevelBuilder.SEEKER_SPAWNS[i]
+		sk.global_position = _builder.seeker_spawns[i]
 		sk.killed.connect(_on_seeker_killed)
 		seekers.append(sk)
 	seeker = seekers[0]
@@ -326,13 +338,22 @@ func _update_horror(delta: float) -> void:
 ## 걸을 수 있는 바닥 중 랜덤 위치 (공간을 지배하는 자 순간이동)
 func random_floor_point() -> Vector3:
 	var map := get_world_3d().navigation_map
-	var half := LevelBuilder.HALF - 3.0
+	var half: float = _builder.half - 3.0
 	for i in 30:
-		var p := Vector3(randf_range(-half, half), 0.0, randf_range(-half, half))
+		var lv: float = _builder.floor_levels[randi() % _builder.floor_levels.size()]
+		var p := Vector3(randf_range(-half, half), lv + 0.3, randf_range(-half, half))
 		var c := NavigationServer3D.map_get_closest_point(map, p)
-		if c.y < 1.0 and Vector2(c.x, c.z).distance_to(Vector2(p.x, p.z)) < 2.0:
+		if absf(c.y - lv) < 1.0 and Vector2(c.x, c.z).distance_to(Vector2(p.x, p.z)) < 2.0 and reachable(c):
 			return c
 	return player.global_position
+
+
+## 시작 지점에서 걸어서 갈 수 있는 곳인지 (지붕 위·막힌 방 제외)
+func reachable(p: Vector3) -> bool:
+	var map := get_world_3d().navigation_map
+	var from: Vector3 = NavigationServer3D.map_get_closest_point(map, _builder.survivor_spawns[0])
+	var path := NavigationServer3D.map_get_path(map, from, p, true)
+	return path.size() > 0 and path[path.size() - 1].distance_to(p) < 1.0
 
 
 ## p 에서 가장 가까운 걸을 수 있는 바닥
@@ -458,7 +479,7 @@ func _finish_escape() -> void:
 
 ## 맵 가장자리 서로 다른 변에 탈출구
 func _spawn_exits() -> void:
-	var half := LevelBuilder.HALF - 3.0
+	var half := _builder.half - 3.0
 	var edges := [0, 1, 2, 3]
 	edges.shuffle()
 	for i in mini(int(GameConfig.num("escape", "exit_count", 2)), 4):
@@ -657,7 +678,7 @@ func _in_corridor(p: Vector3, start: Vector3, dir: Vector3, length: float, half_
 
 ## start 에서 dir 방향으로 맵 경계까지 거리
 func _distance_to_edge(start: Vector3, dir: Vector3) -> float:
-	var half := LevelBuilder.HALF
+	var half := _builder.half
 	var t := INF
 	if absf(dir.x) > 0.001:
 		t = minf(t, ((half if dir.x > 0.0 else -half) - start.x) / dir.x)
@@ -723,6 +744,26 @@ func _stats_text() -> String:
 	return "\n".join(lines)
 
 
+## 결과 화면 표에 쓰는 생존자별 기록 (멀티에서는 방장이 만들어 모두에게 보냄)
+func _stats_rows() -> Array:
+	var mvp: Survivor = null
+	for s in survivors:
+		if mvp == null or _mvp_score(s) > _mvp_score(mvp):
+			mvp = s
+	var rows := []
+	for i in survivors.size():
+		var s: Survivor = survivors[i]
+		var info: Dictionary = CharacterDB.get_info(s.character_id) if CharacterDB.ORDER.has(s.character_id) else {"name": "?", "color": Color.WHITE}
+		rows.append({
+			"idx": i, "name": s.display_name, "char": s.character_id, "color": info["color"], "cos": s.cosmetics,
+			"rescues": s.stat_rescues, "stages": s.stat_stages, "dodges": s.stat_dodges,
+			"alive": round_time if s.stat_out_time < 0.0 else s.stat_out_time,
+			"result": "탈출" if s.escaped else ("탈락" if s.is_dead else "생존"),
+			"mvp": s == mvp, "me": s == player,
+		})
+	return rows
+
+
 func _end_round(win: bool, reason: String) -> void:
 	if _ended:
 		return
@@ -748,9 +789,9 @@ func _end_round(win: bool, reason: String) -> void:
 		SaveData.stage = 1  # 지면 처음(스테이지 1, 첫 술래)부터 다시
 	SaveData.save_game()
 
-	var details := "봉인석 %d개: +%d\n땡해준 횟수 %d번: +%d\n클리어 보너스: +%d\n\n획득 코인: %d  (보유: %d)" % [
-		missions_done, mission_coins, player_rescues, rescue_coins, clear_coins, total, SaveData.coins]
-	details = _stats_text() + "\n\n" + details
+	var t := int(round_time)
+	var details := "플레이 시간 %d:%02d\n봉인석 %d개 +%d · 땡 %d번 +%d · 클리어 보너스 +%d   (보유 코인 %d)" % [
+		t / 60, t % 60, missions_done, mission_coins, player_rescues, rescue_coins, clear_coins, SaveData.coins]
 	if game_clear:
 		details += "\n\n축하해요! 11마리의 술래를 모두 물리쳤어요. (클리어 %d회)\n다음 판은 스테이지 1부터 다시 시작해요." % SaveData.clears
 	elif win:
@@ -758,11 +799,12 @@ func _end_round(win: bool, reason: String) -> void:
 	else:
 		details += "\n스테이지 1부터 다시 시작해요."
 
+	var rows := _stats_rows()
 	if Net.is_host():
-		Net.round_ended.rpc(win, reason, _stats_text())
+		Net.round_ended.rpc(win, reason, "플레이 시간 %d:%02d" % [t / 60, t % 60], rows)
 	get_tree().paused = true
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-	hud.show_result(win, reason, details)
+	hud.show_result(win, reason, details, rows, total)
 
 
 # ================================================================ 멀티플레이 (scripts/autoload/net.gd 와 함께)
@@ -770,7 +812,7 @@ func _end_round(win: bool, reason: String) -> void:
 ## 멀티: 자리(slot)대로 생존자 만들기. 내 자리 = 내가 조종, 나머지는 받은 위치를 따라가는 꼭두각시
 ## 방장 컴퓨터의 봇만 진짜 AI로 움직임
 func _net_spawn_characters() -> void:
-	var spawns := LevelBuilder.SURVIVOR_SPAWNS
+	var spawns := _builder.survivor_spawns
 	var slots: Array = Net.match_config["slots"]
 	var me := Net.my_slot()
 	var host := Net.is_host()
@@ -805,11 +847,11 @@ func _net_spawn_characters() -> void:
 		node.set_script(SEEKER_TYPES[seeker_type])
 		var sk := node as Seeker
 		sk.seeker_type = seeker_type
-		sk.map_half_size = LevelBuilder.HALF - 3.0
+		sk.map_half_size = _builder.half - 3.0
 		sk.net_puppet = not host
 		sk.name = "K%d" % i
 		add_child(sk)
-		sk.global_position = LevelBuilder.SEEKER_SPAWNS[i]
+		sk.global_position = _builder.seeker_spawns[i]
 		sk.killed.connect(_on_seeker_killed)
 		seekers.append(sk)
 	seeker = seekers[0]
@@ -937,13 +979,16 @@ func net_client_escape(positions: Array) -> void:
 
 
 ## (다른 사람 컴퓨터) 판 끝
-func net_client_round_end(win: bool, reason: String, details: String) -> void:
+func net_client_round_end(win: bool, reason: String, details: String, rows: Array = []) -> void:
 	if _ended:
 		return
 	_ended = true
 	_round_over = true
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-	hud.show_result(win, reason, details + "\n\n로비로 가서 준비하거나, 방장이 다음 판을 바로 시작할 수 있어요.")
+	for r in rows:
+		var i: int = r.get("idx", -1)
+		r["me"] = i >= 0 and i < survivors.size() and survivors[i] == player
+	hud.show_result(win, reason, details + "\n로비로 가서 준비하거나, 방장이 다음 판을 바로 시작할 수 있어요.", rows)
 
 
 ## (방장 컴퓨터) 누군가 나감 → 그 자리는 봇이 이어서 함

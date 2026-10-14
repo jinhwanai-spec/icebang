@@ -91,9 +91,16 @@ func _unhandled_input(event: InputEvent) -> void:
 				deg_to_rad(-55.0), deg_to_rad(40.0))
 
 	if is_dead or escaped:
-		# 관전 중: 클릭하면 다른 동료로
+		# 관전 중: 좌클릭 다음 / 우클릭 이전 / V 자유 시점
 		if event is InputEventMouseButton and event.pressed:
-			_spectate_index += 1
+			var mb := event as InputEventMouseButton
+			if mb.button_index == MOUSE_BUTTON_LEFT:
+				_spectate_step(1)
+			elif mb.button_index == MOUSE_BUTTON_RIGHT:
+				_spectate_step(-1)
+		if event is InputEventKey and event.pressed and not event.echo and (event as InputEventKey).keycode == KEY_V:
+			spectate_free = not spectate_free
+			spring_arm.spring_length = 0.0 if spectate_free else GameConfig.num("view", "camera_distance", 2.6) + 1.2
 		return
 	# 사물함 안: E로만 나갈 수 있음. 마우스로 통풍구 틈 사이를 살짝 둘러봄
 	if in_locker:
@@ -339,15 +346,67 @@ func _make_vent_overlay(wood: bool) -> CanvasLayer:
 
 
 var _spectate_index := 0
-func _spectate() -> void:
-	var alive: Array = []
+## 관전: 지금 보고 있는 대상 (HUD 가 이름·상태를 보여 줌), 자유 시점 여부
+var spectate_target: Node3D = null
+var spectate_free := false
+var _spec_excluded: RID
+
+
+## 볼 수 있는 대상: 살아 있는 동료 먼저, 그다음 술래들
+func spectate_targets() -> Array:
+	var out: Array = []
 	for s in _game().survivors:
 		if s != self and not s.is_dead and not s.escaped:
-			alive.append(s)
-	if alive.is_empty():
+			out.append(s)
+	for k in _game().seekers:
+		if is_instance_valid(k) and not k.is_killed and k.visible:
+			out.append(k)
+	return out
+
+
+func _spectate_step(dir: int) -> void:
+	var list := spectate_targets()
+	if list.is_empty():
 		return
-	var t: Node3D = alive[_spectate_index % alive.size()]
-	pivot.global_position = pivot.global_position.lerp(t.global_position + Vector3.UP * 1.5, 0.2)
+	var cur := list.find(spectate_target)
+	_spectate_index = posmod((cur if cur >= 0 else 0) + dir, list.size())
+	spectate_free = false
+	spring_arm.spring_length = GameConfig.num("view", "camera_distance", 2.6) + 1.2
+
+
+func _spectate() -> void:
+	var delta := get_physics_process_delta_time()
+	if spectate_free:
+		# 자유 시점: WASD 이동, Space/Ctrl 위아래, Shift 빠르게
+		var basis_y := Basis(Vector3.UP, pivot.global_rotation.y)
+		var mv := Vector3.ZERO
+		mv.x = Input.get_action_strength("move_right") - Input.get_action_strength("move_left")
+		mv.z = Input.get_action_strength("move_back") - Input.get_action_strength("move_forward")
+		mv = basis_y * mv
+		if Input.is_key_pressed(KEY_SPACE):
+			mv.y += 1.0
+		if Input.is_key_pressed(KEY_CTRL):
+			mv.y -= 1.0
+		var spd := 18.0 if Input.is_key_pressed(KEY_SHIFT) else 8.0
+		pivot.global_position += mv.normalized() * spd * delta if mv.length() > 0.01 else Vector3.ZERO
+		pivot.global_position.y = clampf(pivot.global_position.y, -6.0, 40.0)
+		return
+	var list := spectate_targets()
+	if list.is_empty():
+		spectate_target = null
+		return
+	# 보던 대상이 잡히거나 탈출하면 목록이 줄어 자연스럽게 다음 대상으로
+	spectate_target = list[_spectate_index % list.size()]
+	var rid: RID = (spectate_target as CollisionObject3D).get_rid() if spectate_target is CollisionObject3D else RID()
+	if rid != _spec_excluded:
+		if _spec_excluded.is_valid():
+			spring_arm.remove_excluded_object(_spec_excluded)
+		if rid.is_valid():
+			spring_arm.add_excluded_object(rid)
+		_spec_excluded = rid
+	var want := spectate_target.global_position + Vector3.UP * (2.2 if spectate_target is Seeker else 1.5)
+	var k := 1.0 - exp(-10.0 * delta)
+	pivot.global_position = want if pivot.global_position.distance_to(want) > 25.0 else pivot.global_position.lerp(want, k)
 
 
 ## 카메라가 보는 수평 방향

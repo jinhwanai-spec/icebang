@@ -17,7 +17,7 @@ const C_BLOOD := Color("d9465a")
 
 ## 테스트용 선택지: 스테이지별 술래 이름 (main.gd SEEKER_ORDER 순서), 맵
 const SEEKER_NAMES := ["거대 쥐", "유령", "도축자", "인형술사", "사냥개", "거미", "먹보 하마", "사이코", "처형인", "마네킹", "안개 마녀"]
-const MAP_CHOICES := [["", "랜덤"], ["city", "버려진 도시"], ["forest", "숲속 폐캠핑장"]]
+const MAP_CHOICES := [["", "랜덤"], ["city", "버려진 도시"], ["forest", "숲속 폐캠핑장"], ["school", "밤의 폐교"], ["hospital", "폐병원"]]
 
 ## 상점에 파는 공통 능력: [능력 id, 이름, 설명]
 const SHOP_ITEMS := [
@@ -66,6 +66,8 @@ func _ready() -> void:
 	Net.lobby_changed.connect(_refresh_multi)
 	Net.status_changed.connect(_on_net_status)
 	_show("multi" if Net.active else "main")
+	if CrashLog.crashed_last_time:
+		_crash_notice()
 
 
 func _show(page: String) -> void:
@@ -82,6 +84,51 @@ func _show(page: String) -> void:
 			_refresh_wardrobe()
 		"multi":
 			_refresh_multi()
+
+
+# ================================================================ 버그 신고
+
+func _on_bug_report() -> void:
+	var path := CrashLog.make_report("메뉴에서 버그 신고")
+	_notice("버그 리포트를 저장했어요", "파일 위치를 클립보드에 복사했어요.\n%s\n\n이 파일(+같은 이름의 사진)을 개발자에게 보내 주세요." % ProjectSettings.globalize_path(path))
+
+
+## 지난번에 게임이 갑자기 꺼졌을 때 한 번 안내
+func _crash_notice() -> void:
+	CrashLog.crashed_last_time = false
+	_notice("지난번에 게임이 갑자기 꺼졌어요", "그때의 기록으로 버그 리포트를 만들 수 있어요.", "리포트 만들기", func() -> void:
+		var path := CrashLog.make_report("지난 실행 비정상 종료")
+		CrashLog.open_report_folder()
+		DisplayServer.clipboard_set(ProjectSettings.globalize_path(path)))
+
+
+func _notice(title: String, body: String, action := "", on_action := Callable()) -> void:
+	var dim := ColorRect.new()
+	dim.color = Color(0, 0, 0, 0.6)
+	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
+	add_child(dim)
+	var card := _card()
+	dim.add_child(card)
+	card.set_anchors_and_offsets_preset(Control.PRESET_CENTER, Control.PRESET_MODE_MINSIZE)
+	card.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	card.grow_vertical = Control.GROW_DIRECTION_BOTH
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 12)
+	card.add_child(v)
+	v.add_child(_label(title, 22, C_TEXT))
+	var b := _label(body, 15, C_DIM)
+	b.custom_minimum_size.x = 460
+	b.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	v.add_child(b)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 10)
+	v.add_child(row)
+	if action != "":
+		row.add_child(_button(action, func() -> void:
+			on_action.call()
+			dim.queue_free()))
+	row.add_child(_button("폴더 열기", CrashLog.open_report_folder))
+	row.add_child(_button("닫기", dim.queue_free))
 
 
 # ================================================================ 메인
@@ -152,6 +199,7 @@ func _build_main_page() -> Control:
 	if GameConfig.flag("debug", "test_coins_button", true):
 		foot.add_child(_text_button("+100 코인 (테스트)", _on_test_coins))
 	foot.add_child(_text_button("기록 초기화", _on_reset))
+	foot.add_child(_text_button("버그 신고 (F8)", _on_bug_report))
 	# 그래픽 품질 (높음/낮음) 바꾸기
 	var gfx := _text_button("", func() -> void: pass)
 	var gfx_text := func() -> void: gfx.text = "그래픽: %s" % ("높음" if SaveData.high_graphics() else "낮음 (가벼움)")

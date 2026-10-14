@@ -52,6 +52,18 @@ var _pause_panel: PanelContainer
 var _result_panel: PanelContainer
 var _result_title: Label
 var _result_body: Label
+var _result_sub: Label
+var _result_dim: ColorRect
+var _result_box: VBoxContainer
+var _mvp_card: PanelContainer
+var _mvp_view: SubViewport
+var _mvp_body: ClayBody
+var _mvp_name: Label
+var _mvp_why: Label
+var _stats_grid: GridContainer
+var _coin_label: Label
+var _coin_target := 0
+var _coin_shown := 0.0
 var _result_retry: Button
 var _result_menu: Button
 var _message_time := 0.0
@@ -226,6 +238,8 @@ func flash_red() -> void:
 
 func _process(delta: float) -> void:
 	_message_time -= delta
+	if _result_panel and _result_panel.visible:
+		_tick_result(delta)
 	_message_label.visible = _message_time > 0.0
 	if main == null or not main.ready_to_play:
 		return
@@ -295,8 +309,8 @@ func _process(delta: float) -> void:
 			_thaw_label.text = "%s 해동 중... %.1f / %d초 (떨어지면 처음부터)" % [thaw_target.display_name, thaw_target.thaw_progress, thaw_time]
 
 	# --- 아래쪽 가운데: 내 상태
-	if p.is_dead:
-		_status_label.text = "탈락! (관전 중) 동료들이 봉인석을 다 가동하면 함께 클리어돼요."
+	if p.is_dead or p.escaped:
+		_status_label.text = ("탈락! " if p.is_dead else "탈출 성공! ") + _spectate_text(p)
 	elif p.is_frozen:
 		_status_label.text = "[ 얼음 %d회 ]  술래에게 잡히지 않아요" % p.freeze_count
 		if p.ice_left > 0.0:
@@ -321,8 +335,6 @@ func _process(delta: float) -> void:
 		_status_label.text = "그림자 속 %.1f초 - 감지·잡기 불가 (R: 나오기 · T: 동료 그림자로 건너가기)" % p.shadow_left
 	elif p.in_locker:
 		_status_label.text = "사물함에 숨는 중... (E: 나가기)  30초가 넘으면 고양이가 울어요"
-	elif p.escaped:
-		_status_label.text = "탈출 성공! 동료들을 기다리는 중..."
 	elif p.nearby_prop:
 		_status_label.text = p.nearby_prop.call("prompt", p)
 	elif p.nearby_web:
@@ -433,12 +445,52 @@ func _set_paused(paused: bool) -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if paused else Input.MOUSE_MODE_CAPTURED
 
 
+## 관전 안내: 누구를 보는지 + 그 대상 상태 + 조작법
+func _spectate_text(p) -> String:
+	var keys := "\n[좌클릭] 다음  [우클릭] 이전  [V] 자유 시점 (WASD·Space·Ctrl·Shift)"
+	if p.spectate_free:
+		return "관전 · 자유 시점" + keys
+	var t: Node3D = p.spectate_target
+	if t == null or not is_instance_valid(t):
+		return "관전할 대상이 없어요" + keys
+	if t is Seeker:
+		var st := "추격 중!" if (t as Seeker).chase_target else "순찰 중"
+		return "관전 · 술래 시점 (%s)" % st + keys
+	var s := t as Survivor
+	var st2 := "얼음 (%.0f초 남음)" % s.ice_left if s.is_frozen and s.ice_left > 0.0 else ("얼음" if s.is_frozen else ("사물함 속" if s.in_locker else "이동 중"))
+	return "관전 · %s · %s" % [s.display_name, st2] + keys
+
+
 ## main.gd가 판이 끝나면 불러 줍니다.
-func show_result(win: bool, title: String, details: String) -> void:
+## rows = main._stats_rows() (생존자별 기록). 비어 있으면 글자만 보여 줌
+func show_result(win: bool, title: String, details: String, rows: Array = [], coins := -1) -> void:
 	_pause_panel.visible = false
-	_result_title.text = title
-	_result_title.modulate = Color(0.5, 1, 0.6) if win else Color(1, 0.5, 0.5)
+	_result_title.text = ("승리 · " if win else "패배 · ") + title
+	_result_title.modulate = Color(0.55, 1, 0.65) if win else Color(1, 0.5, 0.5)
+	_result_sub.text = str(main.get("map_name")) if main else ""
 	_result_body.text = details
+	_fill_stats(rows)
+	_message_time = 0.0
+	_result_dim.visible = true
+	_result_dim.modulate.a = 0.0
+	create_tween().tween_property(_result_dim, "modulate:a", 1.0, 0.5)
+	_coin_target = maxi(coins, 0)
+	_coin_shown = 0.0
+	_coin_label.visible = coins >= 0
+	# 등장 연출: 살짝 커지며 나타나고, 표 줄이 하나씩 차례로
+	_result_panel.pivot_offset = _result_panel.size * 0.5
+	_result_panel.modulate.a = 0.0
+	_result_panel.scale = Vector2(0.92, 0.92)
+	var tw := create_tween().set_parallel(true).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw.tween_property(_result_panel, "modulate:a", 1.0, 0.35)
+	tw.tween_property(_result_panel, "scale", Vector2.ONE, 0.45)
+	var i := 0
+	for c in _stats_grid.get_children():
+		var ctl := c as Control
+		ctl.modulate.a = 0.0
+		var row_i := i / _stats_grid.columns
+		create_tween().tween_property(ctl, "modulate:a", 1.0, 0.25).set_delay(0.35 + row_i * 0.18)
+		i += 1
 	_result_retry.text = "다음 스테이지" if win else "다시 하기"
 	if Net.in_match():
 		# 멀티: 방은 유지된 채 로비로. 방장은 바로 다음 판도 가능
@@ -520,6 +572,9 @@ func _build_pause_panel(root: Control) -> void:
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	box.add_child(title)
 	_make_button(box, "계속하기", func() -> void: _set_paused(false))
+	_make_button(box, "버그 신고 (F8)", func() -> void:
+		var path := CrashLog.make_report("일시정지 메뉴에서 신고")
+		show_message("버그 리포트 저장 완료 (경로 복사됨)\n" + ProjectSettings.globalize_path(path), 5.0))
 	_make_button(box, ("로비로 (모두 함께, 방 유지)" if Net.is_host() else "로비로 (방 유지, 내 자리는 봇이)") if Net.in_match() else "메뉴로 (이번 판 포기)", _go_menu)
 
 
@@ -527,18 +582,210 @@ func _build_result_panel(root: Control) -> void:
 	var made := _make_panel(root)
 	_result_panel = made[0]
 	var box: VBoxContainer = made[1]
+	_result_box = box
+	_result_dim = ColorRect.new()
+	_result_dim.color = Color(0.0, 0.0, 0.02, 0.72)
+	_result_dim.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_result_dim.visible = false
+	root.add_child(_result_dim)
+	root.move_child(_result_dim, _result_panel.get_index())
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.06, 0.06, 0.11, 0.94)
+	sb.border_color = Color(0.45, 0.5, 0.9, 0.6)
+	sb.set_border_width_all(2)
+	sb.set_corner_radius_all(14)
+	_result_panel.add_theme_stylebox_override("panel", sb)
 	_result_title = Label.new()
 	_result_title.add_theme_font_size_override("font_size", 38)
+	_result_title.add_theme_color_override("font_outline_color", Color.BLACK)
+	_result_title.add_theme_constant_override("outline_size", 8)
 	_result_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	box.add_child(_result_title)
+	_result_sub = Label.new()
+	_result_sub.add_theme_font_size_override("font_size", 16)
+	_result_sub.modulate = Color(0.75, 0.75, 0.85)
+	_result_sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	box.add_child(_result_sub)
+	var mid := HBoxContainer.new()
+	mid.add_theme_constant_override("separation", 22)
+	box.add_child(mid)
+	_build_mvp_card(mid)
+	var right := VBoxContainer.new()
+	right.add_theme_constant_override("separation", 10)
+	right.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	mid.add_child(right)
+	_stats_grid = GridContainer.new()
+	_stats_grid.columns = 6
+	_stats_grid.add_theme_constant_override("h_separation", 18)
+	_stats_grid.add_theme_constant_override("v_separation", 6)
+	right.add_child(_stats_grid)
+	right.add_child(HSeparator.new())
 	_result_body = Label.new()
-	_result_body.add_theme_font_size_override("font_size", 20)
-	box.add_child(_result_body)
+	_result_body.add_theme_font_size_override("font_size", 17)
+	_result_body.custom_minimum_size = Vector2(520, 0)
+	_result_body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	right.add_child(_result_body)
+	_coin_label = Label.new()
+	_coin_label.add_theme_font_size_override("font_size", 26)
+	_coin_label.add_theme_color_override("font_color", Color(1.0, 0.85, 0.3))
+	right.add_child(_coin_label)
 	var buttons := HBoxContainer.new()
 	buttons.add_theme_constant_override("separation", 16)
 	box.add_child(buttons)
 	_result_retry = _make_button(buttons, "다시 하기", _restart)
 	_result_menu = _make_button(buttons, "메뉴로", _go_menu)
+
+
+## MVP 카드: 3D 미리보기 속 캐릭터가 신나게 춤춤 + 이름 + 뽑힌 이유
+func _build_mvp_card(parent: Control) -> void:
+	_mvp_card = PanelContainer.new()
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.16, 0.13, 0.05, 0.9)
+	sb.border_color = Color(1.0, 0.8, 0.25)
+	sb.set_border_width_all(3)
+	sb.set_corner_radius_all(12)
+	sb.content_margin_left = 10
+	sb.content_margin_right = 10
+	sb.content_margin_top = 8
+	sb.content_margin_bottom = 10
+	_mvp_card.add_theme_stylebox_override("panel", sb)
+	parent.add_child(_mvp_card)
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 4)
+	_mvp_card.add_child(v)
+	var star := Label.new()
+	star.text = "★ MVP ★"
+	star.add_theme_font_size_override("font_size", 24)
+	star.add_theme_color_override("font_color", Color(1.0, 0.85, 0.3))
+	star.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	v.add_child(star)
+	var svc := SubViewportContainer.new()
+	svc.custom_minimum_size = Vector2(220, 250)
+	svc.stretch = true
+	v.add_child(svc)
+	_mvp_view = SubViewport.new()
+	_mvp_view.own_world_3d = true
+	_mvp_view.transparent_bg = true
+	_mvp_view.msaa_3d = Viewport.MSAA_4X
+	svc.add_child(_mvp_view)
+	var env := WorldEnvironment.new()
+	env.environment = Environment.new()
+	env.environment.background_mode = Environment.BG_CLEAR_COLOR
+	env.environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+	env.environment.ambient_light_color = Color(0.6, 0.6, 0.75)
+	env.environment.ambient_light_energy = 0.7
+	_mvp_view.add_child(env)
+	var cam := Camera3D.new()
+	cam.position = Vector3(0, 1.15, 3.6)
+	cam.fov = 38
+	_mvp_view.add_child(cam)
+	cam.look_at(Vector3(0, 0.95, 0))
+	var key := DirectionalLight3D.new()
+	key.rotation = Vector3(-0.6, 0.5, 0)
+	key.light_energy = 1.2
+	_mvp_view.add_child(key)
+	var gold := OmniLight3D.new()
+	gold.position = Vector3(-1.2, 2.0, -1.0)
+	gold.light_color = Color(1.0, 0.8, 0.35)
+	gold.light_energy = 2.0
+	gold.omni_range = 5.0
+	_mvp_view.add_child(gold)
+	_mvp_name = Label.new()
+	_mvp_name.add_theme_font_size_override("font_size", 20)
+	_mvp_name.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	v.add_child(_mvp_name)
+	_mvp_why = Label.new()
+	_mvp_why.add_theme_font_size_override("font_size", 14)
+	_mvp_why.modulate = Color(0.9, 0.85, 0.7)
+	_mvp_why.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_mvp_why.custom_minimum_size = Vector2(220, 0)
+	_mvp_why.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	v.add_child(_mvp_why)
+
+
+## 기록 표 채우기: 이름 / 땡 / 봉인석 / 회피 / 생존 시간 / 결과. 항목마다 1등은 금색
+func _fill_stats(rows: Array) -> void:
+	for c in _stats_grid.get_children():
+		c.queue_free()
+	_mvp_card.visible = not rows.is_empty()
+	_stats_grid.visible = not rows.is_empty()
+	if rows.is_empty():
+		return
+	var heads := ["생존자", "땡", "봉인석", "회피", "생존", "결과"]
+	for h in heads:
+		var l := Label.new()
+		l.text = h
+		l.add_theme_font_size_override("font_size", 15)
+		l.modulate = Color(0.65, 0.68, 0.85)
+		_stats_grid.add_child(l)
+	var best := {"rescues": 0.0, "stages": 0.0, "dodges": 0.0, "alive": 0.0}
+	for r in rows:
+		for k in best:
+			best[k] = maxf(best[k], float(r[k]))
+	var mvp: Dictionary = {}
+	for r in rows:
+		if r.get("mvp", false):
+			mvp = r
+	for r in rows:
+		var me: bool = r.get("me", false)
+		var name_l := Label.new()
+		name_l.text = ("★ " if r.get("mvp", false) else "") + str(r["name"]) + (" (나)" if me and str(r["name"]) != "나" else "")
+		name_l.add_theme_color_override("font_color", (r["color"] as Color).lightened(0.35))
+		_stats_grid.add_child(name_l)
+		for k in ["rescues", "stages", "dodges", "alive"]:
+			var l := Label.new()
+			var val := float(r[k])
+			if k == "alive":
+				l.text = "%d:%02d" % [int(val) / 60, int(val) % 60]
+			elif k == "stages":
+				l.text = "%.1f" % val
+			else:
+				l.text = str(int(val))
+			if val > 0.0 and is_equal_approx(val, best[k]):
+				l.add_theme_color_override("font_color", Color(1.0, 0.85, 0.3))
+			l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			_stats_grid.add_child(l)
+		var res := Label.new()
+		res.text = str(r["result"])
+		res.add_theme_color_override("font_color", {"탈출": Color(0.5, 1, 0.7), "생존": Color(0.7, 0.9, 1), "탈락": Color(1, 0.5, 0.5)}.get(res.text, Color.WHITE))
+		_stats_grid.add_child(res)
+	# MVP 미리보기
+	if _mvp_body:
+		_mvp_body.queue_free()
+		_mvp_body = null
+	if mvp.is_empty():
+		_mvp_card.visible = false
+		return
+	_mvp_body = ClayBody.new()
+	_mvp_view.add_child(_mvp_body)
+	_mvp_body.build(str(mvp["char"]), mvp.get("cos", {}))
+	_mvp_body.emote = "disco"
+	_mvp_name.text = str(mvp["name"])
+	_mvp_why.text = _mvp_reason(mvp, best)
+
+
+func _mvp_reason(r: Dictionary, best: Dictionary) -> String:
+	var bits: Array[String] = []
+	if float(r["rescues"]) > 0.0 and is_equal_approx(float(r["rescues"]), best["rescues"]):
+		bits.append("땡 최다 %d번" % int(r["rescues"]))
+	if float(r["stages"]) > 0.0 and is_equal_approx(float(r["stages"]), best["stages"]):
+		bits.append("봉인석 최다")
+	if float(r["dodges"]) > 0.0 and is_equal_approx(float(r["dodges"]), best["dodges"]):
+		bits.append("회피 최다")
+	if r["result"] == "탈출":
+		bits.append("탈출 성공")
+	if bits.is_empty():
+		bits.append("가장 오래 버팀")
+	return " · ".join(bits)
+
+
+func _tick_result(delta: float) -> void:
+	if _mvp_body and is_instance_valid(_mvp_body):
+		_mvp_body.animate(delta, 0.0, false)
+		_mvp_body.rotation.y = sin(Time.get_ticks_msec() * 0.0008) * 0.5
+	if _coin_label.visible:
+		_coin_shown = move_toward(_coin_shown, _coin_target, maxf(30.0, _coin_target * 0.8) * delta)
+		_coin_label.text = "획득 코인 +%d" % int(_coin_shown)
 
 
 func _restart() -> void:

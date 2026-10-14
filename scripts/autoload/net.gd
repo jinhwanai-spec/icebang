@@ -251,7 +251,7 @@ func start_match() -> void:
 	sync_players.rpc(players)
 	var cfg := {
 		"seed": randi(),
-		"map": SaveData.test_map if SaveData.test_map != "" else ["city", "forest"][randi() % 2],
+		"map": SaveData.test_map if SaveData.test_map != "" else ["city", "forest", "school", "hospital"][randi() % 4],
 		"stage": SaveData.stage,
 		"slots": slots,
 	}
@@ -398,7 +398,7 @@ func escape_started(positions: Array) -> void:
 
 ## 방장 → 모두: 판 끝
 @rpc("authority", "reliable")
-func round_ended(win: bool, reason: String, details: String) -> void:
+func round_ended(win: bool, reason: String, details: String, rows: Array) -> void:
 	var m := _main()
 	if m:
-		m.call("net_client_round_end", win, reason, details)
+		m.call("net_client_round_end", win, reason, details, rows)

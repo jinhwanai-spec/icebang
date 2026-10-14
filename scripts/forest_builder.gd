@@ -17,6 +17,8 @@ func build(target: Node3D, map_seed: int) -> void:
 	region = target
 	rng.seed = map_seed
 	_make_materials()
+	kit = BuildingKit.new(self)
+	floor_levels = [0.0]
 	_mat["forest_floor"] = _textured_ground() if _has_tex("forrest_ground_01") else _forest_floor_mat()
 	_mat["bark"] = _bark_mat()
 	_mat["canopy"] = _noise_mat(Color(0.07, 0.13, 0.08), 0.55, 1.0, 2.5)
@@ -428,23 +430,74 @@ func _cabins() -> void:
 			Vector3(-62, 0, -8), Vector3(20, 0, 66), Vector3(66, 0, 30), Vector3(-30, 0, -66)]:
 		if _blocked(spot, 5.0):
 			continue
-		var yaw := rng.randf_range(-0.4, 0.4)
-		var size := Vector3(rng.randf_range(6, 8), 3.2, rng.randf_range(5, 6.5))
-		var body := _prop(spot, yaw, size)
-		_part(body, Vector3(0, size.y / 2.0, 0), _box_mesh(size), _mat["log"])
-		var roof := PrismMesh.new()
-		roof.size = Vector3(size.x + 0.8, 1.8, size.z + 0.8)
-		_part(body, Vector3(0, size.y + 0.9, 0), roof, _mat["roof"])
-		# 깨진 창문에서 새어 나오는 희미한 불빛
-		var win := StandardMaterial3D.new()
-		win.albedo_color = Color(0.5, 0.35, 0.2)
-		win.emission_enabled = true
-		win.emission = Color(0.9, 0.55, 0.25)
-		win.emission_energy_multiplier = 0.6
-		_part(body, Vector3(0, 1.8, size.z / 2.0 + 0.03), _box_mesh(Vector3(1.2, 0.9, 0.05)), win)
-		# 오두막 옆 장작더미와 풀숲
-		_crates(spot + body.global_basis.x * (size.x / 2.0 + 1.2))
-		_grass(spot - body.global_basis.x * (size.x / 2.0 + 2.0), Vector2(3.0, 5.0))
+		_cabin(spot)
+
+
+## 들어갈 수 있는 통나무 오두막: 문, 창문, 침대·탁자·옷장(숨는 곳)·벽난로
+func _cabin(spot: Vector3) -> void:
+	var w := rng.randf_range(6.5, 8.0)
+	var d := rng.randf_range(5.5, 6.5)
+	var r := Rect2(spot.x - w * 0.5, spot.z - d * 0.5, w, d)
+	var h := 2.9
+	var key := "w_log"
+	var sides := [
+		[Vector3(r.position.x, 0, r.position.y), Vector3(r.end.x, 0, r.position.y)],
+		[Vector3(r.end.x, 0, r.position.y), Vector3(r.end.x, 0, r.end.y)],
+		[Vector3(r.end.x, 0, r.end.y), Vector3(r.position.x, 0, r.end.y)],
+		[Vector3(r.position.x, 0, r.end.y), Vector3(r.position.x, 0, r.position.y)],
+	]
+	var door_side := rng.randi() % 4
+	for si in 4:
+		var a: Vector3 = sides[si][0]
+		var b: Vector3 = sides[si][1]
+		var L := Vector2(b.x - a.x, b.z - a.z).length()
+		var dir := (b - a).normalized()
+		var ops := []
+		if si == door_side:
+			ops.append([L * 0.5 - 0.75, L * 0.5 + 0.75, 0.0, 2.3])
+			var dc := a + dir * (L * 0.5)
+			kit._door_frame(dc, dir, Color(0.25, 0.17, 0.1))
+			if rng.randf() < 0.6:
+				props.append(["door", dc, atan2(dir.z, -dir.x) + PI])
+		else:
+			ops.append([L * 0.5 - 0.6, L * 0.5 + 0.6, 1.0, 2.0])
+			var gc := a + dir * (L * 0.5)
+			gc.y = 1.5
+			var lit := rng.randf() < 0.5
+			kit.block(gc, Vector3(1.2, 1.0, 0.04), _deco_mat("lit" if lit else "glass"), "b_" + ("lit" if lit else "glass"), true, Basis(dir, Vector3.UP, dir.cross(Vector3.UP).normalized()), false, Color(1.0, 0.65, 0.3) if lit else Color(0.06, 0.07, 0.08))
+		kit.wall(a, b, 0.0, h, _mat["log"], key, ops, 0.3)
+	# 모서리 통나무 기둥
+	for x in [r.position.x, r.end.x]:
+		for z in [r.position.y, r.end.y]:
+			_bx("trim", Vector3(x, h * 0.5, z), Vector3.RIGHT, Vector3.BACK, Vector3(0.42, h + 0.2, 0.42), Color(0.28, 0.2, 0.13))
+	# 바닥·지붕 (지붕 위는 길 계산에서 뺌)
+	kit.slab(r.grow(-0.15), 0.06, _mat["crate"], "w_cabin_floor", [], false, 0.06)
+	kit.slab(r.grow(0.1), h + 0.15, _mat["roof"], "w_roof", [], true, 0.3)
+	var roof := PrismMesh.new()
+	roof.size = Vector3(w + 0.9, 1.6, d + 0.9)
+	var rm := MeshInstance3D.new()
+	rm.mesh = roof
+	rm.material_override = _mat["roof"]
+	rm.position = Vector3(spot.x, h + 1.1, spot.z)
+	region.add_child(rm)
+	# 살림살이: 침대, 탁자, 옷장(숨는 곳), 벽난로(불빛)
+	var inner := r.grow(-0.5)
+	kit.furnish(inner, 0.06, "apartment", true)
+	kit._maybe_locker(inner, 0.06, 1.0)
+	var fire := Vector3(inner.get_center().x, 0.06, inner.position.y + 0.4) if door_side != 0 else Vector3(inner.get_center().x, 0.06, inner.end.y - 0.4)
+	kit.part(fire + Vector3.UP * 0.6, Vector3(1.2, 1.2, 0.6), Color(0.35, 0.33, 0.32), "trim", true)
+	kit.part(fire + Vector3.UP * 0.4, Vector3(0.7, 0.5, 0.62), Color(0.05, 0.03, 0.02), "trim")
+	if rng.randf() < 0.6:
+		var l := OmniLight3D.new()
+		l.light_color = Color(1.0, 0.5, 0.2)
+		l.omni_range = 5.5
+		l.light_energy = 1.4
+		l.position = fire + Vector3(0, 0.5, 0.6 if door_side != 0 else -0.6)
+		region.add_child(l)
+		kit.part(fire + Vector3.UP * 0.3, Vector3(0.4, 0.2, 0.3), Color(1.0, 0.55, 0.15), "lit")
+	# 오두막 옆 장작더미와 풀숲
+	_crates(spot + Vector3(w * 0.5 + 1.2, 0, 0))
+	_grass(spot - Vector3(w * 0.5 + 2.0, 0, 0), Vector2(3.0, 5.0))
 
 
 ## 버려진 텐트와 모닥불, 통나무 의자, 바닥에 놓인 랜턴 (몇몇은 무너지고 꺼져 있음)

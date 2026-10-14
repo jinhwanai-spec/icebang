@@ -24,17 +24,49 @@ func _apply_gravity(_delta: float) -> void:
 	velocity.y = 0.0
 
 
+## 높이도 목적지를 따라감 (층을 뚫고 위아래로 스르륵 떠다님 → 학교·병원 2층·지하도 순찰)
 func _set_destination(pos: Vector3) -> void:
-	_dest = Vector3(pos.x, global_position.y, pos.z)
+	_dest = Vector3(pos.x, _snap_floor(pos.y), pos.z)
+
+
+## 목적지 높이를 가장 가까운 층 바닥 높이로 맞춤
+func _snap_floor(y: float) -> float:
+	var game := get_tree().get_first_node_in_group("game")
+	var best := 0.0
+	if game == null or game.get("_builder") == null:
+		return best
+	var levels: Array = game._builder.floor_levels
+	var bd := INF
+	for lv in levels:
+		var d: float = absf(float(lv) - y)
+		if d < bd:
+			bd = d
+			best = float(lv)
+	return best
+
+
+func _random_level() -> float:
+	var game := get_tree().get_first_node_in_group("game")
+	if game == null or game.get("_builder") == null:
+		return 0.0
+	var levels: Array = game._builder.floor_levels
+	return float(levels[randi() % levels.size()])
+
+
+func _flat_dist() -> float:
+	return Vector2(global_position.x, global_position.z).distance_to(Vector2(_dest.x, _dest.z))
 
 
 func _destination_reached() -> bool:
-	return Vector2(global_position.x, global_position.z).distance_to(Vector2(_dest.x, _dest.z)) < 0.8
+	return _flat_dist() < 0.8 and absf(global_position.y - _dest.y) < 0.4
 
 
 func _move_to_destination(delta: float, speed: float) -> void:
 	if _destination_reached():
 		_stop()
+		return
+	if _flat_dist() < 0.8:
+		_stop()  # 바로 위/아래 층에 도착 중: 제자리에서 떠오르거나 가라앉기만
 		return
 	_move_dir(_dest - global_position, delta, speed)
 
@@ -51,7 +83,7 @@ func _pick_patrol_point() -> void:
 			var g: Node3D = gens[randi() % gens.size()]
 			_set_destination(g.global_position + Vector3(randf_range(-6, 6), 0, randf_range(-6, 6)))
 			return
-	_set_destination(Vector3(randf_range(-map_half_size, map_half_size), 0, randf_range(-map_half_size, map_half_size)))
+	_set_destination(Vector3(randf_range(-map_half_size, map_half_size), _random_level(), randf_range(-map_half_size, map_half_size)))
 
 
 func _after_move(delta: float) -> void:
@@ -61,6 +93,9 @@ func _after_move(delta: float) -> void:
 		velocity = _dash_dir * GameConfig.num("ghost", "dash_speed", 22.0)
 		_catch_nearby_survivors(GameConfig.num("seeker", "catch_distance", 1.3) + 0.3)
 	var p := global_position + velocity * delta
+	# 층 이동: 목적지 가까이(12m) 오면 목표 층 높이로 천천히 떠오르거나 가라앉음
+	if _dash_left <= 0.0 and absf(_dest.y - p.y) > 0.02 and _flat_dist() < 12.0:
+		p.y = move_toward(p.y, _dest.y, 1.6 * delta)
 	p.x = clampf(p.x, -map_half_size, map_half_size)
 	p.z = clampf(p.z, -map_half_size, map_half_size)
 	global_position = p

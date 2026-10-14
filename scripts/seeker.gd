@@ -69,6 +69,7 @@ var _attack_left := 0.0
 var net_puppet := false
 var attack_seq := 0
 var _net_pos := Vector3.ZERO
+var _smooth := NetSmooth.new()
 var _net_rot := 0.0
 var _net_vel := Vector3.ZERO
 var _net_has := false
@@ -624,7 +625,7 @@ func _kill_survivor(s: Survivor) -> void:
 
 ## 멀티: 방장이 보낸 술래 상태
 func net_target(pos: Vector3, rot: float, vel: Vector3, st: int, vis: bool, rage: bool, atk: int) -> void:
-	if not _net_has or pos.distance_to(_net_pos) > 8.0:
+	if _smooth.push(pos, rot, vel) or not _net_has:
 		global_position = pos
 	_net_pos = pos
 	_net_rot = rot
@@ -646,8 +647,11 @@ func net_target(pos: Vector3, rot: float, vel: Vector3, st: int, vis: bool, rage
 func _net_puppet_update(delta: float) -> void:
 	if not _net_has:
 		return
-	global_position = global_position.lerp(_net_pos, clampf(12.0 * delta, 0.0, 1.0))
-	rotation.y = lerp_angle(rotation.y, _net_rot, clampf(12.0 * delta, 0.0, 1.0))
+	var smp := _smooth.sample()
+	var tp: Vector3 = smp[0] if not smp.is_empty() else _net_pos
+	var ty: float = smp[1] if not smp.is_empty() else _net_rot
+	global_position = global_position.lerp(tp, clampf(30.0 * delta, 0.0, 1.0))
+	rotation.y = lerp_angle(rotation.y, ty, clampf(20.0 * delta, 0.0, 1.0))
 	velocity = _net_vel
 	_footsteps(delta)
 	_update_label()
@@ -810,7 +814,7 @@ func _pick_patrol_point() -> void:
 		var ahead := partner_target.global_position + (partner_target.global_position - global_position).normalized() * -4.0 \
 				+ Vector3(partner_target.velocity.x, 0, partner_target.velocity.z) * 3.0
 		var ic := NavigationServer3D.map_get_closest_point(map, ahead)
-		if ic.y < 1.0:
+		if _good_point(ic):
 			_set_destination(ic)
 			return
 	# 감시: 누군가 가동하던(진행도가 있는) 봉인석을 우선 확인
@@ -818,14 +822,14 @@ func _pick_patrol_point() -> void:
 	if not working.is_empty() and randf() < GameConfig.num("seeker", "guard_working_chance", 0.5):
 		var wg: Node3D = working[randi() % working.size()]
 		var wc := NavigationServer3D.map_get_closest_point(map, wg.global_position + Vector3(randf_range(-5, 5), 0, randf_range(-5, 5)))
-		if wc.y < 1.0 and wc.distance_to(global_position) > 3.0:
+		if _good_point(wc) and wc.distance_to(global_position) > 3.0:
 			_set_destination(wc)
 			return
 	# 사냥 본능: 가끔 생존자가 있는 "대략적인" 방향으로 감 (정확한 위치는 모름)
 	var hunt := _hunt_point()
 	if hunt != Vector3.INF:
 		var hc := NavigationServer3D.map_get_closest_point(map, hunt)
-		if hc.y < 1.0:
+		if _good_point(hc):
 			_set_destination(hc)
 			return
 	if randf() < GameConfig.num("seeker", "patrol_generator_chance", 0.4):
@@ -834,18 +838,30 @@ func _pick_patrol_point() -> void:
 			var g: Node3D = gens[randi() % gens.size()]
 			var near := g.global_position + Vector3(randf_range(-6, 6), 0, randf_range(-6, 6))
 			var c := NavigationServer3D.map_get_closest_point(map, near)
-			if c.y < 1.0 and c.distance_to(global_position) > 4.0:
+			if _good_point(c) and c.distance_to(global_position) > 4.0:
 				_set_destination(c)
 				return
+	var levels: Array = [0.0]
+	var game := get_tree().get_first_node_in_group("game")
+	if game and game.get("_builder"):
+		levels = game._builder.floor_levels
 	for i in 10:
-		var p := Vector3(randf_range(-map_half_size, map_half_size), 0.0, randf_range(-map_half_size, map_half_size))
+		# 건물 안 위층·지하도 순찰 (층 높이 중 하나를 골라 그 층의 가까운 바닥)
+		var lv: float = levels[randi() % levels.size()]
+		var p := Vector3(randf_range(-map_half_size, map_half_size), lv + 0.3, randf_range(-map_half_size, map_half_size))
 		var closest := NavigationServer3D.map_get_closest_point(map, p)
-		# 건물 위가 아닌 바닥이고, 너무 가깝지 않은 곳
-		if closest.y < 1.0 and closest.distance_to(global_position) > 8.0:
+		# 걸어서 갈 수 있고, 너무 가깝지 않은 곳
+		if absf(closest.y - lv) < 1.2 and closest.distance_to(global_position) > 8.0 and _good_point(closest):
 			_set_destination(closest)
 			return
 	var a := randf() * TAU
 	_set_destination(NavigationServer3D.map_get_closest_point(map, global_position + Vector3(cos(a), 0, sin(a)) * 7.0))
+
+
+## 걸어서 갈 수 있는 곳인지 (지붕 위·막힌 곳 제외)
+func _good_point(c: Vector3) -> bool:
+	var path := NavigationServer3D.map_get_path(agent.get_navigation_map(), global_position, c, true)
+	return path.size() > 0 and path[path.size() - 1].distance_to(c) < 1.2
 
 
 ## 사냥 지점: hunt_chance 확률로 랜덤 생존자 주변 hunt_radius 안의 한 곳. 아니면 Vector3.INF
@@ -860,7 +876,7 @@ func _hunt_point() -> Vector3:
 	var t: Node3D = targets[randi() % targets.size()]
 	var r := GameConfig.num("seeker", "hunt_radius", 12.0) * (0.55 if pressing else 1.0)
 	var p := t.global_position + Vector3(randf_range(-r, r), 0.0, randf_range(-r, r))
-	return Vector3(clampf(p.x, -map_half_size, map_half_size), 0.0, clampf(p.z, -map_half_size, map_half_size))
+	return Vector3(clampf(p.x, -map_half_size, map_half_size), t.global_position.y, clampf(p.z, -map_half_size, map_half_size))
 
 
 ## 다른 술래가 쫓고 있는 생존자 (없으면 null)
