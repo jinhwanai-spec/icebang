@@ -44,6 +44,8 @@ var use_shacks := false
 var debug_rooms: Array = []
 ## (테스트용) 복도 한쪽 끝 위치 (x, z). 없으면 Vector3.INF
 var corridor_probe := Vector3.INF
+## (테스트용) 바깥 풍경 확인 위치 [[카메라, 보는 곳], ...]
+var debug_views: Array = []
 var kit: BuildingKit
 var _building_mats: Array[StandardMaterial3D] = []
 var _rust_mats: Array[StandardMaterial3D] = []

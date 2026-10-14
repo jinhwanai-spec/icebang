@@ -17,6 +17,7 @@ func build(target: Node3D, map_seed: int) -> void:
 	survivor_spawns = [Vector3(-2, 0.3, 64), Vector3(2, 0.3, 64), Vector3(-2, 0.3, 67), Vector3(2, 0.3, 67)]
 	seeker_spawns = [Vector3(-39, 0.3, -52), Vector3(60, 0.3, -50), Vector3(-62, 0.3, -20)]
 	floor_levels = [0.0, FH]
+	debug_views = [[Vector3(0, 1.7, -18), Vector3(0, 4, -50)], [Vector3(28, 1.7, -22), Vector3(0, 4, -50)], [Vector3(40, 1.7, -30), Vector3(60, 4, -53)], [Vector3(-20, 1.7, 10), Vector3(0, 1, 30)], [Vector3(45, 1.7, 20), Vector3(55, 1, 12)]]
 	_make_materials()
 	_mat["dirt_field"] = _noise_mat(Color(0.42, 0.33, 0.24), 0.35, 1.0, 5.0)
 	_mat["school_wall"] = _pattern_mat("plaster", Color(0.78, 0.74, 0.62), 3.0)
@@ -192,7 +193,7 @@ func _main_building() -> void:
 				var gc := a + dir * u
 				gc.y = y + 1.95
 				var lit := rng.randf() < 0.05
-				kit.block(gc, Vector3(1.6, 2.0, 0.04), _deco_mat("lit" if lit else "glass"), "b_" + ("lit" if lit else "glass"), true, Basis(dir, Vector3.UP, dir.cross(Vector3.UP).normalized()), false, Color(0.9, 0.85, 0.6) if lit else Color(0.08, 0.1, 0.12))
+				kit.block(gc, Vector3(1.6, 2.0, 0.04), _deco_mat("lit" if lit else "glass"), "b_" + ("lit" if lit else "glass"), true, Basis(dir, Vector3.UP, dir.cross(Vector3.UP).normalized()), false, Color(0.9, 0.85, 0.6) if lit else Color(0.1, 0.13, 0.2))
 				var fn := gc + n * (BuildingKit.WALL_T * 0.5)
 				var tt := Vector3.UP.cross(n)
 				_bx("trim", fn + n * 0.03, tt, n, Vector3(0.06, 2.0, 0.05), Color(0.2, 0.2, 0.22))
@@ -201,6 +202,9 @@ func _main_building() -> void:
 				# 안쪽 창턱
 				var fi := gc - n * (BuildingKit.WALL_T * 0.5)
 				_bx("trim", fi + Vector3.UP * -1.0 - n * 0.08, tt, -n, Vector3(1.7, 0.05, 0.18), Color(0.75, 0.72, 0.65))
+				# 바깥벽 빗물 자국 (창턱 아래로 흘러내린 얼룩)
+				if rng.randf() < 0.35:
+					kit.decal(fn + n * 0.01 + Vector3.UP * -1.7, n, rng.randf_range(0.9, 1.5), "stain", PI * 0.5)
 			kit.wall(a, b, y, FH, _mat["school_wall"], "w_school", ops, BuildingKit.WALL_T, in_side)
 		# 층 띠·처마
 		var face := (a + b) * 0.5 + n * (BuildingKit.WALL_T * 0.5)
@@ -219,8 +223,8 @@ func _main_building() -> void:
 	kit.slab(inner, y0 + 0.06, _mat["hall_floor"], "w_hall", [], false, 0.06)
 	kit.slab(inner, y0 + FH, _mat["hall_floor"], "w_hall", [stair_w, stair_e])
 	kit.slab(r.grow(0.3), y0 + FH * 2 + 0.2, _mat["concrete"], "w_concrete", [], true, 0.3)
-	kit.ceiling(inner, y0 + FH - BuildingKit.FLOOR_T, _mat["ceil"], [stair_w, stair_e])
-	kit.ceiling(inner, y0 + FH * 2 - 0.1, _mat["ceil"])
+	kit.ceiling(inner, y0 + FH - BuildingKit.FLOOR_T, _mat["ceil"], [stair_w, stair_e], y0 + 0.12)
+	kit.ceiling(inner, y0 + FH * 2 - 0.1, _mat["ceil"], [], y0 + FH + 0.01)
 	for st in [stair_w, stair_e]:
 		kit.stairs(st, false, true, y0, FH, Color(0.55, 0.53, 0.5))
 		kit.hole_rail(st, y0 + FH, "z+")
@@ -268,6 +272,17 @@ func _main_building() -> void:
 			kit.grime(Rect2(ex, corr_z + corr_w * 0.5, bay, inner.end.y - corr_z - corr_w * 0.5), fy, FH, 0.6, 0.1)
 	kit.wainscot_mat = null
 	kit.lining_mat = null
+	# 옥상: 난간·물탱크·실외기 + 학교 이름 글자 (정면 2층 위)
+	_rooftop(r, y0 + FH * 2 + 0.2)
+	_rooftop(r.grow(-6.0), y0 + FH * 2 + 0.2)
+	var nm := Label3D.new()
+	nm.text = "새 빛 초 등 학 교"
+	nm.font_size = 128
+	nm.pixel_size = 0.012
+	nm.modulate = Color(0.85, 0.82, 0.7)
+	nm.outline_size = 0
+	nm.position = Vector3(-14, y0 + FH * 2 - 0.55, r.end.y + 0.16)
+	region.add_child(nm)
 
 
 ## 학교 실내 마감: 아래쪽 연녹색 페인트 판 + 나무 몰딩, 위는 크림색 벽
@@ -425,7 +440,7 @@ func _gym() -> void:
 func _yard_props() -> void:
 	# 놀이터 (동쪽)
 	var pg := Vector3(55, 0.0, 12)
-	_box(pg + Vector3(0, 0.02, 0), Vector3(18, 0.04, 16), _flat_mat(Color(0.75, 0.68, 0.5), 1.0))  # 모래
+	_box(pg + Vector3(0, 0.02, 0), Vector3(18, 0.04, 16), _noise_mat(Color(0.42, 0.37, 0.28), 0.4, 1.0, 2.0))  # 모래
 	# 정글짐
 	for i in 4:
 		for j in 4:

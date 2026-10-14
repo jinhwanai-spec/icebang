@@ -211,7 +211,7 @@ func _wall_trim(a: Vector3, dir: Vector3, L: float, y: float, ops: Array, t: flo
 
 
 ## 천장 마감판 (바닥판 아래에 얇게, 보이기만). y = 천장 높이(아래면)
-func ceiling(r: Rect2, y: float, mat: Material, holes: Array = []) -> void:
+func ceiling(r: Rect2, y: float, mat: Material, holes: Array = [], floor_y := INF) -> void:
 	var pieces := [r]
 	for hole in holes:
 		var next := []
@@ -221,6 +221,20 @@ func ceiling(r: Rect2, y: float, mat: Material, holes: Array = []) -> void:
 	for p in pieces:
 		var pr: Rect2 = p
 		block(Vector3(pr.get_center().x, y - 0.015, pr.get_center().y), Vector3(pr.size.x, 0.03, pr.size.y), mat, "w_ceil%d" % mat.get_instance_id(), false)
+		# 천장 환기구·스프링클러 (작은 부품) + 가끔 떨어진 천장판
+		var cnt := int(pr.get_area() / 30.0)
+		for i in cnt:
+			var q := Vector3(rng.randf_range(pr.position.x + 0.5, pr.end.x - 0.5), y - 0.04, rng.randf_range(pr.position.y + 0.5, pr.end.y - 0.5))
+			var rr := rng.randf()
+			if rr < 0.45:
+				part(q, Vector3(0.6, 0.03, 0.6), Color(0.75, 0.75, 0.73), "metal")
+				for k in 3:
+					part(q + Vector3(0, -0.02, -0.2 + k * 0.2), Vector3(0.5, 0.01, 0.04), Color(0.25, 0.25, 0.25), "metal")
+			elif rr < 0.8:
+				part(q + Vector3.DOWN * 0.04, Vector3(0.06, 0.08, 0.06), Color(0.7, 0.6, 0.3), "metal")
+			elif rr < 0.92 and floor_y != INF:
+				part(q + Vector3.DOWN * 0.02, Vector3(0.6, 0.02, 0.6), Color(0.04, 0.04, 0.05), "trim")  # 빠진 천장판 구멍
+				part(Vector3(q.x + rng.randf_range(-0.6, 0.6), floor_y + 0.03, q.z + rng.randf_range(-0.6, 0.6)), Vector3(0.6, 0.025, 0.6), Color(0.7, 0.7, 0.68), "trim", false, rng.randf() * PI)
 
 
 ## 방 바닥재 (보이기만, 바닥판 위에 아주 얇게)
@@ -1065,7 +1079,11 @@ func _toilets(room: Rect2, y: float) -> void:
 			if rng.randf() < 0.3:
 				decal(_local(p, yaw, Vector3(0, 1.55, -0.22)), Basis(Vector3.UP, yaw) * Vector3.BACK, 0.5, "crack")
 		else:
-			_yawbox(_local(p, yaw, Vector3(0, 0.75, -0.05)), Vector3(0.38, 0.6, 0.32), yaw, Color(0.95, 0.95, 0.95), true)
+			# 소변기: 벽에 붙은 둥근 그릇 + 물 내림 파이프 + 칸막이
+			_yawbox(_local(p, yaw, Vector3(0, 0.62, -0.12)), Vector3(0.36, 0.55, 0.24), yaw, Color(0.95, 0.95, 0.95), false)
+			_yawbox(_local(p, yaw, Vector3(0, 0.42, 0.0)), Vector3(0.3, 0.12, 0.2), yaw, Color(0.92, 0.92, 0.92), false)
+			_yawbox(_local(p, yaw, Vector3(0, 1.1, -0.2)), Vector3(0.03, 0.45, 0.03), yaw, Color(0.7, 0.7, 0.72), false, "metal")
+			_yawbox(_local(p, yaw, Vector3(0.42, 0.95, 0.0)), Vector3(0.03, 0.9, 0.45), yaw, Color(0.55, 0.62, 0.68), false)
 
 func _bookshelf(p: Vector3, along_z: bool) -> void:
 	var yaw := PI / 2.0 if along_z else 0.0

@@ -18,6 +18,7 @@ func build(target: Node3D, map_seed: int) -> void:
 	survivor_spawns = [Vector3(-2, 0.3, 56), Vector3(2, 0.3, 56), Vector3(-2, 0.3, 59), Vector3(2, 0.3, 59)]
 	seeker_spawns = [Vector3(-20, YB + 0.3, -21), Vector3(20, Y0 + FH + 0.3, -21), Vector3(0, 0.3, -52)]
 	floor_levels = [YB, Y0, Y0 + FH]
+	debug_views = [[Vector3(0, 1.7, 14), Vector3(0, 4, -15)], [Vector3(-30, 1.7, 8), Vector3(-10, 4, -15)], [Vector3(30, 1.7, -50), Vector3(10, 3, -30)], [Vector3(-2, 1.7, 1), Vector3(0, 2.5, -8)]]
 	_make_materials()
 	_mat["hosp_wall"] = _pattern_mat("plaster", Color(0.82, 0.84, 0.82), 3.0)
 	_mat["hosp_in"] = _pattern_mat("paint", Color(0.72, 0.78, 0.74), 2.5)
@@ -116,11 +117,13 @@ func _hospital() -> void:
 				var gc := a + dir * u
 				gc.y = y + 1.9
 				var lit := rng.randf() < 0.06
-				kit.block(gc, Vector3(1.3, 1.8, 0.04), _deco_mat("lit" if lit else "glass"), "b_" + ("lit" if lit else "glass"), true, Basis(dir, Vector3.UP, dir.cross(Vector3.UP).normalized()), false, Color(0.6, 0.95, 0.75) if lit else Color(0.08, 0.1, 0.12))
+				kit.block(gc, Vector3(1.3, 1.8, 0.04), _deco_mat("lit" if lit else "glass"), "b_" + ("lit" if lit else "glass"), true, Basis(dir, Vector3.UP, dir.cross(Vector3.UP).normalized()), false, Color(0.6, 0.95, 0.75) if lit else Color(0.1, 0.13, 0.2))
 				var tt := Vector3.UP.cross(n)
 				var fn := gc + n * (BuildingKit.WALL_T * 0.5)
 				_bx("trim", fn + Vector3.UP * -0.95 + n * 0.08, tt, n, Vector3(1.5, 0.08, 0.2), trim)
 				_bx("trim", fn + n * 0.03, tt, n, Vector3(0.06, 1.8, 0.05), Color(0.25, 0.27, 0.3))
+				if rng.randf() < 0.35:
+					kit.decal(fn + n * 0.01 + Vector3.UP * -1.6, n, rng.randf_range(0.9, 1.5), "stain", PI * 0.5)
 				var fi := gc - n * (BuildingKit.WALL_T * 0.5)
 				_bx("trim", fi + Vector3.UP * -0.9 - n * 0.08, tt, -n, Vector3(1.4, 0.05, 0.16), Color(0.85, 0.86, 0.85))
 			kit.wall(a, b, y, FH, _mat["hosp_wall"], "w_hosp", ops, BuildingKit.WALL_T, in_side)
@@ -161,8 +164,8 @@ func _hospital() -> void:
 	kit.slab(inner, Y0, _mat["hosp_floor"], "w_hfloor", [stA, stC], false, 0.25)
 	kit.slab(inner, Y0 + FH, _mat["hosp_floor"], "w_hfloor", [stB, stD])
 	kit.slab(r.grow(0.3), Y0 + FH * 2 + 0.2, _mat["concrete"], "w_concrete", [], true, 0.3)
-	kit.ceiling(inner, Y0 + FH - BuildingKit.FLOOR_T, _mat["ceil"], [stB, stD])
-	kit.ceiling(inner, Y0 + FH * 2 - 0.1, _mat["ceil"])
+	kit.ceiling(inner, Y0 + FH - BuildingKit.FLOOR_T, _mat["ceil"], [stB, stD], Y0 + 0.01)
+	kit.ceiling(inner, Y0 + FH * 2 - 0.1, _mat["ceil"], [], Y0 + FH + 0.01)
 	kit.ceiling(inner, Y0 - 0.25, _mat["base_wall"], [stA, stC])
 	for st in [stA, stC]:
 		kit.stairs(st, false, true, YB + 0.05, Y0 - YB - 0.05, Color(0.5, 0.5, 0.48))
@@ -228,6 +231,12 @@ func _hospital() -> void:
 			kit.grime(Rect2(ex, corr_z + corr_w * 0.5, bay, inner.end.y - corr_z - corr_w * 0.5), ry + 0.005, h, 0.6, 0.2)
 	kit.wainscot_mat = null
 	kit.lining_mat = null
+	_rooftop(r, Y0 + FH * 2 + 0.2)
+	_rooftop(r.grow(-8.0), Y0 + FH * 2 + 0.2)
+	# 옥상 헬리포트 표시
+	kit.part(Vector3(-24, Y0 + FH * 2 + 0.21, r.get_center().y), Vector3(9, 0.02, 9), Color(0.3, 0.32, 0.3))
+	for v in [[Vector3(-25.5, 0, 0), Vector3(0.5, 0.02, 4.0)], [Vector3(-22.5, 0, 0), Vector3(0.5, 0.02, 4.0)], [Vector3(-24, 0, 0), Vector3(3.0, 0.02, 0.5)]]:
+		kit.part(Vector3(v[0].x, Y0 + FH * 2 + 0.23, r.get_center().y), v[1], Color(0.9, 0.9, 0.85))
 
 
 ## 병원 실내 마감: 아래는 연녹색 타일, 위는 밝은 민트색 벽
