@@ -577,7 +577,7 @@ func _clear_around_generators() -> void:
 	for g in generators:
 		var gp := g.global_position
 		for child in _nav_region.get_children():
-			if child == g or child.has_meta("indestructible") or not (child is Node3D):
+			if child == g or child.has_meta("indestructible") or not (child is Node3D) or not (child as Node3D).is_inside_tree():
 				continue
 			var aabb := _node_aabb(child)
 			if aabb.size == Vector3.ZERO or aabb.end.y < 0.3:
@@ -594,7 +594,7 @@ func _node_aabb(node: Node) -> AABB:
 	var first := true
 	var meshes: Array = [node] + node.find_children("*", "MeshInstance3D", true, false)
 	for m in meshes:
-		if m is MeshInstance3D:
+		if m is MeshInstance3D and (m as Node).is_inside_tree():
 			var box: AABB = (m as MeshInstance3D).global_transform * (m as MeshInstance3D).get_aabb()
 			result = box if first else result.merge(box)
 			first = false

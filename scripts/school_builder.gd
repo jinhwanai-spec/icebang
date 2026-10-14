@@ -249,11 +249,12 @@ func _main_building() -> void:
 			var rr: Rect2 = rm["rect"]
 			var kind: String = rm["kind"]
 			kit.floor_overlay(rr, y + (0.06 if k == 0 else 0.0), _mat["wood"] if kind in ["classroom", "music", "library", "teachers", "art"] else (_mat["wtile_floor"] if kind == "toilet" else _mat["lino"]))
-			var spot := kit.furnish_room(rm, y, rng.randf() < 0.35)
+			var keep := kind in ["classroom", "library", "teachers", "music", "art"] and rng.randf() < 0.4
+			kit.furnish_room(rm, y, keep)
 			debug_rooms.append([rm, y])
 			kit.grime(rr, y + (0.07 if k == 0 else 0.01), FH, 0.8, 0.12)
-			if kind in ["classroom", "library", "teachers"] and rng.randf() < 0.3:
-				generator_spots.append(Vector3(rr.get_center().x, y, rr.get_center().y))
+			if keep:
+				generator_spots.append(Vector3(rr.get_center().x, y, rr.get_center().y))  # 가운데를 비워 둔 방에만 봉인석
 			for li in maxi(1, int(rr.size.x / 6.0)):
 				var lx := rr.position.x + (li + 0.5) * rr.size.x / maxi(1, int(rr.size.x / 6.0))
 				kit.ceiling_light(Vector3(lx, y + FH - 0.25, rr.get_center().y), Color(0.85, 0.95, 1.0), 0.75, 0.3)
