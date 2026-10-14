@@ -203,6 +203,9 @@ func _main_building() -> void:
 				# 안쪽 창턱
 				var fi := gc - n * (BuildingKit.WALL_T * 0.5)
 				_bx("trim", fi + Vector3.UP * -1.0 - n * 0.08, tt, -n, Vector3(1.7, 0.05, 0.18), Color(0.75, 0.72, 0.65))
+				# 안쪽 창틀 (가운데 세로살 + 가로살)
+				_bx("trim", fi - n * 0.03, tt, -n, Vector3(0.06, 2.0, 0.05), Color(0.55, 0.55, 0.52))
+				_bx("trim", fi - n * 0.03 + Vector3.UP * 0.35, tt, -n, Vector3(1.6, 0.05, 0.05), Color(0.55, 0.55, 0.52))
 				if rng.randf() < 0.12:
 					_moon_shaft(gc, -n)
 				# 바깥벽 빗물 자국 (창턱 아래로 흘러내린 얼룩)

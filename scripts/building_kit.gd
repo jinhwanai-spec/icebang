@@ -1379,6 +1379,17 @@ func _classroom(room: Rect2, y: float) -> void:
 	for j in 5:
 		decal(bb - board_n * 0.03 + (Vector3(0, rng.randf_range(-0.2, 0.2), -1.5 + j * 0.75) if along_x else Vector3(-1.5 + j * 0.75, rng.randf_range(-0.2, 0.2), 0)), -board_n, 0.5, "papers")
 	_curtains(room, y, ws)
+	# 칠판 옆 높은 곳의 TV + 천장 선풍기 2대 (날개 각도 제각각)
+	var tvp := front + Vector3.UP * 2.55 + board_n * 0.3 + (Vector3(0, 0, -width * 0.42) if along_x else Vector3(-width * 0.42, 0, 0))
+	_yawbox(tvp, Vector3(0.9, 0.55, 0.12), yaw, Color(0.06, 0.06, 0.07), false)
+	_yawbox(tvp + Vector3.UP * 0.32, Vector3(0.2, 0.1, 0.3), yaw, Color(0.3, 0.3, 0.32), false, "metal")
+	for fi in 2:
+		var fc := Vector3(inner.get_center().x, y + room_h - 0.05, inner.get_center().y) + (Vector3(depth * (fi - 0.5) * 0.45, 0, 0) if along_x else Vector3(0, 0, depth * (fi - 0.5) * 0.45))
+		part(fc + Vector3.DOWN * 0.25, Vector3(0.04, 0.5, 0.04), Color(0.85, 0.85, 0.82), "metal")
+		part(fc + Vector3.DOWN * 0.52, Vector3(0.22, 0.1, 0.22), Color(0.88, 0.88, 0.86), "trim")
+		var spin := rng.randf() * TAU
+		for bl in 3:
+			part(fc + Vector3.DOWN * 0.55 + Vector3(cos(spin + bl * TAU / 3.0), 0, sin(spin + bl * TAU / 3.0)) * 0.42, Vector3(0.7, 0.02, 0.14), Color(0.85, 0.85, 0.83), "trim", false, -(spin + bl * TAU / 3.0))
 	if rng.randf() < 0.5:
 		_yawbox(Vector3(inner.end.x - 0.8, y + 0.3, inner.position.y + 0.8) if along_x else Vector3(inner.position.x + 0.8, y + 0.3, inner.end.y - 0.8), Vector3(0.4, 0.6, 0.4), 0.0, Color(0.2, 0.3, 0.55), true, "metal")  # 쓰레기통
 
