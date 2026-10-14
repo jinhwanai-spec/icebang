@@ -399,7 +399,7 @@ func _process(delta: float) -> void:
 	else:
 		noise_text = "준비됨"
 	var emote_text := "준비됨" if SaveData.has_ability("emote") else "잠김"
-	_shared_label.text = "공통 능력 (얼음 상태에서)\n[F] 소리 내기: %s\n[G] 이모티콘: %s\n이모트 (숫자키): [1] 엉덩이 춤" % [noise_text, emote_text]
+	_shared_label.text = "공통 능력 (얼음 상태에서)\n[F] 소리 내기: %s\n[G] 이모티콘: %s\n이모트 (숫자키, 다시 누르면 멈춤)\n[1]엉덩이춤 [2]방귀 [3]코딱지 [4]엉덩이팡팡 [5]응가\n[6]겨드랑이방귀 [7]죽은척 [8]로봇춤 [9]물개박수 [0]빙글빙글" % [noise_text, emote_text]
 
 
 ## 술래가 heartbeat_distance(6m) 안에 오면 두근두근. 가까울수록 빠르고 크게, 화면이 붉게 조여옴

@@ -19,7 +19,6 @@ const SFX_LURE := preload("res://audio/lure.wav")
 const SFX_ABILITY := preload("res://audio/ability.wav")
 const MinigameScript := preload("res://scripts/minigame.gd")
 ## 이모트 (숫자키 1~0 순서). 앞으로 더 추가 가능
-const EMOTES := [["butt_dance", "엉덩이 춤"]]
 const EMOTE_KEYS := [KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_7, KEY_8, KEY_9, KEY_0]
 const AbilityEffectScript := preload("res://scripts/ability_effect.gd")
 
@@ -96,8 +95,11 @@ func _unhandled_input(event: InputEvent) -> void:
 		if event is InputEventMouseButton and event.pressed:
 			_spectate_index += 1
 		return
-	# 사물함 안: E로만 나갈 수 있음
+	# 사물함 안: E로만 나갈 수 있음. 마우스로 통풍구 틈 사이를 살짝 둘러봄
 	if in_locker:
+		if event is InputEventMouseMotion:
+			_peek.x = clampf(_peek.x - (event as InputEventMouseMotion).relative.x * 0.003, -0.55, 0.55)
+			_peek.y = clampf(_peek.y - (event as InputEventMouseMotion).relative.y * 0.003, -0.3, 0.25)
 		if event.is_action_pressed("interact"):
 			exit_locker()
 		return
@@ -160,11 +162,14 @@ func _physics_process(delta: float) -> void:
 		elif not can_interact():
 			minigame.close()
 	if is_dead or escaped:
+		_locker_view(false)
 		_spectate()
 		return
 	if in_locker:
 		velocity = Vector3.ZERO
+		_locker_view(true)
 		return
+	_locker_view(false)
 	_update_song(delta)
 	if _follow_chain(delta):
 		return
@@ -215,7 +220,10 @@ func _physics_process(delta: float) -> void:
 			stop_dance()
 		else:
 			var f := look_direction()
-			body.look_at(body.global_position - f, Vector3.UP)
+			f.y = 0.0
+			if f.length() > 0.01:
+				var back: bool = emote_info(emote_id)[3] == "back"
+				body.look_at(body.global_position + (-f if back else f), Vector3.UP)
 
 	# 3) 속도와 발소리 크기 결정
 	var speed := GameConfig.num("player", "walk_speed", 4.5)
@@ -260,6 +268,76 @@ func _update_cooldowns(delta: float) -> void:
 
 
 ## 탈락·탈출 뒤: 살아 있는 동료를 따라가며 관전 (클릭하면 다음 동료)
+## 사물함·옷장 안에서 보는 시점: 문 통풍구 틈 사이로 바깥을 봄
+var _peek := Vector2.ZERO
+var _vent_overlay: CanvasLayer
+var _vent_cam: Camera3D
+
+func _locker_view(on: bool) -> void:
+	if on:
+		if _vent_overlay == null:
+			_peek = Vector2.ZERO
+			_vent_overlay = _make_vent_overlay(in_locker.get("_wardrobe") == true)
+			add_child(_vent_overlay)
+			_vent_cam = Camera3D.new()
+			_vent_cam.top_level = true
+			_vent_cam.fov = camera.fov
+			_vent_cam.near = 0.05
+			add_child(_vent_cam)
+			_vent_cam.make_current()
+		var lk := in_locker as Node3D
+		var fwd := -lk.global_basis.z
+		var basis := Basis.looking_at(fwd, Vector3.UP).rotated(Vector3.UP, _peek.x)
+		basis = basis * Basis(Vector3.RIGHT, _peek.y)
+		_vent_cam.global_transform = Transform3D(basis, lk.global_position + Vector3.UP * 1.62 + fwd * 0.42)
+	elif _vent_overlay:
+		_vent_overlay.queue_free()
+		_vent_overlay = null
+		_vent_cam.queue_free()
+		_vent_cam = null
+		camera.make_current()
+
+
+func _make_vent_overlay(wood: bool) -> CanvasLayer:
+	var layer := CanvasLayer.new()
+	layer.layer = 5
+	var col := Color(0.09, 0.06, 0.04) if wood else Color(0.07, 0.09, 0.085)
+	# 위·아래는 문짝, 가운데 6줄 틈 사이로만 보임
+	var bands := [[0.0, 0.3], [0.7, 1.0]]
+	for i in 7:
+		var y := 0.3 + i * (0.4 / 6.0)
+		bands.append([y - 0.022, y + 0.022])
+	for b in bands:
+		var r := ColorRect.new()
+		r.color = col
+		r.anchor_left = 0.0
+		r.anchor_right = 1.0
+		r.anchor_top = b[0]
+		r.anchor_bottom = b[1]
+		r.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		layer.add_child(r)
+	for x in [[0.0, 0.12], [0.88, 1.0]]:
+		var r := ColorRect.new()
+		r.color = col
+		r.anchor_left = x[0]
+		r.anchor_right = x[1]
+		r.anchor_top = 0.0
+		r.anchor_bottom = 1.0
+		r.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		layer.add_child(r)
+	var tip := Label.new()
+	tip.text = "숨는 중... [E] 나가기 · 마우스로 틈 사이 보기"
+	tip.anchor_left = 0.5
+	tip.anchor_right = 0.5
+	tip.anchor_top = 0.84
+	tip.anchor_bottom = 0.84
+	tip.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	tip.add_theme_font_size_override("font_size", 20)
+	tip.modulate = Color(1, 1, 1, 0.75)
+	layer.add_child(tip)
+	return layer
+
+
 var _spectate_index := 0
 func _spectate() -> void:
 	var alive: Array = []
@@ -1067,11 +1145,14 @@ func _use_emote_slot(i: int) -> void:
 			or (minigame and is_instance_valid(minigame)) or not is_on_floor():
 		return
 	if dance_left > 0.0:
+		var same: bool = emote_id == EMOTES[i][0]
 		stop_dance()
-		return
-	match EMOTES[i][0]:
-		"butt_dance":
-			start_dance(GameConfig.num("emote", "dance_time", 3.0))
+		if same:
+			return  # 같은 키를 다시 누르면 멈춤
+	var secs: float = EMOTES[i][2]
+	if EMOTES[i][0] == "butt_dance":
+		secs = GameConfig.num("emote", "dance_time", secs)
+	start_emote(EMOTES[i][0], secs)
 
 
 ## [상점 공통 능력] 이모티콘 (술래 놀리기용, 게임에는 영향 없음)

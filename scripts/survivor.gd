@@ -98,35 +98,68 @@ func _process(delta: float) -> void:
 		dance_left -= delta
 		if is_frozen or is_dead or escaped or in_locker or is_shadowed():
 			dance_left = 0.0
-	body.dancing = dance_left > 0.0
+	body.emote = emote_id if dance_left > 0.0 else ""
 	body.animate(delta, Vector2(velocity.x, velocity.z).length(), is_frozen)
 
 
 # ---------------------------------------------------------------- 이모트
 
-## 이모트 춤 남은 시간 (엉덩이 춤)
+## 이모트 목록: [아이디, 이름, 길이(초), 보는 방향("back"=엉덩이가 카메라 쪽, "front"=얼굴이 카메라 쪽)]
+## 숫자키 1~0 순서. 소리는 audio/emote_<아이디>.wav, 효과는 emote_fx.gd
+const EMOTES := [
+	["butt_dance", "엉덩이 춤", 3.0, "back"],
+	["fart", "방귀 뿡", 2.2, "back"],
+	["nose_pick", "코딱지 튕기기", 2.8, "front"],
+	["butt_slap", "엉덩이 팡팡", 3.0, "back"],
+	["poop", "응가", 3.2, "front"],
+	["armpit_fart", "겨드랑이 방귀", 2.6, "front"],
+	["dead", "죽은 척", 3.5, "front"],
+	["robot", "로봇 춤", 3.5, "front"],
+	["seal_clap", "물개 박수", 3.0, "front"],
+	["dizzy", "빙글빙글", 3.2, "front"],
+]
+const EmoteFx := preload("res://scripts/emote_fx.gd")
+
+## 이모트 남은 시간과 종류
 var dance_left := 0.0
+var emote_id := ""
 var _dance_audio: AudioStreamPlayer3D
 
 
-func start_dance(seconds: float) -> void:
+func start_emote(id: String, seconds: float) -> void:
 	dance_left = seconds
+	emote_id = id
 	if _dance_audio == null:
 		_dance_audio = AudioStreamPlayer3D.new()
 		_dance_audio.max_distance = 25.0
 		_dance_audio.unit_size = 4.0
 		_dance_audio.position.y = 1.0
-		if ResourceLoader.exists("res://audio/emote_butt.wav"):
-			_dance_audio.stream = load("res://audio/emote_butt.wav")
 		add_child(_dance_audio)
+	var path := "res://audio/emote_butt.wav" if id == "butt_dance" else "res://audio/emote_%s.wav" % id
+	_dance_audio.stream = load(path) if ResourceLoader.exists(path) else null
 	if _dance_audio.stream:
 		_dance_audio.play()
+	EmoteFx.spawn(self, id)
+
+
+## 예전 이름 (엉덩이 춤)
+func start_dance(seconds: float) -> void:
+	start_emote("butt_dance", seconds)
 
 
 func stop_dance() -> void:
 	dance_left = 0.0
+	emote_id = ""
 	if _dance_audio:
 		_dance_audio.stop()
+	EmoteFx.clear(self)
+
+
+static func emote_info(id: String) -> Array:
+	for e in EMOTES:
+		if e[0] == id:
+			return e
+	return EMOTES[0]
 
 
 # ---------------------------------------------------------------- 상태 확인
@@ -757,7 +790,9 @@ func net_flags() -> int:
 	if rooted_left > 0.0: f |= 16
 	if bleed_time_left > 0.0: f |= 32
 	if is_shadowed() or in_locker: f |= 64
-	if dance_left > 0.0: f |= 128
+	if dance_left > 0.0:
+		f |= 128
+		f |= (maxi(0, EMOTES.find(emote_info(emote_id))) + 1) << 8  # 어떤 이모트인지
 	return f
 
 
@@ -793,8 +828,10 @@ func net_target(pos: Vector3, yaw: float, speed: float, flags: int, thaw: float)
 		bleed_time_left = 1.0 if flags & 32 != 0 else 0.0
 	body.visible = flags & 64 == 0
 	if flags & 128 != 0:
-		if dance_left <= 0.0:
-			start_dance(0.3)
+		var idx := ((flags >> 8) & 15) - 1
+		var id: String = EMOTES[idx][0] if idx >= 0 and idx < EMOTES.size() else "butt_dance"
+		if dance_left <= 0.0 or emote_id != id:
+			start_emote(id, 0.3)
 		dance_left = maxf(dance_left, 0.3)
 	elif dance_left > 0.0:
 		stop_dance()

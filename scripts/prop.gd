@@ -43,6 +43,16 @@ func setup(prop_kind: String, mats: Dictionary) -> void:
 			_hinge.position = Vector3(-0.7, 0, 0)
 			add_child(_hinge)
 			_door_body = _static_box(_hinge, Vector3(0.7, 1.05, 0), Vector3(1.4, 2.1, 0.1), mats.get("crate"), 1)
+			# 나무 문: 가로 띠 2개 + Z자 버팀목 + 경첩 + 손잡이
+			var brace := _mat_col(Color(0.24, 0.16, 0.1))
+			for z in [-0.065, 0.065]:
+				for y in [-0.7, 0.7]:
+					_deco(_door_body, Vector3(0, y, z), Vector3(1.3, 0.16, 0.04), brace)
+				var diag := _deco(_door_body, Vector3(0, 0, z), Vector3(1.5, 0.14, 0.04), brace)
+				diag.rotation.z = 0.78
+				for y in [-0.7, 0.7]:
+					_deco(_door_body, Vector3(-0.6, y, z * 1.25), Vector3(0.28, 0.07, 0.02), _mat_col(Color(0.15, 0.15, 0.15)))
+				_deco(_door_body, Vector3(0.55, 0.0, z * 1.6), Vector3(0.06, 0.06, 0.08), _mat_col(Color(0.55, 0.45, 0.2), 0.6))
 			_set_door(true, false)
 		"pallet":
 			add_to_group("prop")
@@ -53,25 +63,19 @@ func setup(prop_kind: String, mats: Dictionary) -> void:
 			var wood := StandardMaterial3D.new()
 			wood.albedo_color = Color(0.55, 0.38, 0.2)
 			_plank_body = _static_box(_plank, Vector3(-1.0, 0.45, 0), Vector3(2.0, 0.9, 0.14), wood, 0)
+			# 판자 여러 장 + 뒤쪽 가로대 (사이사이 틈이 보이게)
+			_plank_body.get_child(1).visible = false
+			for i in 6:
+				var c := Color(0.55, 0.38, 0.2).darkened(randf() * 0.25)
+				_deco(_plank_body, Vector3(-0.83 + i * 0.333, randf_range(-0.03, 0.03), 0.03), Vector3(0.29, 0.9 + randf_range(-0.06, 0.04), 0.05), _mat_col(c))
+			for y in [-0.3, 0.3]:
+				_deco(_plank_body, Vector3(0, y, -0.035), Vector3(2.0, 0.12, 0.07), _mat_col(Color(0.36, 0.24, 0.13)))
 			_plank.rotation.z = -(PI / 2.0 - 0.15)  # 세워진 상태 (충돌 없음)
 		"locker":
 			add_to_group("prop")
 			reach = 1.7
-			var metal := StandardMaterial3D.new()
-			metal.albedo_color = Color(0.32, 0.36, 0.34)
-			metal.metallic = 0.6
-			metal.roughness = 0.5
-			_static_box(self, Vector3(0, 1.0, 0), Vector3(0.85, 2.0, 0.6), metal, 1)
-			var slit := StandardMaterial3D.new()
-			slit.albedo_color = Color(0.05, 0.05, 0.05)
-			for i in 4:
-				var m := MeshInstance3D.new()
-				var b := BoxMesh.new()
-				b.size = Vector3(0.5, 0.03, 0.02)
-				m.mesh = b
-				m.material_override = slit
-				m.position = Vector3(0, 1.55 + i * 0.07, -0.31)
-				add_child(m)
+			_wardrobe = mats.has("forest_floor")
+			_build_locker(mats)
 		"window":
 			pass
 
@@ -99,7 +103,7 @@ func prompt(_s: Survivor) -> String:
 		"pallet":
 			return "[E] 판자 넘어뜨리기 (맞은 술래 기절)"
 		"locker":
-			return "[E] 사물함에 숨기 (들어갈 때 소리가 나요)"
+			return "[E] %s에 숨기 (들어갈 때 소리가 나요)" % ("옷장" if _wardrobe else "사물함")
 	return ""
 
 
@@ -113,12 +117,14 @@ func use(s: Survivor) -> void:
 			occupant = s
 			s.enter_locker(self)
 			_play_load("res://audio/creak.wav", 1.3)
+			_swing_locker(0.25)
 
 
 func on_exit(s: Survivor) -> void:
 	if occupant == s:
 		occupant = null
 	_remove_cat()
+	_swing_locker(0.3)
 
 
 # ---------------------------------------------------------------- 매 프레임
@@ -247,6 +253,7 @@ func _update_locker(delta: float) -> void:
 			var s := occupant
 			_play_load("res://audio/creak.wav", 0.8)
 			s.exit_locker()
+			_swing_locker(1.2)
 			sk._lock_left = maxf(sk._lock_left, 0.4)
 			s.die()
 			return
@@ -395,3 +402,105 @@ func _play_load(path: String, pitch: float) -> void:
 	_audio.stream = load(path)
 	_audio.pitch_scale = pitch
 	_audio.play()
+
+
+# ---------------------------------------------------------------- 사물함 / 옷장 모양
+
+var _wardrobe := false
+var _ldoor: Node3D
+
+
+func _build_locker(mats: Dictionary) -> void:
+	var body_mat: Material
+	var door_col: Color
+	if _wardrobe:
+		body_mat = mats.get("crate")
+		door_col = Color(0.36, 0.24, 0.14)
+	else:
+		var metal := StandardMaterial3D.new()
+		metal.albedo_color = Color(0.3, 0.38, 0.35)
+		metal.metallic = 0.55
+		metal.roughness = 0.55
+		body_mat = metal
+		door_col = Color(0.33, 0.42, 0.38)
+	var w := 0.95 if _wardrobe else 0.85
+	_static_box(self, Vector3(0, 1.0, 0), Vector3(w, 2.0, 0.6), body_mat, 1)
+	var dark := _mat_col(Color(0.03, 0.03, 0.03))
+	var edge := _mat_col(door_col.darkened(0.35), 0.5)
+	# 위 뚜껑과 아래 받침
+	_deco(self, Vector3(0, 2.03, 0), Vector3(w + 0.08, 0.07 if not _wardrobe else 0.14, 0.66), edge)
+	if _wardrobe:
+		_deco(self, Vector3(0, 2.16, -0.05), Vector3(w + 0.16, 0.08, 0.6), edge)  # 장식 처마
+		for x in [-w / 2 + 0.06, w / 2 - 0.06]:
+			for z in [-0.24, 0.24]:
+				_deco(self, Vector3(x, 0.04, z), Vector3(0.09, 0.08, 0.09), edge)
+	else:
+		_deco(self, Vector3(0, 0.05, -0.005), Vector3(w + 0.01, 0.1, 0.61), _mat_col(Color(0.12, 0.13, 0.13)))
+	# 문 (왼쪽 경첩 기준으로 열림)
+	_ldoor = Node3D.new()
+	_ldoor.position = Vector3(-w / 2 + 0.02, 0, -0.3)
+	add_child(_ldoor)
+	var dw := w - 0.06
+	var door_mat := _mat_col(door_col, 0.6 if not _wardrobe else 0.9)
+	_deco(_ldoor, Vector3(dw / 2, 1.04, -0.025), Vector3(dw, 1.86, 0.04), door_mat)
+	# 통풍구 (여기로 밖을 봄)
+	for i in 6:
+		_deco(_ldoor, Vector3(dw / 2, 1.5 + i * 0.065, -0.048), Vector3(dw * 0.62, 0.028, 0.012), dark)
+	if _wardrobe:
+		# 문 테두리 장식 + 동그란 손잡이
+		for y in [0.25, 1.85]:
+			_deco(_ldoor, Vector3(dw / 2, y, -0.05), Vector3(dw - 0.08, 0.05, 0.02), edge)
+		for x in [0.07, dw - 0.07]:
+			_deco(_ldoor, Vector3(x, 1.05, -0.05), Vector3(0.05, 1.65, 0.02), edge)
+		var knob := MeshInstance3D.new()
+		var sph := SphereMesh.new()
+		sph.radius = 0.035
+		sph.height = 0.07
+		knob.mesh = sph
+		knob.material_override = _mat_col(Color(0.6, 0.48, 0.2), 0.5)
+		knob.position = Vector3(dw - 0.1, 1.05, -0.075)
+		_ldoor.add_child(knob)
+	else:
+		# 손잡이, 이름표, 경첩, 녹 자국, 찌그러진 자국
+		_deco(_ldoor, Vector3(dw - 0.09, 1.0, -0.065), Vector3(0.04, 0.2, 0.05), _mat_col(Color(0.65, 0.65, 0.62), 0.4))
+		_deco(_ldoor, Vector3(dw / 2, 1.3, -0.047), Vector3(0.22, 0.08, 0.01), _mat_col(Color(0.85, 0.82, 0.7)))
+		for y in [0.4, 1.7]:
+			_deco(_ldoor, Vector3(0.0, y, -0.05), Vector3(0.03, 0.12, 0.03), _mat_col(Color(0.2, 0.2, 0.2), 0.4))
+		var rust := _mat_col(door_col.lerp(Color(0.4, 0.24, 0.13), 0.55))
+		for i in 4:
+			_deco(_ldoor, Vector3(randf_range(0.12, dw - 0.12), randf_range(0.2, 1.0), -0.047), Vector3(randf_range(0.04, 0.1), randf_range(0.05, 0.18), 0.008), rust)
+		_deco(_ldoor, Vector3(dw * 0.35, 0.75, -0.04), Vector3(0.18, 0.12, 0.012), _mat_col(door_col.darkened(0.3))).rotation.z = 0.4
+
+
+## 사물함 문이 휙 열렸다가 닫힘 (hold 초 동안 열려 있음)
+func _swing_locker(hold: float) -> void:
+	if _ldoor == null:
+		return
+	var tw := create_tween()
+	tw.tween_property(_ldoor, "rotation:y", 1.5, 0.16).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw.tween_interval(hold)
+	tw.tween_property(_ldoor, "rotation:y", 0.0, 0.22).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+
+
+static var _col_mats := {}
+func _mat_col(c: Color, rough := 0.85) -> StandardMaterial3D:
+	var key := "%s_%s" % [c.to_html(), rough]
+	if _col_mats.has(key):
+		return _col_mats[key]
+	var m := StandardMaterial3D.new()
+	m.albedo_color = c
+	m.roughness = rough
+	_col_mats[key] = m
+	return m
+
+
+## 보이기만 하는 상자 부품
+func _deco(parent: Node3D, pos: Vector3, size: Vector3, mat: Material) -> MeshInstance3D:
+	var mi := MeshInstance3D.new()
+	var bm := BoxMesh.new()
+	bm.size = size
+	mi.mesh = bm
+	mi.material_override = mat
+	mi.position = pos
+	parent.add_child(mi)
+	return mi

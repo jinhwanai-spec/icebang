@@ -15,8 +15,8 @@ var _left_arm: Node3D
 var _right_arm: Node3D
 var _torso: Node3D
 var _phase := 0.0
-## 이모트: 엉덩이 춤 추는 중
-var dancing := false
+## 이모트: 지금 하는 이모트 아이디 ("" = 안 함). 목록은 survivor.gd EMOTES
+var emote := ""
 var _dance_t := 0.0
 ## 춤출 때만 보이는 엉덩이
 var _hips: Node3D
@@ -202,11 +202,22 @@ func animate(delta: float, speed: float, frozen: bool) -> void:
 		_left_leg.rotation.x = 0.0
 		_right_leg.rotation.x = 0.0
 		return
-	if dancing:
-		_dance(delta)
+	if emote != "":
+		_emote_anim(delta)
 		return
 	if _hips:
 		_hips.visible = false
+	_last_emote = ""
+	if _dance_t > 0.0:
+		# 이모트가 끝나면 자세를 원래대로
+		rotation.x = 0.0
+		rotation.z = 0.0
+		position = Vector3.ZERO
+		_torso.rotation = Vector3.ZERO
+		_left_arm.rotation.y = 0.0
+		_right_arm.rotation.y = 0.0
+		_left_leg.rotation.y = 0.0
+		_right_leg.rotation.y = 0.0
 	_dance_t = 0.0
 	_torso.rotation.y = 0.0
 	_torso.rotation.z = 0.0
@@ -262,6 +273,158 @@ func _dance(delta: float) -> void:
 	var flap := absf(sin(w * 0.5))
 	_left_arm.rotation = Vector3(0.35, 0, -0.55 - flap * 0.5)
 	_right_arm.rotation = Vector3(0.35, 0, 0.55 + flap * 0.5)
+
+
+## 이모트 동작 (점토 인형이라 팔·다리·몸통 관절만 돌려서 표현)
+var _last_emote := ""
+
+func _emote_anim(delta: float) -> void:
+	if emote != _last_emote:
+		_last_emote = emote
+		_dance_t = 0.0
+		if _hips:
+			_hips.position = Vector3(0, 0.42, -0.12)
+			_hips.rotation = Vector3.ZERO
+			_hips.scale = Vector3.ONE
+	if emote == "butt_dance":
+		_dance(delta)
+		return
+	_dance_t += delta
+	var t := _dance_t
+	if _hips:
+		_hips.visible = emote in ["fart", "butt_slap"]
+	# 기본 자세로 시작해서 이모트마다 덮어씀
+	_torso.position = Vector3.ZERO
+	_torso.rotation = Vector3.ZERO
+	position = Vector3.ZERO
+	rotation.x = 0.0
+	rotation.z = 0.0
+	_left_leg.rotation = Vector3.ZERO
+	_right_leg.rotation = Vector3.ZERO
+	_left_arm.rotation = Vector3(0, 0, -0.25)
+	_right_arm.rotation = Vector3(0, 0, 0.25)
+	match emote:
+		"fart":
+			# 엉덩이를 쭉 빼고 힘주다가 뿡! 하고 시원해함
+			var push := clampf(t / 0.5, 0.0, 1.0)
+			_torso.rotation.x = 0.45 * push
+			_torso.position.z = -0.12 * push
+			_left_arm.rotation = Vector3(0.6 * push, 0, -0.2)
+			_right_arm.rotation = Vector3(0.6 * push, 0, 0.2)
+			_left_leg.rotation.x = -0.25 * push
+			_right_leg.rotation.x = -0.25 * push
+			if t < 0.6:
+				_torso.position.x = sin(t * 60.0) * 0.012 * push  # 힘주며 부들부들
+			elif t < 1.0:
+				var k := (t - 0.6) / 0.4
+				_hips.position.z = -0.12 - 0.08 * sin(k * PI)  # 뿡 반동
+				_torso.position.y = 0.06 * sin(k * PI)
+			else:
+				_torso.rotation.z = sin(t * 3.0) * 0.12  # 후련하게 살랑
+				_hips.position = Vector3(0, 0.42, -0.12)
+		"nose_pick":
+			# 오른손 검지로 코 후비기 → 빼서 보기 → 튕기기
+			_torso.rotation.z = 0.08
+			if t < 1.6:
+				_right_arm.rotation = Vector3(-2.35, 0.0, -0.55 + sin(t * 18.0) * 0.06)
+				_torso.rotation.x = -0.05 + sin(t * 18.0) * 0.015
+			elif t < 1.9:
+				_right_arm.rotation = Vector3(-1.7, 0.0, -0.3)  # 손가락 들여다보기
+				_torso.rotation.x = 0.12
+			else:
+				var k := clampf((t - 1.9) / 0.15, 0.0, 1.0)
+				_right_arm.rotation = Vector3(-1.7 + 0.4 * k, 0.0, -0.3 + 0.6 * k)  # 휙 튕김
+		"butt_slap":
+			# 엉덩이 내밀고 손바닥으로 팡팡
+			var slap := sin(t * 8.0)
+			_torso.rotation.x = 0.38
+			_torso.position.z = -0.12
+			_torso.rotation.z = slap * 0.1
+			_right_arm.rotation = Vector3(0.9 + maxf(0.0, slap) * 0.9, 0.0, 0.5)
+			_left_arm.rotation = Vector3(0.3, 0.0, -0.9 + sin(t * 4.0) * 0.4)  # 약 올리듯 흔듦
+			_hips.position.x = 0.0
+			_hips.position.y = 0.42
+			_hips.rotation.z = maxf(0.0, -slap) * 0.25
+			_hips.scale = Vector3.ONE * (1.0 + maxf(0.0, -slap) * 0.08)
+			_left_leg.rotation.x = -0.15
+			_right_leg.rotation.x = -0.15
+		"poop":
+			# 쪼그려 앉아 끙끙 → 뿌직! → 개운
+			var sq := clampf(t / 0.35, 0.0, 1.0)
+			_torso.position.y = -0.26 * sq
+			_left_leg.rotation = Vector3(-1.1 * sq, 0, -0.35 * sq)
+			_right_leg.rotation = Vector3(-1.1 * sq, 0, 0.35 * sq)
+			_left_arm.rotation = Vector3(-0.9 * sq, 0, -0.1)
+			_right_arm.rotation = Vector3(-0.9 * sq, 0, 0.1)
+			if t < 1.6:
+				var strain := clampf((t - 0.35) / 1.2, 0.0, 1.0)
+				_torso.position.x = sin(t * 70.0) * 0.015 * strain
+				_torso.rotation.x = 0.12 * strain
+			elif t < 2.0:
+				_torso.position.y += 0.05 * sin((t - 1.6) / 0.4 * PI)
+			else:
+				_torso.rotation.z = sin(t * 4.0) * 0.06
+		"armpit_fart":
+			# 오른팔 들고 왼손을 겨드랑이에 넣어 펌프질 (뿡뿡뿡)
+			var pump := maxf(0.0, sin(t * 7.85))
+			_right_arm.rotation = Vector3(0.0, 0.0, 2.2 - pump * 1.0)
+			_left_arm.rotation = Vector3(-1.2, 0.0, 1.25)
+			_torso.rotation.z = -0.12 + pump * 0.05
+			_torso.position.y = pump * 0.02
+		"dead":
+			# 뒤로 벌러덩 → 팔다리 쭉 → 가끔 다리 파르르
+			var fall := clampf(t / 0.35, 0.0, 1.0)
+			fall = fall * fall
+			rotation.x = -1.45 * fall
+			position.y = 0.32 * fall
+			_left_arm.rotation = Vector3(0, 0, -1.3 * fall)
+			_right_arm.rotation = Vector3(0, 0, 1.3 * fall)
+			if t > 0.5:
+				var tw := sin(t * 40.0) * 0.15 if fmod(t, 1.2) < 0.25 else 0.0
+				_left_leg.rotation.x = -0.3 + tw
+				_right_leg.rotation.x = -0.2 - tw
+		"robot":
+			# 딱딱 끊기는 로봇 춤 (0.25초마다 자세가 바뀜)
+			var step := int(t / 0.25)
+			var poses := [
+				[Vector3(-1.57, 0, -0.1), Vector3(0, 0, 1.57), 0.0],
+				[Vector3(0, 0, -1.57), Vector3(-1.57, 0, 0.1), 0.35],
+				[Vector3(-1.57, 0, -0.1), Vector3(-1.57, 0, 0.1), 0.0],
+				[Vector3(0, 0, -1.57), Vector3(0, 0, 1.57), -0.35],
+			]
+			var pz: Array = poses[step % poses.size()]
+			_left_arm.rotation = pz[0]
+			_right_arm.rotation = pz[1]
+			_torso.rotation.y = pz[2]
+			_torso.position.y = 0.03 if step % 2 == 0 else 0.0
+			_left_leg.rotation.z = -0.12 if step % 2 == 0 else 0.0
+			_right_leg.rotation.z = 0.0 if step % 2 == 0 else 0.12
+		"seal_clap":
+			# 물개처럼 몸 젖히고 팔을 쭉 뻗어 짝짝짝 + 콩콩 뜀
+			var clap := absf(sin(t * 11.0))
+			_torso.rotation.x = -0.22
+			_torso.position.y = absf(sin(t * 5.5)) * 0.06
+			_left_arm.rotation = Vector3(-1.35, 0.0, -0.75 + clap * 0.85)
+			_right_arm.rotation = Vector3(-1.35, 0.0, 0.75 - clap * 0.85)
+			_left_leg.rotation.z = -0.1
+			_right_leg.rotation.z = 0.1
+		"dizzy":
+			# 팽이처럼 빙글빙글 돌다가 어질어질 비틀
+			if t < 1.3:
+				var sp := t / 1.3
+				_torso.rotation.y = t * t * 14.0
+				_left_arm.rotation = Vector3(0, 0, -1.45 * minf(1.0, sp * 3.0))
+				_right_arm.rotation = Vector3(0, 0, 1.45 * minf(1.0, sp * 3.0))
+				_torso.position.y = 0.04 * minf(1.0, sp * 3.0)
+			else:
+				var w := t - 1.3
+				_torso.rotation.z = sin(w * 5.0) * 0.32
+				_torso.rotation.x = cos(w * 3.7) * 0.15
+				_torso.position.x = sin(w * 5.0) * 0.06
+				_left_arm.rotation = Vector3(sin(w * 6.0) * 0.4, 0, -0.9)
+				_right_arm.rotation = Vector3(-sin(w * 6.0) * 0.4, 0, 0.9)
+				_left_leg.rotation.z = -0.15 + sin(w * 5.0) * 0.1
+				_right_leg.rotation.z = 0.15 + sin(w * 5.0) * 0.1
 
 
 ## 사나이 강펀치: 왼팔(뒤에서 보면 화면 오른쪽)을 앞으로 쭉 내지름

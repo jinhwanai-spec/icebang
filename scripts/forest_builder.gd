@@ -56,61 +56,6 @@ func _paths() -> void:
 		_box(Vector3(mid.x, 0.005, mid.z), Vector3(2.6, 0.01, length), dirt, false, yaw)
 
 
-# ================================================================ 여러 개를 한 번에 그리기 (MultiMesh)
-# 나무·낙엽처럼 수천 개 있는 것은 하나씩 만들면 느려서, 같은 모양끼리 모아 한 번에 그림
-
-var _batches := {}  # 이름 → [메시, 재질, 그림자 여부, [Transform3D...], [Color...]]
-
-
-func _batch(key: String, mesh: Mesh, mat: Material, xf: Transform3D, color := Color.WHITE, shadow := true) -> void:
-	if not _batches.has(key):
-		_batches[key] = [mesh, mat, shadow, [], []]
-	_batches[key][3].append(xf)
-	_batches[key][4].append(color)
-
-
-func _flush_batches() -> void:
-	for key in _batches:
-		var b: Array = _batches[key]
-		var mm := MultiMesh.new()
-		mm.transform_format = MultiMesh.TRANSFORM_3D
-		mm.use_colors = true
-		mm.mesh = b[0]
-		mm.instance_count = b[3].size()
-		for i in b[3].size():
-			mm.set_instance_transform(i, b[3][i])
-			mm.set_instance_color(i, b[4][i])
-		var mmi := MultiMeshInstance3D.new()
-		mmi.multimesh = mm
-		mmi.material_override = b[1]
-		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if b[2] else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		region.add_child(mmi)
-		paintable.append(mmi)
-	_batches.clear()
-
-
-## 인스턴스 색을 쓰는 재질 (낙엽처럼 같은 모양에 색만 다르게)
-var _tint_cache := {}
-func _tint_mat(rough: float, double_sided := false) -> StandardMaterial3D:
-	var key := "%s_%s" % [rough, double_sided]
-	if _tint_cache.has(key):
-		return _tint_cache[key]
-	var m := StandardMaterial3D.new()
-	m.vertex_color_use_as_albedo = true
-	m.roughness = rough
-	if double_sided:
-		m.cull_mode = BaseMaterial3D.CULL_DISABLED
-	_tint_cache[key] = m
-	return m
-
-
-## 재질에 인스턴스 색(밝기 차이)을 곱하는 복사본
-func _tinted(base: StandardMaterial3D) -> StandardMaterial3D:
-	var m: StandardMaterial3D = base.duplicate()
-	m.vertex_color_use_as_albedo = true
-	return m
-
-
 # ================================================================ 재질
 
 # ================================================================ 진짜 질감 (assets/textures, Poly Haven CC0)

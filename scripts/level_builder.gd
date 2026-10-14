@@ -42,18 +42,24 @@ func build(target: Node3D, map_seed: int) -> void:
 	_outer_walls()
 	_blocks()
 	_road_props()
+	_flush_batches()
 
 
 # ================================================================ 재질 (질감)
 
 func _make_materials() -> void:
 	_mat["asphalt"] = _noise_mat(Color(0.16, 0.16, 0.17), 0.35, 0.95, 6.0)
-	_mat["sidewalk"] = _noise_mat(Color(0.42, 0.41, 0.39), 0.5, 0.9, 3.0)
+	_mat["sidewalk"] = _pattern_mat("tile", Color(0.42, 0.41, 0.39), 2.0)
 	_mat["concrete"] = _noise_mat(Color(0.36, 0.35, 0.33), 0.4, 0.95, 4.0)
 	_mat["dirt"] = _noise_mat(Color(0.2, 0.22, 0.14), 0.4, 1.0, 4.0)
-	_mat["wall"] = _noise_mat(Color(0.3, 0.29, 0.28), 0.3, 0.95, 4.0)
-	for c in [Color(0.5, 0.5, 0.47), Color(0.55, 0.49, 0.4), Color(0.38, 0.45, 0.44), Color(0.46, 0.3, 0.25), Color(0.42, 0.42, 0.45)]:
-		_building_mats.append(_noise_mat(c, 0.25, 0.9, 5.0))
+	_mat["wall"] = _pattern_mat("brick", Color(0.34, 0.31, 0.29), 1.5)
+	_mat["planks"] = _pattern_mat("planks", Color(0.4, 0.31, 0.22), 2.0)
+	var kinds := ["plaster", "brick", "plaster", "brick", "brick"]
+	var cols := [Color(0.5, 0.5, 0.47), Color(0.55, 0.49, 0.4), Color(0.38, 0.45, 0.44), Color(0.46, 0.3, 0.25), Color(0.42, 0.42, 0.45)]
+	for i in cols.size():
+		var c: Color = cols[i]
+		_building_mats.append(_pattern_mat(kinds[i], c, 1.5 if kinds[i] == "brick" else 3.0))
+		_building_cols.append(c)
 	for c in [Color(0.35, 0.22, 0.15), Color(0.25, 0.35, 0.3), Color(0.45, 0.4, 0.3), Color(0.3, 0.32, 0.38), Color(0.5, 0.25, 0.2)]:
 		_rust_mats.append(_noise_mat(c, 0.6, 0.6, 3.0))
 	_mat["windows"] = _window_mat()
@@ -63,7 +69,7 @@ func _make_materials() -> void:
 	_mat["trunk"] = _noise_mat(Color(0.25, 0.18, 0.12), 0.5, 1.0, 2.0)
 	_mat["leaves"] = _noise_mat(Color(0.12, 0.22, 0.1), 0.6, 1.0, 2.0)
 	_mat["paint"] = _flat_mat(Color(0.75, 0.75, 0.7), 0.8)
-	_mat["crate"] = _noise_mat(Color(0.4, 0.3, 0.18), 0.6, 1.0, 2.0)
+	_mat["crate"] = _pattern_mat("planks", Color(0.5, 0.36, 0.2), 1.0)
 
 
 ## 노이즈 텍스처로 콘크리트/아스팔트 같은 얼룩덜룩한 질감을 만듭니다.
@@ -93,6 +99,22 @@ func _noise_mat(base: Color, contrast: float, rough: float, tile_m: float) -> St
 	m.normal_enabled = true
 	m.normal_texture = ntex
 	m.roughness = rough
+	m.uv1_triplanar = true
+	m.uv1_world_triplanar = true
+	m.uv1_scale = Vector3.ONE / tile_m
+	return m
+
+
+## 무늬 질감: "brick"(벽돌) / "plaster"(낡은 회벽) / "tile"(보도블록) / "planks"(나무 판자). tile_m 미터마다 한 번 반복
+## 무늬 그림은 assets/textures/gen (회색 그림에 base 색을 곱함)
+func _pattern_mat(kind: String, base: Color, tile_m: float) -> StandardMaterial3D:
+	var m := StandardMaterial3D.new()
+	m.albedo_texture = load("res://assets/textures/gen/%s_diff.png" % kind)
+	m.albedo_color = Color(base.r * 1.3, base.g * 1.3, base.b * 1.3)
+	m.normal_enabled = true
+	m.normal_texture = load("res://assets/textures/gen/%s_nor.png" % kind)
+	m.normal_scale = 1.3
+	m.roughness = 0.9
 	m.uv1_triplanar = true
 	m.uv1_world_triplanar = true
 	m.uv1_scale = Vector3.ONE / tile_m
@@ -224,6 +246,61 @@ func _shuffle(arr: Array) -> void:
 		arr[j] = tmp
 
 
+# ================================================================ 여러 개를 한 번에 그리기 (MultiMesh)
+# 나무·낙엽처럼 수천 개 있는 것은 하나씩 만들면 느려서, 같은 모양끼리 모아 한 번에 그림
+
+var _batches := {}  # 이름 → [메시, 재질, 그림자 여부, [Transform3D...], [Color...]]
+
+
+func _batch(key: String, mesh: Mesh, mat: Material, xf: Transform3D, color := Color.WHITE, shadow := true) -> void:
+	if not _batches.has(key):
+		_batches[key] = [mesh, mat, shadow, [], []]
+	_batches[key][3].append(xf)
+	_batches[key][4].append(color)
+
+
+func _flush_batches() -> void:
+	for key in _batches:
+		var b: Array = _batches[key]
+		var mm := MultiMesh.new()
+		mm.transform_format = MultiMesh.TRANSFORM_3D
+		mm.use_colors = true
+		mm.mesh = b[0]
+		mm.instance_count = b[3].size()
+		for i in b[3].size():
+			mm.set_instance_transform(i, b[3][i])
+			mm.set_instance_color(i, b[4][i])
+		var mmi := MultiMeshInstance3D.new()
+		mmi.multimesh = mm
+		mmi.material_override = b[1]
+		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if b[2] else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		region.add_child(mmi)
+		paintable.append(mmi)
+	_batches.clear()
+
+
+## 인스턴스 색을 쓰는 재질 (낙엽처럼 같은 모양에 색만 다르게)
+var _tint_cache := {}
+func _tint_mat(rough: float, double_sided := false) -> StandardMaterial3D:
+	var key := "%s_%s" % [rough, double_sided]
+	if _tint_cache.has(key):
+		return _tint_cache[key]
+	var m := StandardMaterial3D.new()
+	m.vertex_color_use_as_albedo = true
+	m.roughness = rough
+	if double_sided:
+		m.cull_mode = BaseMaterial3D.CULL_DISABLED
+	_tint_cache[key] = m
+	return m
+
+
+## 재질에 인스턴스 색(밝기 차이)을 곱하는 복사본
+func _tinted(base: StandardMaterial3D) -> StandardMaterial3D:
+	var m: StandardMaterial3D = base.duplicate()
+	m.vertex_color_use_as_albedo = true
+	return m
+
+
 # ================================================================ 바닥 / 울타리 / 도로
 
 func _ground() -> void:
@@ -329,33 +406,282 @@ func _building_row(inner: Rect2) -> void:
 
 
 func _building(b: Rect2) -> void:
-	var h := rng.randf_range(6.0, 15.0)
+	var h := rng.randf_range(6.5, 15.5)
 	var base_y := CURB
 	var c := b.get_center()
-	_box(Vector3(c.x, base_y + h / 2.0, c.y), Vector3(b.size.x, h, b.size.y), _building_mats[rng.randi() % _building_mats.size()])
-	# 옥상 테두리
-	_box(Vector3(c.x, base_y + h + 0.2, c.y), Vector3(b.size.x + 0.3, 0.4, b.size.y + 0.3), _mat["concrete"], false)
+	var ci := rng.randi() % _building_mats.size()
+	_box(Vector3(c.x, base_y + h / 2.0, c.y), Vector3(b.size.x, h, b.size.y), _building_mats[ci])
+	var trim: Color = _building_cols[ci].lightened(0.18)
+	_facade(b, base_y, h, true, _building_cols[ci], trim)
+	var top := b
+	var top_y := base_y + h
+	# 가끔 위에 한 덩어리 더 (계단식 건물)
+	if h > 9.0 and rng.randf() < 0.35 and minf(b.size.x, b.size.y) > 7.0:
+		var shrink := Vector2(b.size.x * rng.randf_range(0.15, 0.3), b.size.y * rng.randf_range(0.15, 0.3))
+		top = Rect2(b.position + shrink * Vector2(rng.randf(), rng.randf()), b.size - shrink)
+		var h2 := rng.randf_range(3.2, 6.2)
+		var tc := top.get_center()
+		_box(Vector3(tc.x, top_y + h2 / 2.0, tc.y), Vector3(top.size.x, h2, top.size.y), _building_mats[ci])
+		_facade(top, top_y, h2, false, _building_cols[ci], trim)
+		top_y += h2
+	_rooftop(top, top_y)
 
-	# 네 면에 창문과 1층 셔터, 가끔 간판
-	var win_h := h - 4.2
+
+# ---------------------------------------------------------------- 건물 꾸미기 (창틀·가게·옥상)
+# 작은 부품이 수천 개라서 같은 재질끼리 MultiMesh 로 모아 그림
+
+var _building_cols: Array[Color] = []
+var _cube: BoxMesh
+var _cyl: CylinderMesh
+var _deco := {}
+
+func _deco_mat(key: String) -> Material:
+	if _deco.has(key):
+		return _deco[key]
+	var m := StandardMaterial3D.new()
+	m.vertex_color_use_as_albedo = true
+	m.roughness = 0.85
+	match key:
+		"glass":
+			m.roughness = 0.12
+			m.metallic = 0.35
+		"lit":
+			m.emission_enabled = true
+			m.emission = Color(1.0, 0.68, 0.35)
+			m.emission_energy_multiplier = 1.1
+		"eerie":
+			m.emission_enabled = true
+			m.emission = Color(0.35, 0.9, 0.6)
+			m.emission_energy_multiplier = 0.7
+		"metal":
+			m.roughness = 0.5
+			m.metallic = 0.45
+		"web":
+			m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+			m.cull_mode = BaseMaterial3D.CULL_DISABLED
+			m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+			m.albedo_texture = _web_tex()
+	_deco[key] = m
+	return m
+
+
+## 상자 부품 하나: 벽면 기준 (t=벽을 따라가는 방향, n=벽 바깥 방향). size=(t방향, 높이, n방향), roll=n축 기준 기울기
+func _bx(key: String, center: Vector3, t: Vector3, n: Vector3, size: Vector3, col: Color, roll := 0.0, pitch := 0.0) -> void:
+	if _cube == null:
+		_cube = BoxMesh.new()
+	var basis := Basis(t, Vector3.UP, n)
+	if roll != 0.0:
+		basis = basis * Basis(Vector3(0, 0, 1), roll)
+	if pitch != 0.0:
+		basis = basis * Basis(Vector3(1, 0, 0), pitch)
+	_batch("b_" + key, _cube, _deco_mat(key), Transform3D(basis * Basis.from_scale(size), center), col)
+
+
+## 거미줄 무늬 (가운데서 퍼지는 실 + 동심 다각형)
+func _web_tex() -> ImageTexture:
+	var size := 128
+	var img := Image.create(size, size, false, Image.FORMAT_RGBA8)
+	img.fill(Color(1, 1, 1, 0))
+	var cpos := Vector2(64, 2)
+	for k in 9:
+		var ang := k / 8.0 * PI
+		var dir := Vector2(cos(ang), sin(ang))
+		for r in 70:
+			var p := cpos + dir * r
+			if p.x >= 0 and p.y >= 0 and p.x < size and p.y < size:
+				img.set_pixelv(Vector2i(p), Color(1, 1, 1, 1))
+	for ring in range(10, 70, 11):
+		for k in 8:
+			var a0 := k / 8.0 * PI
+			var a1 := (k + 1) / 8.0 * PI
+			var p0 := cpos + Vector2(cos(a0), sin(a0)) * ring
+			var p1 := cpos + Vector2(cos(a1), sin(a1)) * ring * 0.93
+			for st in 30:
+				var p := p0.lerp(p1, st / 29.0)
+				if p.x >= 0 and p.y >= 0 and p.x < size and p.y < size:
+					img.set_pixelv(Vector2i(p), Color(1, 1, 1, 0.9))
+	return ImageTexture.create_from_image(img)
+
+
+func _pipe(center: Vector3, radius: float, length: float, col: Color) -> void:
+	if _cyl == null:
+		_cyl = CylinderMesh.new()
+		_cyl.top_radius = 0.5
+		_cyl.bottom_radius = 0.5
+		_cyl.height = 1.0
+		_cyl.radial_segments = 10
+		_cyl.rings = 1
+	_batch("b_pipe", _cyl, _deco_mat("metal"), Transform3D(Basis.from_scale(Vector3(radius * 2, length, radius * 2)), center), col)
+
+
+## 건물 네 면: 기단, 모서리 기둥, 층 띠, 창문(창틀·창턱·살), 1층 가게, 배관, 비상계단, 꼭대기 처마
+func _facade(b: Rect2, y0: float, h: float, ground: bool, wall: Color, trim: Color) -> void:
+	var c := b.get_center()
+	var dark := wall.darkened(0.45)
+	var frame_col := Color(0.16, 0.14, 0.13).lerp(trim, 0.15)
+	var floors := int((h - (3.4 if ground else 0.4) - 0.5) / 3.0)
+	var first := y0 + (3.4 if ground else 0.3)
+	var fire_side := rng.randi() % 4 if (floors >= 2 and rng.randf() < 0.4) else -1
+	var pipe_side := rng.randi() % 4
 	var sides := [
-		[Vector3(b.end.x + 0.04, 0, c.y), Vector3(0.08, 0, b.size.y - 1.2), b.size.y],
-		[Vector3(b.position.x - 0.04, 0, c.y), Vector3(0.08, 0, b.size.y - 1.2), b.size.y],
-		[Vector3(c.x, 0, b.end.y + 0.04), Vector3(b.size.x - 1.2, 0, 0.08), b.size.x],
-		[Vector3(c.x, 0, b.position.y - 0.04), Vector3(b.size.x - 1.2, 0, 0.08), b.size.x],
+		[Vector3(1, 0, 0), b.size.y, b.size.x], [Vector3(-1, 0, 0), b.size.y, b.size.x],
+		[Vector3(0, 0, 1), b.size.x, b.size.y], [Vector3(0, 0, -1), b.size.x, b.size.y],
 	]
-	for s in sides:
-		var p: Vector3 = s[0]
-		var sz: Vector3 = s[1]
-		var side_len: float = s[2]
-		if win_h > 1.5:
-			_box(Vector3(p.x, base_y + 3.6 + win_h / 2.0, p.z), Vector3(sz.x, win_h, sz.z), _mat["windows"], false)
-		if side_len > 5.0:
-			var w := minf(4.5, side_len - 2.0)
-			var shutter_size := Vector3(w if sz.x > 1.0 else 0.1, 2.8, w if sz.z > 1.0 else 0.1)
-			_box(Vector3(p.x, base_y + 1.4, p.z), shutter_size, _mat["shutter"], false)
-			if rng.randf() < 0.35:
-				_sign(Vector3(p.x, base_y + 3.2, p.z), sz.x > 1.0)
+	for si in 4:
+		var n: Vector3 = sides[si][0]
+		var L: float = sides[si][1]
+		var depth: float = sides[si][2]
+		var t := Vector3.UP.cross(n)
+		var face := Vector3(c.x, 0, c.y) + n * (depth / 2.0)
+		# 기단(아래 어두운 띠)과 꼭대기 처마
+		if ground:
+			_bx("trim", face + n * 0.06 + Vector3.UP * (y0 + 0.35), t, n, Vector3(L + 0.12, 0.7, 0.14), dark)
+		_bx("trim", face + n * 0.12 + Vector3.UP * (y0 + h - 0.2), t, n, Vector3(L + 0.5, 0.4, 0.26), trim)
+		# 모서리 기둥
+		for e in [-1.0, 1.0]:
+			_bx("trim", face + t * e * (L / 2.0 - 0.15) + n * 0.08 + Vector3.UP * (y0 + h / 2.0), t, n, Vector3(0.42, h, 0.18), trim.darkened(0.08))
+		# 층마다 가로 띠
+		for k in floors + 1:
+			var fy := first + k * 3.0 - 0.15
+			if fy < y0 + h - 0.6:
+				_bx("trim", face + n * 0.07 + Vector3.UP * fy, t, n, Vector3(L - 0.3, 0.16, 0.14), trim.darkened(0.15))
+		# 창문
+		var count := maxi(1, int((L - 1.6) / 2.4))
+		var gap := (L - 1.6) / count
+		for k in floors:
+			var wy := first + k * 3.0 + 1.45
+			for i in count:
+				var u := -L / 2.0 + 0.8 + gap * (i + 0.5)
+				_window(face + t * u + Vector3.UP * wy, t, n, frame_col, trim)
+		# 1층 가게
+		if ground and L > 5.0:
+			_shopfront(face, t, n, L, y0, frame_col)
+		# 배관
+		if si == pipe_side:
+			var e := 1.0 if rng.randf() < 0.5 else -1.0
+			_pipe(face + t * e * (L / 2.0 - 0.6) + n * 0.2 + Vector3.UP * (y0 + h / 2.0), 0.07, h, Color(0.3, 0.3, 0.3))
+		# 비상계단
+		if si == fire_side:
+			_fire_escape(face, t, n, L, first, floors)
+
+
+func _window(at: Vector3, t: Vector3, n: Vector3, frame_col: Color, trim: Color) -> void:
+	var w := 1.1
+	var hh := 1.55
+	_bx("trim", at + n * 0.04, t, n, Vector3(w + 0.22, hh + 0.22, 0.08), frame_col)
+	_bx("trim", at + n * 0.1 + Vector3.UP * (-hh / 2.0 - 0.12), t, n, Vector3(w + 0.4, 0.09, 0.24), trim)
+	var r := rng.randf()
+	if r < 0.08:
+		# 판자로 막은 창문
+		_bx("glass", at + n * 0.085, t, n, Vector3(w, hh, 0.02), Color(0.03, 0.03, 0.04))
+		var wood := Color(0.42, 0.3, 0.18)
+		for j in 3:
+			_bx("trim", at + n * 0.12 + Vector3.UP * (j - 1) * 0.45, t, n, Vector3(w + 0.3, 0.2, 0.04), wood.darkened(rng.randf() * 0.3), rng.randf_range(-0.25, 0.25))
+		return
+	if r < 0.13:
+		# 깨진 창문: 시커멓고 유리 조각만 남음
+		_bx("glass", at + n * 0.085, t, n, Vector3(w, hh, 0.02), Color(0.0, 0.0, 0.0))
+		_bx("glass", at + n * 0.09 + t * -0.3 + Vector3.UP * 0.5, t, n, Vector3(0.35, 0.5, 0.02), Color(0.2, 0.25, 0.3), 0.6)
+		return
+	var lit := r < 0.3
+	_bx("lit" if lit else "glass", at + n * 0.085, t, n, Vector3(w, hh, 0.02),
+			Color(1.0, 0.75, 0.45) if lit else Color(0.07, 0.09, 0.12))
+	if lit and rng.randf() < 0.6:
+		# 커튼 (불 켜진 창에 사람 없는 방 느낌)
+		var cc: Color = [Color(0.6, 0.2, 0.2), Color(0.5, 0.45, 0.3), Color(0.25, 0.3, 0.5)][rng.randi() % 3]
+		var side := -1.0 if rng.randf() < 0.5 else 1.0
+		_bx("trim", at + n * 0.1 + t * side * w * 0.28, t, n, Vector3(w * 0.45, hh, 0.02), cc)
+	# 창살 (십자)
+	_bx("trim", at + n * 0.1, t, n, Vector3(0.06, hh, 0.03), frame_col)
+	_bx("trim", at + n * 0.1 + Vector3.UP * 0.2, t, n, Vector3(w, 0.06, 0.03), frame_col)
+	# 가끔 실외기
+	if rng.randf() < 0.07:
+		var ac := at + n * 0.3 + Vector3.UP * (-hh / 2.0 - 0.45) + t * 0.2
+		_bx("metal", ac, t, n, Vector3(0.75, 0.5, 0.45), Color(0.7, 0.7, 0.66))
+		_bx("trim", ac + n * 0.23, t, n, Vector3(0.45, 0.38, 0.02), Color(0.12, 0.12, 0.12))
+
+
+func _shopfront(face: Vector3, t: Vector3, n: Vector3, L: float, y0: float, frame_col: Color) -> void:
+	var w := minf(4.8, L - 2.0)
+	var at := face + Vector3.UP * (y0 + 1.4)
+	if rng.randf() < 0.5:
+		# 녹슨 셔터 + 셔터 박스
+		_bx("metal", at + n * 0.06, t, n, Vector3(w, 2.8, 0.06), Color(0.48, 0.47, 0.46).darkened(rng.randf() * 0.3))
+		for j in 9:
+			_bx("trim", at + n * 0.1 + Vector3.UP * (-1.3 + j * 0.32), t, n, Vector3(w, 0.04, 0.03), Color(0.22, 0.22, 0.22))
+		_bx("metal", at + n * 0.18 + Vector3.UP * 1.55, t, n, Vector3(w + 0.2, 0.35, 0.35), Color(0.35, 0.35, 0.34))
+	else:
+		# 유리 진열창 + 문
+		_bx("trim", at + n * 0.05, t, n, Vector3(w + 0.2, 2.9, 0.1), frame_col)
+		var eerie := rng.randf() < 0.15
+		_bx("eerie" if eerie else "glass", at + n * 0.11, t, n, Vector3(w, 2.6, 0.02),
+				Color(0.3, 0.7, 0.5) if eerie else Color(0.06, 0.08, 0.1))
+		for j in [-1.0, 1.0]:
+			_bx("trim", at + n * 0.13 + t * j * w * 0.18, t, n, Vector3(0.08, 2.6, 0.04), frame_col)
+		_bx("trim", at + n * 0.13 + Vector3.UP * 0.35, t, n, Vector3(w, 0.08, 0.04), frame_col)
+	# 줄무늬 차양
+	if rng.randf() < 0.5:
+		var pal := [[Color(0.7, 0.15, 0.15), Color(0.9, 0.85, 0.75)], [Color(0.15, 0.4, 0.3), Color(0.85, 0.82, 0.7)], [Color(0.2, 0.3, 0.6), Color(0.9, 0.88, 0.8)]]
+		var pc: Array = pal[rng.randi() % pal.size()]
+		var stripes := int(w / 0.45)
+		var sw := (w + 0.4) / stripes
+		var torn := rng.randi() % maxi(1, stripes)
+		for j in stripes:
+			if j == torn and rng.randf() < 0.5:
+				continue  # 찢어진 칸
+			var u := -(w + 0.4) / 2.0 + sw * (j + 0.5)
+			_bx("trim", face + t * u + n * 0.6 + Vector3.UP * (y0 + 3.05), t, n, Vector3(sw, 0.05, 1.2), (pc[j % 2] as Color).darkened(0.25), 0.0, 0.42)
+	# 간판
+	if rng.randf() < 0.4:
+		_sign(face + n * 0.12 + Vector3.UP * (y0 + 3.5), absf(n.z) > 0.5)
+
+
+func _fire_escape(face: Vector3, t: Vector3, n: Vector3, L: float, first: float, floors: int) -> void:
+	var col := Color(0.2, 0.17, 0.16)
+	var u := -L / 2.0 + 0.8 + minf(2.0, L * 0.25)
+	for k in floors:
+		var fy := first + k * 3.0
+		var at := face + t * u + Vector3.UP * fy
+		_bx("metal", at + n * 0.6, t, n, Vector3(2.8, 0.07, 1.1), col)
+		_bx("metal", at + n * 1.13 + Vector3.UP * 0.95, t, n, Vector3(2.8, 0.05, 0.05), col)
+		_bx("metal", at + n * 1.13 + Vector3.UP * 0.5, t, n, Vector3(2.8, 0.03, 0.03), col)
+		for e in [-1.4, 0.0, 1.4]:
+			_bx("metal", at + n * 1.13 + t * e + Vector3.UP * 0.48, t, n, Vector3(0.05, 0.95, 0.05), col)
+		if k > 0:
+			# 아래층으로 내려가는 계단
+			_bx("metal", at + n * 0.6 + t * 0.2 + Vector3.UP * -1.5, t, n, Vector3(3.3, 0.06, 0.55), col, -0.95)
+
+
+func _rooftop(b: Rect2, y: float) -> void:
+	var c := b.get_center()
+	var con := Color(0.38, 0.37, 0.35)
+	# 난간벽
+	for s in [[Vector3(0, 0, 1), b.size.x, b.size.y], [Vector3(0, 0, -1), b.size.x, b.size.y], [Vector3(1, 0, 0), b.size.y, b.size.x], [Vector3(-1, 0, 0), b.size.y, b.size.x]]:
+		var n: Vector3 = s[0]
+		var t := Vector3.UP.cross(n)
+		_bx("trim", Vector3(c.x, y + 0.35, c.y) + n * (float(s[2]) / 2.0 - 0.12), t, n, Vector3(float(s[1]), 0.7, 0.24), con)
+	var inner := b.grow(-1.2)
+	if inner.size.x < 1.0 or inner.size.y < 1.0:
+		return
+	# 물탱크
+	if rng.randf() < 0.4:
+		var p := Vector3(rng.randf_range(inner.position.x, inner.end.x), y, rng.randf_range(inner.position.y, inner.end.y))
+		_pipe(p + Vector3.UP * 2.2, 0.9, 1.9, Color(0.42, 0.3, 0.22))
+		_pipe(p + Vector3.UP * 3.25, 0.5, 0.25, Color(0.3, 0.22, 0.16))
+		for d in [Vector3(0.6, 0, 0.6), Vector3(-0.6, 0, 0.6), Vector3(0.6, 0, -0.6), Vector3(-0.6, 0, -0.6)]:
+			_pipe(p + d + Vector3.UP * 0.65, 0.06, 1.3, Color(0.2, 0.2, 0.2))
+	# 실외기·환풍구
+	for i in rng.randi_range(1, 3):
+		var p := Vector3(rng.randf_range(inner.position.x, inner.end.x), y, rng.randf_range(inner.position.y, inner.end.y))
+		if rng.randf() < 0.6:
+			_bx("metal", p + Vector3.UP * 0.4, Vector3.RIGHT, Vector3.BACK, Vector3(1.0, 0.8, 0.7), Color(0.6, 0.6, 0.57))
+		else:
+			_pipe(p + Vector3.UP * 0.5, 0.18, 1.0, Color(0.45, 0.45, 0.45))
+	# 안테나
+	if rng.randf() < 0.3:
+		var p := Vector3(rng.randf_range(inner.position.x, inner.end.x), y, rng.randf_range(inner.position.y, inner.end.y))
+		_pipe(p + Vector3.UP * 1.5, 0.03, 3.0, Color(0.25, 0.25, 0.25))
+		_bx("metal", p + Vector3.UP * 2.6, Vector3.RIGHT, Vector3.BACK, Vector3(1.2, 0.04, 0.04), Color(0.25, 0.25, 0.25))
 
 
 ## 빛나는 간판 (보내주신 이미지처럼 초록/빨강)
