@@ -105,14 +105,17 @@ void fragment() {
 	vec3 r2 = cross(NORMAL, dpdx);
 	float det = dot(dpdx, r1);
 	vec3 grad = sign(det) * (hx * r1 + hy * r2);
-	vec3 nn = normalize(abs(det) * NORMAL - grad * min(bump, 0.8) * 0.3);
+	// 멀리서·작게 보일수록 울퉁불퉁함을 줄여서 반짝이(지글거림)가 안 생기게
+	float freq = length(fwidth(lp)) * min(bump_scale, 16.0);
+	float bump_k = 1.0 - smoothstep(0.08, 0.35, freq);
+	vec3 nn = normalize(abs(det) * NORMAL - grad * min(bump, 0.8) * 0.06 * bump_k);
 	NORMAL = nn;
 
 	col = mix(col, tint_color.rgb, tint);
 	ALBEDO = col;
-	ROUGHNESS = mix(roughness_v, 0.22, bm);
+	ROUGHNESS = mix(max(roughness_v, 0.72), 0.4, bm);
 	METALLIC = metallic_v * (1.0 - bm);
-	SPECULAR = 0.5;
+	SPECULAR = 0.3;
 	float fres = pow(1.0 - clamp(dot(nn, VIEW), 0.0, 1.0), rim_power);
 	vec3 em = rim_color.rgb * fres * rim;
 	if (veins > 0.0) {
