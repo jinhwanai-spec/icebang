@@ -2802,19 +2802,21 @@ func _add_halos(parent: Node3D, pts: Array, size: float) -> void:
 		_halo_tex.height = 64
 		var gr := Gradient.new()
 		gr.offsets = PackedFloat32Array([0.0, 0.18, 0.5, 1.0])
-		gr.colors = PackedColorArray([Color(1, 1, 1, 1), Color(0.5, 0.5, 0.5, 1), Color(0.1, 0.1, 0.1, 1), Color(0, 0, 0, 1)])
+		# 가장자리는 완전히 투명 (안 그러면 멀리서 안개가 덮일 때 네모 판이 보임)
+		gr.colors = PackedColorArray([Color(1, 1, 1, 1), Color(0.5, 0.5, 0.5, 0.6), Color(0.1, 0.1, 0.1, 0.15), Color(0, 0, 0, 0)])
 		_halo_tex.gradient = gr
 	var hm := StandardMaterial3D.new()
 	hm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	hm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	hm.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
 	hm.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
-	hm.fixed_size = true  # 멀리서도 같은 크기로 보여서 어둠 속에서 눈빛이 잘 보임
+	# 화면 고정 크기(fixed_size)는 멀리서 두 눈빛이 얼굴보다 커져서 네모 판처럼 보였음 → 실제 크기로
 	hm.albedo_texture = _halo_tex
+	hm.disable_fog = true  # 안개가 판 전체에 칠해져서 네모가 보이던 문제
 	hm.albedo_color = Color(_eye_color.r, _eye_color.g, _eye_color.b, 0.55)
 	_halo_mats.append(hm)
 	var q := QuadMesh.new()
-	q.size = Vector2(size, size) * 0.2
+	q.size = Vector2(size, size) * 0.55
 	for p: Vector3 in pts:
 		var mi := MeshInstance3D.new()
 		mi.mesh = q
