@@ -53,11 +53,12 @@ func build(character_id: String, cos := {}) -> void:
 	_hips = Node3D.new()
 	_hips.position = Vector3(0, 0.47, -0.06)
 	add_child(_hips)
-	_sphere(_hips, Vector3(0, 0, 0), 0.27, Vector3(1.12, 0.78, 0.88), _mat)
+	_hips_mi = _sphere(_hips, Vector3(0, 0, 0), 0.27, Vector3(1.12, 0.78, 0.88), _mat)
 	Cosmetics.apply(self, cos)
 
 
 var _body_mi: MeshInstance3D
+var _hips_mi: MeshInstance3D
 var _body_color: Color
 var _dress_mat: ShaderMaterial
 
@@ -118,6 +119,9 @@ func dress(top: Color, bottom: Color, split := -0.05, stripes := Color(0, 0, 0, 
 	_dress_mat.set_shader_parameter("front_col", front)
 	_dress_mat.set_shader_parameter("belly_col", belly)
 	_body_mi.material_override = _dress_mat
+	# 엉덩이도 바지(아래 옷) 색으로 (안 그러면 옷 뒤로 맨몸 색이 보임)
+	if _hips_mi:
+		_hips_mi.material_override = _clay(bc if split > -0.12 else tc)
 
 
 func dress_limbs(arm_col: Color, leg_col: Color) -> void:

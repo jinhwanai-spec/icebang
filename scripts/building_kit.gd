@@ -801,10 +801,26 @@ func _furnish_rich(room: Rect2, y: float, kind: String) -> void:
 				if not _keep.has_point(Vector2(bp.x, bp.z)) and not blocks_door(bp, Vector3(0.7, 1, 0.7)):
 					part(bp + Vector3.UP * 0.3, Vector3(0.6, 0.6, 0.45), Color(0.35, 0.5, 0.65), "trim", true)
 					part(bp + Vector3.UP * 0.62, Vector3(0.5, 0.1, 0.4), Color(0.92, 0.92, 0.9), "trim")
+			# 천장에 매단 빨랫줄 (양 끝 고리) + 줄에 걸쳐 접힌 시트·수건 + 집게
 			for k in 4:
 				var lp := Vector3(c.x - 2.0 + k * 1.3, y + room_h - 1.2, c.y)
-				part(lp + Vector3.UP * 0.75, Vector3(0.02, 0.02, 3.0), Color(0.4, 0.4, 0.42), "metal")
-				part(lp, Vector3(0.9, 1.4, 0.02), Color(0.9, 0.9, 0.88).darkened(rng.randf() * 0.15), "trim", false, rng.randf_range(-0.1, 0.1) + PI / 2.0)
+				var wy := lp.y + 0.75
+				part(Vector3(lp.x, wy, lp.z), Vector3(0.03, 0.03, 3.2), Color(0.75, 0.75, 0.72), "metal")
+				for e in [-1.6, 1.6]:
+					part(Vector3(lp.x, (wy + y + room_h) * 0.5, lp.z + e), Vector3(0.025, y + room_h - wy, 0.025), Color(0.5, 0.5, 0.52), "metal")
+				var z := lp.z - 1.3
+				while z < lp.z + 1.2:
+					var w := rng.randf_range(0.5, 1.0)
+					var hgt := rng.randf_range(0.6, 1.4)
+					var col: Color = [Color(0.92, 0.92, 0.9), Color(0.75, 0.85, 0.92), Color(0.78, 0.9, 0.84), Color(0.93, 0.88, 0.8)][rng.randi() % 4].darkened(rng.randf() * 0.12)
+					var sw := rng.randf_range(-0.06, 0.06)
+					# 앞뒤 두 장 (줄에 걸쳐 반으로 접힌 모양)
+					part(Vector3(lp.x + 0.035, wy - hgt * 0.5, z + w * 0.5), Vector3(0.015, hgt, w), col, "trim", false, sw)
+					part(Vector3(lp.x - 0.035, wy - hgt * 0.42, z + w * 0.5), Vector3(0.015, hgt * 0.84, w), col.darkened(0.08), "trim", false, -sw)
+					part(Vector3(lp.x, wy + 0.01, z + w * 0.5), Vector3(0.09, 0.03, w), col, "trim")
+					for pz in [z + 0.08, z + w - 0.08]:
+						part(Vector3(lp.x, wy + 0.03, pz), Vector3(0.04, 0.09, 0.025), [Color(0.9, 0.3, 0.3), Color(0.3, 0.6, 0.9), Color(0.95, 0.8, 0.2)][rng.randi() % 3], "trim")
+					z += w + rng.randf_range(0.08, 0.3)
 		"broadcast":
 			# 방송 장비 책상 + 마이크 + 스피커 + 방음벽(벽 아래 계란판) + 모니터
 			var dp := _wall_item(inner, sides[0] if not sides.is_empty() else 2, 0.5, 0.8)

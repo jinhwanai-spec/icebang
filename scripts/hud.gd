@@ -309,8 +309,13 @@ func _process(delta: float) -> void:
 			_thaw_label.text = "%s 해동 중... %.1f / %d초 (떨어지면 처음부터)" % [thaw_target.display_name, thaw_target.thaw_progress, thaw_time]
 
 	# --- 아래쪽 가운데: 내 상태
-	if p.is_dead or p.escaped:
+	if p.turned_seeker:
+		var sk = p.turned_seeker
+		_status_label.text = "당신은 술래!  생존자에게 닿으면 잡아요  ·  Shift 추격" if not sk.possessed_frozen() else "술래가 기절했어요... 잠시 못 움직여요"
+	elif p.is_dead or p.escaped:
 		_status_label.text = ("탈락! " if p.is_dead else "탈출 성공! ") + _spectate_text(p)
+	elif p.fall_slow_left > 0.0 and not p.is_frozen:
+		_status_label.text = "착지 충격! %.1f초 동안 %d%% 느려요" % [p.fall_slow_left, roundi(p.fall_slow_amount * 100.0)]
 	elif p.is_frozen:
 		_status_label.text = "[ 얼음 %d회 ]  술래에게 잡히지 않아요" % p.freeze_count
 		if p.ice_left > 0.0:

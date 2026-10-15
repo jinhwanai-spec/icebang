@@ -934,6 +934,33 @@ func break_window(index: int) -> void:
 	if w.has("mmi") and is_instance_valid(w["mmi"]):
 		var mm := (w["mmi"] as MultiMeshInstance3D).multimesh
 		mm.set_instance_transform(int(w["idx"]), Transform3D(Basis.from_scale(Vector3.ONE * 0.0001), c))
+	# 창틀에 남은 뾰족한 유리 조각 (위·아래 가장자리)
+	var bs: Basis = w["basis"]
+	var sz0: Vector3 = w["size"]
+	var shard_mat := StandardMaterial3D.new()
+	shard_mat.albedo_color = Color(0.55, 0.68, 0.78, 0.55)
+	shard_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	shard_mat.metallic = 0.5
+	shard_mat.roughness = 0.08
+	shard_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	var rr := RandomNumberGenerator.new()
+	rr.seed = index * 7919 + 13
+	for edge in [-1.0, 1.0]:
+		var n_sh := rr.randi_range(2, 4)
+		for k in n_sh:
+			var pm := PrismMesh.new()
+			var hh := rr.randf_range(0.12, sz0.y * 0.3)
+			pm.size = Vector3(rr.randf_range(0.12, 0.3), hh, 0.01)
+			pm.left_to_right = rr.randf()
+			var mi := MeshInstance3D.new()
+			mi.mesh = pm
+			mi.material_override = shard_mat
+			add_child(mi)
+			var along := rr.randf_range(-sz0.x * 0.42, sz0.x * 0.42)
+			var at: Vector3 = c + bs.x * along + Vector3.UP * edge * (sz0.y * 0.5 - hh * 0.5)
+			# 아래쪽은 위로 뾰족, 위쪽은 아래로 뾰족
+			var rot: Basis = bs * Basis(Vector3.FORWARD, PI if edge > 0.0 else 0.0)
+			mi.global_transform = Transform3D(rot, at)
 	var pt := CPUParticles3D.new()
 	pt.one_shot = true
 	pt.emitting = true

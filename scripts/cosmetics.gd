@@ -666,11 +666,11 @@ class Builder:
 			"angry":
 				_eye_pair(0.08, Vector3(0.9, 1.0, 0.45), dark)
 				_shine()
-				_brows(-0.45, 1.37)
+				_brows(0.45, 1.37)  # 바깥쪽이 올라가고 안쪽이 내려감 = 화남
 			"sad":
 				_eye_pair(0.08, Vector3(0.85, 1.15, 0.45), dark)
 				_shine()
-				_brows(0.4, 1.385)
+				_brows(-0.4, 1.385)  # 안쪽이 올라감 = 시무룩
 			"happy":
 				for s in [-1.0, 1.0]:
 					for k in [-1.0, 1.0]:

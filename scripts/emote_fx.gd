@@ -308,11 +308,13 @@ static func _stars(who: Node3D) -> void:
 		mi.position = Vector3(cos(a) * 0.38, sin(a * 2.0) * 0.04, sin(a) * 0.38)
 		mi.scale = Vector3.ONE * 0.13
 		orbit.add_child(mi)
-	var tw := orbit.create_tween().set_loops(6)
+	var tw := orbit.create_tween().set_loops(4)
 	tw.tween_property(orbit, "rotation:y", TAU, 0.7).from(0.0)
-	who.get_tree().create_timer(2.2).timeout.connect(func():
-		if is_instance_valid(orbit):
-			orbit.queue_free())
+	# 사라지는 것도 별 자신의 트윈으로 (이모트를 일찍 멈춰서 먼저 지워져도 오류 없음)
+	var life := orbit.create_tween()
+	life.tween_interval(2.0)
+	life.tween_property(orbit, "scale", Vector3.ZERO, 0.2)
+	life.tween_callback(orbit.queue_free)
 
 
 static var _star: ArrayMesh
