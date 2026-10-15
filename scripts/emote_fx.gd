@@ -47,6 +47,9 @@ static func clear(who: Node3D) -> void:
 # ---------------------------------------------------------------- 도우미
 
 static func _later(who: Node3D, id: String, delay: float, fn: Callable) -> void:
+	if who.has_meta("warmup"):
+		fn.call()  # 판 시작 때 미리 한 번 그려 보기 (처음 쓸 때 끊김 방지): 기다리지 않고 바로
+		return
 	who.get_tree().create_timer(delay).timeout.connect(func():
 		if is_instance_valid(who) and who.get("emote_id") == id and float(who.get("dance_left")) > 0.0:
 			fn.call())

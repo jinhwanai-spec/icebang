@@ -194,11 +194,20 @@ func start_emote(id: String, seconds: float) -> void:
 		_dance_audio.unit_size = 4.0
 		_dance_audio.position.y = 1.0
 		add_child(_dance_audio)
-	var path := "res://audio/emote_butt.wav" if id == "butt_dance" else "res://audio/emote_%s.wav" % id
-	_dance_audio.stream = load(path) if ResourceLoader.exists(path) else null
+	_dance_audio.stream = emote_stream(id)
 	if _dance_audio.stream:
 		_dance_audio.play()
 	EmoteFx.spawn(self, id)
+
+
+## 이모트 소리 (한 번 불러오면 계속 들고 있음 → 다시 틀 때 디스크를 안 읽음)
+static var _emote_streams := {}
+
+static func emote_stream(id: String) -> AudioStream:
+	if not _emote_streams.has(id):
+		var path := "res://audio/emote_butt.wav" if id == "butt_dance" else "res://audio/emote_%s.wav" % id
+		_emote_streams[id] = load(path) if ResourceLoader.exists(path) else null
+	return _emote_streams[id]
 
 
 ## 예전 이름 (엉덩이 춤)

@@ -114,8 +114,49 @@ func _ready() -> void:
 	_setup_horror()
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	hud.setup(self)
+	if player:
+		await _warmup_emotes()
 	ready_to_play = true
 	hud.show_message("[%s] 봉인석 %d개를 찾아 가동하세요! 발소리에 귀를 기울이세요" % [map_name, mission_total], 5.0)
+
+
+## 이모트 효과·소리를 검은 화면 뒤에서 한 번씩 미리 만들어 그려 둠 (처음 쓸 때 끊김 방지, 약 0.3초)
+func _warmup_emotes() -> void:
+	var cam := get_viewport().get_camera_3d()
+	if cam == null:
+		return
+	var cover := CanvasLayer.new()
+	cover.layer = 120
+	var black := ColorRect.new()
+	black.color = Color.BLACK
+	black.set_anchors_preset(Control.PRESET_FULL_RECT)
+	black.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	cover.add_child(black)
+	add_child(cover)
+	var box := Node3D.new()
+	add_child(box)
+	box.global_position = cam.global_position - cam.global_basis.z * 3.0 + Vector3.DOWN * 1.0
+	var who := Node3D.new()
+	who.set_script(preload("res://scripts/emote_warmup.gd"))
+	who.set_meta("warmup", true)
+	box.add_child(who)
+	var body := ClayBody.new()
+	who.add_child(body)
+	body.build(player.character_id, player.cosmetics)
+	who.set("body", body)
+	for e in Survivor.EMOTES:
+		var id: String = e[0]
+		who.set("emote_id", id)
+		body.emote = id
+		body.animate(0.05, 0.0, false)
+		Survivor.emote_stream(id)
+		Survivor.EmoteFx.spawn(who, id)
+	for i in 3:
+		await RenderingServer.frame_post_draw
+	box.queue_free()
+	var tw := create_tween()
+	tw.tween_property(black, "color:a", 0.0, 0.25)
+	tw.tween_callback(cover.queue_free)
 
 
 func _unhandled_input(event: InputEvent) -> void:
