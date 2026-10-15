@@ -395,10 +395,14 @@ func _corridor_dressing(core: Rect2, inner: Rect2, corr_z: float, corr_w: float,
 	for i in 9:
 		var lx := core.position.x + 3.0 + i * (core.size.x - 6.0) / 8.0
 		kit.ceiling_light(Vector3(lx, y + FH - 0.25, corr_z), Color(0.8, 0.95, 1.0), 0.6, 0.3)
-	# 쓰러진 의자·쓰레기통
+	# 벽 쪽에 쓰러진 의자 몇 개 (복도 가운데는 비워 둠, 문 앞도 피함)
 	for i in 3:
-		var p := Vector3(rng.randf_range(core.position.x + 2, core.end.x - 2), fy, corr_z + rng.randf_range(-0.8, 0.8))
-		kit.part(p + Vector3.UP * 0.2, Vector3(0.4, 0.4, 0.04), Color(0.55, 0.45, 0.32), "trim", false, rng.randf() * TAU)
+		var side := -1.0 if rng.randf() < 0.5 else 1.0
+		var cx := rng.randf_range(core.position.x + 3, core.end.x - 3)
+		if not free.call(cx, side, 0.8):
+			continue
+		var cp := Vector3(cx, fy, corr_z + side * (corr_w * 0.5 - (0.75 if side > 0 else 0.45)))
+		kit._chair(cp, rng.randf() * TAU, Color(0.55, 0.45, 0.32), true)
 
 
 # ================================================================ 체육관

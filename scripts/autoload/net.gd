@@ -267,6 +267,16 @@ func start_match() -> void:
 	var used: Array = []
 	var ids: Array = players.keys()
 	ids.sort()
+	# 캐릭터를 아직 안 고른 사람은 남은 캐릭터 중 하나를 자동으로 (준비 안 한 사람도 같이 시작)
+	for pid in ids:
+		if players[pid]["character"] != "":
+			used.append(players[pid]["character"])
+	var left: Array = CharacterDB.ORDER.filter(func(c): return not used.has(c) and not CharacterDB.is_hidden(c))
+	left.shuffle()
+	for pid in ids:
+		if players[pid]["character"] == "" and not left.is_empty():
+			players[pid]["character"] = left.pop_front()
+	used.clear()
 	for pid in ids:
 		slots.append({"peer": pid, "character": players[pid]["character"], "name": players[pid]["name"], "cos": players[pid].get("cos", {})})
 		used.append(players[pid]["character"])

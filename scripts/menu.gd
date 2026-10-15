@@ -452,12 +452,47 @@ func _build_multi_page() -> Control:
 	_mp_start = _button("게임 시작", func() -> void: Net.start_match(), true)
 	_mp_start.custom_minimum_size.x = 280
 	row.add_child(_mp_start)
-	_mp_ready = _button("준비 완료", func() -> void: Net.set_ready(not Net.is_ready(Net.my_id())), true)
+	_mp_ready = _button("준비 완료", _toggle_ready, true)
 	_mp_ready.custom_minimum_size.x = 220
 	row.add_child(_mp_ready)
 	_mp_wait = _label("방장이 시작하길 기다리는 중...", 16, C_DIM)
 	row.add_child(_mp_wait)
 	return page
+
+
+## 준비 (손님): 캐릭터를 안 골랐으면 남은 캐릭터 중 하나를 골라 주고 준비
+func _toggle_ready() -> void:
+	if Net.is_host():
+		return
+	var me: Dictionary = Net.players.get(Net.my_id(), {})
+	if str(me.get("character", "")) == "":
+		var used := []
+		for pid in Net.players:
+			used.append(Net.players[pid]["character"])
+		var free: Array = CharacterDB.ORDER.filter(func(c): return not used.has(c) and not CharacterDB.is_hidden(c))
+		if free.is_empty():
+			return
+		Net.pick_character(free[randi() % free.size()])
+		Net.set_ready(true)
+		return
+	Net.set_ready(not Net.is_ready(Net.my_id()))
+
+
+## 로비 단축키: R = 준비 (손님) / Enter = 게임 시작 (방장)
+func _unhandled_key_input(event: InputEvent) -> void:
+	if not (event is InputEventKey and event.pressed and not event.echo):
+		return
+	if not (_pages.has("multi") and (_pages["multi"] as Control).visible and _mp_lobby and _mp_lobby.visible):
+		return
+	if get_viewport().gui_get_focus_owner() is LineEdit:
+		return
+	var k := (event as InputEventKey).physical_keycode
+	if k == KEY_R and not Net.is_host():
+		_toggle_ready()
+		get_viewport().set_input_as_handled()
+	elif (k == KEY_ENTER or k == KEY_KP_ENTER) and Net.is_host():
+		Net.start_match()
+		get_viewport().set_input_as_handled()
 
 
 func _on_net_status(text: String) -> void:
@@ -481,18 +516,17 @@ func _refresh_multi() -> void:
 	_mp_mode.visible = in_lobby
 	_mp_mode.disabled = not Net.is_host()
 	_mp_mode.text = "방식: %s" % Net.MODE_NAMES.get(Net.match_mode, "")
-	_mp_start.disabled = not (Net.all_picked() and Net.all_ready())
-	if not Net.all_picked():
-		_mp_start.text = "모두 캐릭터를 골라야 해요"
-	elif not Net.all_ready():
-		_mp_start.text = "모두 준비하길 기다리는 중"
-	else:
-		_mp_start.text = "게임 시작"
+	# 방장은 언제든 시작 가능 (빈 자리는 봇, 캐릭터 안 고른 사람은 자동 선택)
+	_mp_start.disabled = false
+	var n_ready := 0
+	for pid in Net.players:
+		if Net.is_ready(pid):
+			n_ready += 1
+	_mp_start.text = "게임 시작 [Enter]  (준비 %d/%d)" % [n_ready, Net.players.size()]
 	var me_ready := Net.is_ready(Net.my_id())
-	var picked := str(Net.players.get(Net.my_id(), {}).get("character", "")) != ""
 	_mp_ready.visible = in_lobby and not Net.is_host()
-	_mp_ready.disabled = not picked
-	_mp_ready.text = "준비 취소" if me_ready else ("준비 완료" if picked else "캐릭터를 먼저 골라요")
+	_mp_ready.disabled = false
+	_mp_ready.text = "준비 취소 [R]" if me_ready else "준비 완료 [R]"
 	_mp_wait.visible = in_lobby and not Net.is_host()
 	_mp_wait.text = "방장이 아직 게임 화면에 있어요..." if Net.host_in_game() else ("방장이 시작하길 기다리는 중..." if me_ready else "")
 	_mp_ip_box.visible = Net.is_host()

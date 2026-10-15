@@ -155,9 +155,120 @@ func solid(center: Vector3, size: Vector3, basis := Basis.IDENTITY) -> void:
 ## 색만 다른 작은 부품 (가구 등). key 는 LevelBuilder._deco_mat 종류 ("trim", "metal", "glass", "lit")
 func part(center: Vector3, size: Vector3, col: Color, key := "trim", collide := false, yaw := 0.0) -> void:
 	var b := Basis(Vector3.UP, yaw)
-	lb._batch("b_" + key, _cube, lb._deco_mat(key), Transform3D(b * Basis.from_scale(size), center), col)
+	# 가구를 놓는 중: 문 앞(양쪽 1m)을 막으면 그 가구 전체를 빼 버림 (부품만 빠져서 떠 있는 일 없게)
+	var hit := _furn > 0 and size.y > 0.08 and _in_doorway(center, size, yaw)
+	if hit and _obj_depth == 0:
+		return
+	if hit:
+		_obj_bad = true
+	var dbg: Array = [center, size, collide, yaw, _furn_kind] if debug_record and _furn > 0 else []
+	var bkey := "b_" + key
+	lb._batch(bkey, _cube, lb._deco_mat(key), Transform3D(b * Basis.from_scale(size), center), col)
+	var entry: Array = [bkey, lb._batches[bkey][3].size() - 1, null, dbg, center, size, yaw]
 	if collide and not blocks_door(center, size, yaw):
 		solid(center, size, b)
+		entry[2] = body.get_child(body.get_child_count() - 1)
+	if _obj_depth > 0:
+		_obj_parts.append(entry)
+	elif _furn > 0:
+		_objects.append([entry])  # 따로 놓인 부품도 마지막 검사 대상
+
+
+# ---------------------------------------------------------------- 가구 한 덩어리 (문 앞이면 통째로 뺌)
+
+var _obj_depth := 0
+var _obj_bad := false
+var _obj_parts: Array = []  # [묶음 이름, 번호, 충돌 모양 또는 null]
+
+
+func _obj_begin() -> void:
+	if _obj_depth == 0:
+		_obj_bad = false
+		_obj_parts = []
+	_obj_depth += 1
+
+
+func _obj_end() -> void:
+	_obj_depth -= 1
+	if _obj_depth > 0:
+		return
+	if _obj_bad:
+		_drop_object(_obj_parts)
+	else:
+		_objects.append(_obj_parts)
+	_obj_parts = []
+	_obj_bad = false
+
+
+## 놓인 가구들 (마지막에 한 번 더 문 검사: 가구를 놓은 뒤에 뚫린 문도 있어서)
+var _objects: Array = []
+
+
+func _drop_object(parts: Array) -> void:
+	for e in parts:
+		if not lb._batches.has(e[0]):
+			continue
+		var arr: Array = lb._batches[e[0]][3]
+		if int(e[1]) >= arr.size():
+			continue
+		var xf: Transform3D = arr[e[1]]
+		arr[e[1]] = Transform3D(Basis.from_scale(Vector3.ONE * 0.0001), xf.origin)
+		if e[2] != null and is_instance_valid(e[2]):
+			var nd := e[2] as Node
+			if nd.get_parent():
+				nd.get_parent().remove_child(nd)
+			nd.queue_free()
+	if debug_record:
+		lb.set_meta("dbg_dropped", int(lb.get_meta("dbg_dropped", 0)) + 1)
+
+
+## 그림을 합치기 직전(LevelBuilder._flush_batches): 모든 문이 다 뚫린 뒤 문 앞 가구를 마저 뺌
+func final_door_pass() -> void:
+	for parts in _objects:
+		var bad := false
+		for e in parts:
+			var sz: Vector3 = e[5]
+			if sz.y > 0.08 and _in_doorway(e[4], sz, float(e[6])):
+				bad = true
+				break
+		if bad:
+			_drop_object(parts)
+		elif debug_record:
+			for e in parts:
+				if not (e[3] as Array).is_empty():
+					lb.set_meta("dbg_furn", lb.get_meta("dbg_furn", []) + [e[3]])
+	_objects = []
+
+
+## 이 부품이 어떤 문(출입구) 앞 통로에 걸치는지: 문 폭 안쪽, 벽 양쪽 1m
+func _in_doorway(center: Vector3, size: Vector3, yaw: float, any_floor := false) -> bool:
+	if blocks_door(center, size, yaw):
+		return true
+	var r := maxf(size.x, size.z) * 0.5
+	if absf(fposmod(yaw, PI / 2.0)) < 0.05 or absf(fposmod(yaw, PI / 2.0) - PI / 2.0) < 0.05:
+		r = 0.0  # 반듯한 가구는 아래에서 축별로 정확히 계산
+	for d in lb.doorways:
+		var c: Vector3 = d[0]
+		if not any_floor and (absf(center.y - c.y) > 2.5 or center.y - size.y * 0.5 > c.y + 1.9):
+			continue
+		var dir: Vector3 = d[1]
+		var w: float = d[2]
+		var rel := center - c
+		var n := Vector3(-dir.z, 0, dir.x)
+		var ha: float
+		var hn: float
+		if r > 0.0:
+			ha = r
+			hn = r
+		else:
+			var ax := Basis(Vector3.UP, yaw)
+			var ex: Vector3 = ax.x * size.x * 0.5
+			var ez: Vector3 = ax.z * size.z * 0.5
+			ha = absf(ex.dot(dir)) + absf(ez.dot(dir))
+			hn = absf(ex.dot(n)) + absf(ez.dot(n))
+		if absf(rel.dot(dir)) < w * 0.5 - 0.1 + ha and absf(rel.dot(n)) < 1.2 + hn:
+			return true
+	return false
 
 
 ## 벽 한 면: a → b (수평 선분), y 부터 높이 h. openings = [[시작 거리, 끝 거리, 아래 높이, 위 높이], ...] (벽을 따라 a 에서 잰 거리)
@@ -178,6 +289,11 @@ func wall(a: Vector3, b: Vector3, y: float, h: float, mat: Material, key: String
 		var o1 := clampf(float(o[1]), 0.0, L)
 		if o1 <= o0:
 			continue
+		if float(o[2]) <= 0.01 and float(o[3]) >= 1.9:
+			# 바닥까지 뚫린 구멍 = 문 (가구가 막지 않게 기록)
+			var dc := a + dir * ((o0 + o1) * 0.5)
+			dc.y = y
+			lb.doorways.append([dc, dir, o1 - o0])
 		if o0 > u:
 			_wall_piece(a, dir, basis, u, o0, y, y + h, mat, key, t)
 		# 구멍 아래와 위
@@ -543,7 +659,20 @@ func _door_frame(center: Vector3, dir: Vector3, col: Color) -> void:
 # ================================================================ 가구
 
 ## 방 종류에 맞는 가구 놓기. 방 가운데는 비워서(봉인석 자리) 반환
+## (테스트) 가구 기록용
+static var debug_record := false
+var _furn := 0
+var _furn_kind := ""
+
 func furnish(room: Rect2, y: float, kind: String, keep_center := false) -> Vector3:
+	_furn += 1
+	_furn_kind = kind
+	var out := _furnish_inner(room, y, kind, keep_center)
+	_furn -= 1
+	return out
+
+
+func _furnish_inner(room: Rect2, y: float, kind: String, keep_center := false) -> Vector3:
 	var c := room.get_center()
 	var inner := room.grow(-0.35)
 	_keep = Rect2(c - Vector2(1.6, 1.6), Vector2(3.2, 3.2)) if keep_center else Rect2()
@@ -726,7 +855,22 @@ func furnish(room: Rect2, y: float, kind: String, keep_center := false) -> Vecto
 var _keep := Rect2()
 
 ## 벽에 붙는 가구 자리: side 0..3 (x-, x+, z-, z+), 가구 크기(길이, 깊이) → [중심, 회전]
+## 벽에 붙이는 가구 자리. 문 앞이면 다른 자리·다른 벽을 다시 고름 (최대 10번)
 func _against(r: Rect2, side: int, length: float, depth: float) -> Array:
+	var first: Array = []
+	for tries in 10:
+		var sd := side if tries < 3 else rng.randi() % 4
+		var spot := _against_once(r, sd, length, depth)
+		if first.is_empty():
+			first = spot
+		var p: Vector3 = spot[0]
+		var sz := Vector3(depth, 1.0, length) if sd < 2 else Vector3(length, 1.0, depth)
+		if not _in_doorway(p, sz, 0.0, true):
+			return spot
+	return first
+
+
+func _against_once(r: Rect2, side: int, length: float, depth: float) -> Array:
 	var c := r.get_center()
 	match side:
 		0: return [Vector3(r.position.x + depth * 0.5, 0, rng.randf_range(r.position.y + length * 0.5, maxf(r.position.y + length * 0.5, r.end.y - length * 0.5))), PI / 2.0]
@@ -776,7 +920,9 @@ func _along_wall(r: Rect2, side: int, depth: float, step: float, y: float, fn: C
 		p.y = y
 		if blocks_door(p, Vector3(step, 1, depth + 0.6)) or _keep.has_point(Vector2(p.x, p.z)):
 			continue
+		_obj_begin()
 		fn.call(p, float(it[1]))
+		_obj_end()
 
 
 func _furnish_rich(room: Rect2, y: float, kind: String) -> void:
@@ -1127,6 +1273,12 @@ func _whiteboard(r: Rect2, y: float, side: int) -> void:
 
 ## 약 진열장: 흰 선반 + 작은 약상자들
 func _med_shelf(p: Vector3, yaw: float) -> void:
+	_obj_begin()
+	_med_shelf_impl(p, yaw)
+	_obj_end()
+
+
+func _med_shelf_impl(p: Vector3, yaw: float) -> void:
 	_yawbox(_local(p, yaw, Vector3(0, 0.95, 0)), Vector3(1.8, 1.9, 0.45), yaw, Color(0.88, 0.88, 0.86), true)
 	for k in 4:
 		for i in 7:
@@ -1138,6 +1290,12 @@ func _med_shelf(p: Vector3, yaw: float) -> void:
 
 ## 철제 선반 (상자·통)
 func _rack(p: Vector3, yaw: float) -> void:
+	_obj_begin()
+	_rack_impl(p, yaw)
+	_obj_end()
+
+
+func _rack_impl(p: Vector3, yaw: float) -> void:
 	for sx in [-1.0, 1.0]:
 		for sz in [-1.0, 1.0]:
 			_yawbox(_local(p, yaw, Vector3(0.85 * sx, 1.0, 0.25 * sz)), Vector3(0.05, 2.0, 0.05), yaw, Color(0.35, 0.37, 0.4), false, "metal")
@@ -1210,6 +1368,12 @@ func _toilets(room: Rect2, y: float) -> void:
 			_yawbox(_local(p, yaw, Vector3(0.42, 0.95, 0.0)), Vector3(0.03, 0.9, 0.45), yaw, Color(0.55, 0.62, 0.68), false)
 
 func _bookshelf(p: Vector3, along_z: bool) -> void:
+	_obj_begin()
+	_bookshelf_impl(p, along_z)
+	_obj_end()
+
+
+func _bookshelf_impl(p: Vector3, along_z: bool) -> void:
 	var yaw := PI / 2.0 if along_z else 0.0
 	var L := 3.0
 	_yawbox(p + Vector3.UP * 0.95, Vector3(L, 1.9, 0.45), yaw, Color(0.4, 0.28, 0.18))
@@ -1224,6 +1388,12 @@ func _bookshelf(p: Vector3, along_z: bool) -> void:
 
 
 func _piano(p: Vector3) -> void:
+	_obj_begin()
+	_piano_impl(p)
+	_obj_end()
+
+
+func _piano_impl(p: Vector3) -> void:
 	part(p + Vector3.UP * 0.6, Vector3(1.5, 1.2, 0.6), Color(0.06, 0.05, 0.06), "trim", true)
 	part(p + Vector3(0, 0.78, 0.36), Vector3(1.4, 0.04, 0.15), Color(0.95, 0.95, 0.92))
 	for i in 10:
@@ -1231,6 +1401,12 @@ func _piano(p: Vector3) -> void:
 
 
 func _skeleton(p: Vector3) -> void:
+	_obj_begin()
+	_skeleton_impl(p)
+	_obj_end()
+
+
+func _skeleton_impl(p: Vector3) -> void:
 	var bone := Color(0.92, 0.9, 0.82)
 	part(p + Vector3.UP * 0.05, Vector3(0.4, 0.1, 0.4), Color(0.3, 0.3, 0.3), "metal", true)
 	part(p + Vector3.UP * 0.85, Vector3(0.04, 1.6, 0.04), Color(0.4, 0.4, 0.4), "metal")
@@ -1244,6 +1420,12 @@ func _skeleton(p: Vector3) -> void:
 
 
 func _vending(spot: Array, y: float) -> void:
+	_obj_begin()
+	_vending_impl(spot, y)
+	_obj_end()
+
+
+func _vending_impl(spot: Array, y: float) -> void:
 	var p: Vector3 = spot[0]
 	p.y = y
 	var yaw: float = spot[1]
@@ -1252,6 +1434,12 @@ func _vending(spot: Array, y: float) -> void:
 
 
 func _plant(p: Vector3) -> void:
+	_obj_begin()
+	_plant_impl(p)
+	_obj_end()
+
+
+func _plant_impl(p: Vector3) -> void:
 	part(p + Vector3.UP * 0.25, Vector3(0.45, 0.5, 0.45), Color(0.55, 0.35, 0.25), "trim", true)
 	for i in 5:
 		part(p + Vector3(rng.randf_range(-0.2, 0.2), 0.7 + i * 0.12, rng.randf_range(-0.2, 0.2)), Vector3(0.35, 0.08, 0.35), Color(0.2, 0.45, 0.2).darkened(rng.randf() * 0.4), "trim", false, rng.randf() * PI)
@@ -1269,6 +1457,12 @@ func _car_inside(p: Vector3) -> void:
 
 
 func _bed(spot: Array, y: float) -> void:
+	_obj_begin()
+	_bed_impl(spot, y)
+	_obj_end()
+
+
+func _bed_impl(spot: Array, y: float) -> void:
 	var p: Vector3 = spot[0]
 	p.y = y
 	var yaw: float = spot[1]
@@ -1281,6 +1475,12 @@ func _bed(spot: Array, y: float) -> void:
 
 
 func _sofa(spot: Array, y: float) -> void:
+	_obj_begin()
+	_sofa_impl(spot, y)
+	_obj_end()
+
+
+func _sofa_impl(spot: Array, y: float) -> void:
 	var p: Vector3 = spot[0]
 	p.y = y
 	var yaw: float = spot[1]
@@ -1292,6 +1492,12 @@ func _sofa(spot: Array, y: float) -> void:
 
 
 func _table(p: Vector3, size: Vector2) -> void:
+	_obj_begin()
+	_table_impl(p, size)
+	_obj_end()
+
+
+func _table_impl(p: Vector3, size: Vector2) -> void:
 	var col := Color(0.42, 0.3, 0.2)
 	part(p + Vector3.UP * 0.74, Vector3(size.x, 0.05, size.y), col, "trim", true)
 	for sx in [-1.0, 1.0]:
@@ -1302,6 +1508,12 @@ func _table(p: Vector3, size: Vector2) -> void:
 
 
 func _tv(spot: Array, y: float) -> void:
+	_obj_begin()
+	_tv_impl(spot, y)
+	_obj_end()
+
+
+func _tv_impl(spot: Array, y: float) -> void:
 	var p: Vector3 = spot[0]
 	p.y = y
 	var yaw: float = spot[1]
@@ -1311,6 +1523,12 @@ func _tv(spot: Array, y: float) -> void:
 
 
 func _desk(p: Vector3, yaw: float) -> void:
+	_obj_begin()
+	_desk_impl(p, yaw)
+	_obj_end()
+
+
+func _desk_impl(p: Vector3, yaw: float) -> void:
 	var col := Color(0.5, 0.42, 0.32)
 	_yawbox(_local(p, yaw, Vector3(0, 0.74, 0)), Vector3(1.3, 0.05, 0.7), yaw, col)
 	_yawbox(_local(p, yaw, Vector3(0.5, 0.36, 0)), Vector3(0.3, 0.72, 0.65), yaw, col.darkened(0.15), false)
@@ -1327,6 +1545,12 @@ func _desk(p: Vector3, yaw: float) -> void:
 
 
 func _cabinet(spot: Array, y: float) -> void:
+	_obj_begin()
+	_cabinet_impl(spot, y)
+	_obj_end()
+
+
+func _cabinet_impl(spot: Array, y: float) -> void:
 	var p: Vector3 = spot[0]
 	p.y = y
 	var yaw: float = spot[1]
@@ -1336,6 +1560,12 @@ func _cabinet(spot: Array, y: float) -> void:
 
 
 func _shelf(p: Vector3, along_z: bool) -> void:
+	_obj_begin()
+	_shelf_impl(p, along_z)
+	_obj_end()
+
+
+func _shelf_impl(p: Vector3, along_z: bool) -> void:
 	var yaw := PI / 2.0 if along_z else 0.0
 	var col := Color(0.45, 0.47, 0.5)
 	_yawbox(p + Vector3.UP * 0.8, Vector3(1.8, 1.6, 0.5), yaw, col.darkened(0.3), true, "metal")
@@ -1349,6 +1579,12 @@ func _shelf(p: Vector3, along_z: bool) -> void:
 
 
 func _counter(spot: Array, y: float) -> void:
+	_obj_begin()
+	_counter_impl(spot, y)
+	_obj_end()
+
+
+func _counter_impl(spot: Array, y: float) -> void:
 	var p: Vector3 = spot[0]
 	p.y = y
 	var yaw: float = spot[1]
@@ -1357,6 +1593,12 @@ func _counter(spot: Array, y: float) -> void:
 
 
 func _crate(p: Vector3, s: float) -> void:
+	_obj_begin()
+	_crate_impl(p, s)
+	_obj_end()
+
+
+func _crate_impl(p: Vector3, s: float) -> void:
 	part(p + Vector3.UP * s * 0.5, Vector3(s, s, s), Color(0.5, 0.36, 0.2), "trim", true, rng.randf() * PI)
 
 
@@ -1368,6 +1610,8 @@ func _maybe_locker(inner: Rect2, y: float, chance: float, _style := "") -> void:
 	var spot := _against(inner, side, 1.0, 0.65)
 	var p: Vector3 = spot[0]
 	p.y = y
+	if _in_doorway(p + Vector3.UP * 1.0, Vector3(1.0, 2.0, 0.7), float(spot[1])):
+		return
 	# 사물함 앞(-Z)이 방 안쪽을 보게: 벽 방향 yaw + PI
 	lb.props.append(["locker", p, float(spot[1]) + PI])
 
@@ -1461,6 +1705,12 @@ func _classroom(room: Rect2, y: float) -> void:
 
 ## 학생 책상: 상판 + 철 다리 + 책 넣는 칸 (+ 가끔 책·가방)
 func _student_desk(p: Vector3, yaw: float) -> void:
+	_obj_begin()
+	_student_desk_impl(p, yaw)
+	_obj_end()
+
+
+func _student_desk_impl(p: Vector3, yaw: float) -> void:
 	_yawbox(_local(p, yaw, Vector3(0, 0.72, 0)), Vector3(0.62, 0.035, 0.46), yaw, Color(0.68, 0.55, 0.38))
 	_yawbox(_local(p, yaw, Vector3(0, 0.6, 0.02)), Vector3(0.56, 0.12, 0.4), yaw, Color(0.3, 0.32, 0.34), false, "metal")
 	for sx in [-1.0, 1.0]:
@@ -1471,6 +1721,12 @@ func _student_desk(p: Vector3, yaw: float) -> void:
 
 ## 의자 (앉는 판 + 등받이 + 다리). knocked = 넘어진 의자
 func _chair(p: Vector3, yaw: float, col: Color, knocked := false) -> void:
+	_obj_begin()
+	_chair_impl(p, yaw, col, knocked)
+	_obj_end()
+
+
+func _chair_impl(p: Vector3, yaw: float, col: Color, knocked := false) -> void:
 	if knocked:
 		var ky := yaw + rng.randf_range(-1.0, 1.0)
 		_yawbox(_local(p, ky, Vector3(0, 0.2, 0)), Vector3(0.4, 0.4, 0.04), ky, col, false)
@@ -1597,6 +1853,12 @@ func _ward(room: Rect2, y: float) -> void:
 
 ## 병원 침대: 철제 틀 + 매트리스 + 베개 + 머리판·발판 + 바퀴 (+ 가끔 흰 천을 덮은 무언가)
 func _hospital_bed(p: Vector3, yaw: float) -> void:
+	_obj_begin()
+	_hospital_bed_impl(p, yaw)
+	_obj_end()
+
+
+func _hospital_bed_impl(p: Vector3, yaw: float) -> void:
 	_yawbox(_local(p, yaw, Vector3(0, 0.52, 0.0)), Vector3(0.95, 0.16, 2.0), yaw, Color(0.88, 0.9, 0.92))
 	_yawbox(_local(p, yaw, Vector3(0, 0.38, 0.0)), Vector3(0.95, 0.1, 2.05), yaw, Color(0.6, 0.62, 0.65), false, "metal")
 	_yawbox(_local(p, yaw, Vector3(0, 0.66, -0.75)), Vector3(0.6, 0.12, 0.35), yaw, Color(0.96, 0.96, 0.96), false)

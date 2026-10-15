@@ -323,6 +323,8 @@ var _batches := {}  # 이름 → [메시, 재질, 그림자 여부, [Transform3D
 
 ## 파쿠르로 넘을 수 있는 창문 유리 목록 (building_kit.block 이 채움). main.gd 가 깨진 유리를 처리
 var windows: Array = []
+## 문·출입구 목록 [가운데(바닥 높이), 벽 방향, 폭] (building_kit.wall 이 채움)
+var doorways: Array = []
 
 
 func _batch(key: String, mesh: Mesh, mat: Material, xf: Transform3D, color := Color.WHITE, shadow := true) -> void:
@@ -333,6 +335,8 @@ func _batch(key: String, mesh: Mesh, mat: Material, xf: Transform3D, color := Co
 
 
 func _flush_batches() -> void:
+	if kit:
+		kit.final_door_pass()
 	for key in _batches:
 		var b: Array = _batches[key]
 		var mm := MultiMesh.new()
