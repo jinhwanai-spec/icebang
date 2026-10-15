@@ -418,10 +418,12 @@ func _lantern(parent: Node3D, local: Vector3, lit: bool) -> void:
 	if lit:
 		var light := OmniLight3D.new()
 		light.light_color = Color(1.0, 0.65, 0.35)
-		light.omni_range = 5.5
-		light.light_energy = 1.1
+		light.omni_range = 6.0
+		light.light_energy = 1.3
 		light.position = local
 		parent.add_child(light)
+		LightFX.practical(light, 35.0, false)
+		LightFX.flicker(light, "fire", [glass])
 
 
 ## 오두막 4채 (통나무 벽 + 지붕). 안에 들어갈 수는 없고 엄폐물 역할
@@ -521,9 +523,11 @@ func _cabin(spot: Vector3) -> void:
 		var l := OmniLight3D.new()
 		l.light_color = Color(1.0, 0.5, 0.2)
 		l.omni_range = 5.5
-		l.light_energy = 1.4
+		l.light_energy = 1.6
 		l.position = fire + Vector3(0, 0.5, 0.6 if door_side != 0 else -0.6)
 		region.add_child(l)
+		LightFX.practical(l, 30.0)
+		LightFX.flicker(l, "fire")
 		kit.part(fire + Vector3.UP * 0.3, Vector3(0.4, 0.2, 0.3), Color(1.0, 0.55, 0.15), "lit")
 	# 오두막 옆 장작더미와 풀숲
 	# 문 반대쪽 벽 바깥에 장작더미, 옆에 풀숲 (문을 막지 않게)
@@ -611,10 +615,14 @@ func _campfire(pos: Vector3, lit: bool) -> void:
 		_part(body, Vector3(0, 0.3, 0), flame, ember)
 		var light := OmniLight3D.new()
 		light.light_color = Color(1.0, 0.55, 0.25)
-		light.omni_range = 8.0
-		light.light_energy = 1.6
+		light.omni_range = 9.0
+		light.light_energy = 2.0
+		light.light_volumetric_fog_energy = 2.0
 		light.position = Vector3(0, 0.8, 0)
 		body.add_child(light)
+		LightFX.practical(light, 45.0)  # 가까이 가면 나무 그림자가 일렁임
+		LightFX.flicker(light, "fire", [ember])
+		LightFX.embers(body, Vector3(0, 0.5, 0))
 
 
 ## 숲: 나무 + 바위 + 풀숲을 공터와 스폰을 피해서 빽빽하게

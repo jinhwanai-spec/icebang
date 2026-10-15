@@ -21,6 +21,9 @@ const MinigameScript := preload("res://scripts/minigame.gd")
 ## 이모트 (숫자키 1~0 순서). 앞으로 더 추가 가능
 const EMOTE_KEYS := [KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_7, KEY_8, KEY_9, KEY_0]
 const AbilityEffectScript := preload("res://scripts/ability_effect.gd")
+## 손맛 연출 (카메라 흔들림·히트스톱·긴장 음악 등, feel_fx.gd). 규칙은 안 바꾸고 보기·듣기만
+const FeelFxScript := preload("res://scripts/feel_fx.gd")
+var feel: Node = null
 
 var noise_cooldown_left := 0.0
 ## 고유 능력 쿨타임 남은 시간 [능력1, 능력2]. 충전식 능력은 "다음 충전까지 남은 시간"
@@ -83,6 +86,30 @@ func _ready() -> void:
 		(mi as MeshInstance3D).layers = 2
 	flashlight.light_cull_mask = 0xFFFFF & ~2
 	body.rotation.y = PI  # 처음에는 카메라와 같은 방향(앞)을 봄
+	# [손맛] 카메라·화면 효과·긴장 음악 담당
+	feel = FeelFxScript.new()
+	feel.setup(self)
+	add_child(feel)
+
+
+## [손맛] 발소리가 난 순간 머리 흔들림 + 소리 크기를 조금씩 다르게 (매번 똑같지 않게)
+func _footsteps(delta: float, moving: bool, noise_radius: float, interval: float, volume_db: float) -> void:
+	var before := _step_timer
+	super._footsteps(delta, moving, noise_radius, interval, volume_db)
+	if moving and _step_timer > before:  # 방금 한 걸음
+		step_audio.volume_db += randf_range(-1.5, 1.0)
+		step_audio.pitch_scale *= randf_range(0.97, 1.03)
+		if feel:
+			feel.on_step(volume_db)
+
+
+## [손맛] 문·판자를 쓰면 묵직한 느낌 (실제 동작은 survivor.gd 그대로)
+func use_nearby_prop() -> bool:
+	var pr := nearest_prop() if can_interact() else null
+	var ok := super.use_nearby_prop()
+	if ok and feel:
+		feel.on_prop_used(pr)
+	return ok
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -354,6 +381,8 @@ func _try_window_parkour() -> bool:
 	var tw := create_tween()
 	tw.tween_method(arc, 0.0, 1.0, dur)
 	tw.tween_callback(done)
+	if feel:
+		feel.on_vault()
 	return true
 
 
@@ -596,6 +625,8 @@ func _try_open_minigame() -> void:
 
 
 func _on_minigame_cleared(g: Generator) -> void:
+	if feel:
+		feel.on_stage_clear()  # [손맛] 걸쇠 소리 + 살짝 흔들
 	if is_instance_valid(g) and Net.is_client():
 		# 멀티: 봉인석은 방장 컴퓨터가 계산
 		Net.minigame_result.rpc_id(1, _game().generators.find(g), net_slot, true)
@@ -777,6 +808,8 @@ func _camera_photo() -> bool:
 	flashed.emit()
 	if _seeker_in_front(GameConfig.num("cameraman", "photo_range", 14.0), GameConfig.num("cameraman", "photo_angle", 30.0)):
 		_seeker().stun(GameConfig.num("cameraman", "photo_stun_time", 1.5))
+		if feel:
+			feel.on_hit_landed(false)
 		notice.emit("찰칵! 술래 스턴!")
 	else:
 		notice.emit("찰칵! (술래가 안 찍혔어요)")
@@ -838,6 +871,7 @@ func _brute_punch() -> bool:
 	_punch_camera()
 	if hits.is_empty():
 		notice.emit("헛손질! (주먹 안에 술래가 없어요)")
+		_shake(0.08)
 		ability_cooldown_left[1] = GameConfig.num("brute", "punch_miss_cooldown", 3.0)
 		return false
 	var stun := GameConfig.num("brute", "punch_stun", 1.5)
@@ -848,7 +882,8 @@ func _brute_punch() -> bool:
 		else:
 			sk.knockback(fwd)
 			sk.set_meta("land_stun", stun)
-	_shake(0.25)
+	if feel:
+		feel.on_hit_landed(true)  # [손맛] 큰 흔들림 + 히트스톱
 	notice.emit("강펀치!!")
 	return true
 
@@ -1198,15 +1233,10 @@ func _punch_camera() -> void:
 	tw.tween_property(spring_arm, "rotation:y", 0.0, 0.35).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 
 
-## 화면 흔들기 (잠깐 흔들고 원래대로)
+## 화면 흔들기 → [손맛] feel_fx.gd 의 노이즈 흔들림으로 (balance.cfg [feel] shake_scale)
 func _shake(amount: float) -> void:
-	var tw := create_tween()
-	for k in 6:
-		var a := amount * (1.0 - k / 6.0)
-		tw.tween_property(camera, "h_offset", randf_range(-a, a), 0.03)
-		tw.parallel().tween_property(camera, "v_offset", randf_range(-a, a), 0.03)
-	tw.tween_property(camera, "h_offset", 0.0, 0.03)
-	tw.parallel().tween_property(camera, "v_offset", 0.0, 0.03)
+	if feel:
+		feel.add_trauma(amount * 1.6)
 
 
 func _glow_mat(c: Color, alpha := 1.0) -> StandardMaterial3D:

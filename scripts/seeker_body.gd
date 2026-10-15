@@ -2378,10 +2378,36 @@ func _build_diet() -> void:
 
 # ================================================================ 공격 · 애니메이션
 
-## 공격 모션: 팔을 머리 위로 치켜들었다가 앞으로 내려침 (짐승은 몸을 날려 물어뜯음)
+## 공격 모션: 예비 동작(무기를 치켜들고 몸을 뒤로 젖힘) → windup 초에 맞춰 번개같이 내려침(목표보다 더 내려가 넘침)
+## → 쿵! 하고 출렁 → 천천히 회복. 판정 시간(windup)과 게임 정지 시간은 그대로이고, 회복은 보기용이라 걸으면서 풀림
+## (짐승은 몸을 웅크렸다가 날려 물어뜯음, 거미는 앞다리를 치켜들었다가 내리꽂음)
+const ATK_STRIKE := 0.055   # 내려치는 시간 (이 중 60% 지점이 windup 순간 = 판정)
+const ATK_HOLD := 0.09      # 내려친 채로 잠깐 버팀
+const ATK_REC := 0.32       # 원래 자세로 돌아오는 시간
+
 func attack(windup: float) -> void:
-	_attack_dur = maxf(0.15, windup * 1.8)  # 공격 속도에 맞춰 모션 길이도 함께 바뀜
+	_atk_wind = maxf(0.04, windup)
+	_atk_t = 0.0
+	_atk_hit = false
+	_attack_dur = _atk_wind + ATK_STRIKE * 0.4 + ATK_HOLD + ATK_REC
 	_attack_t = _attack_dur
+
+
+# ---- 움직임 상태 (매 프레임 할당 없음)
+var _spd_s := 0.0      # 부드럽게 만든 속도
+var _c_prev := 1.0     # 발 디딤 감지
+var _st := 0.0         # 쿵! 발 구름 충격 스프링 (- = 눌림)
+var _stv := 0.0
+var _hd := 0.0         # 머리가 충격을 늦게 따라가는 스프링
+var _hdv := 0.0
+var _atk_t := 0.0
+var _atk_wind := 0.08
+var _atk_hit := false
+
+
+static func _spring(x: float, v: float, target: float, w: float, z: float, dt: float) -> Vector2:
+	v += (w * w * (target - x) - 2.0 * z * w * v) * dt
+	return Vector2(x + v * dt, v)
 
 
 func animate(delta: float, speed: float) -> void:
@@ -2396,11 +2422,29 @@ func animate(delta: float, speed: float) -> void:
 		delta = _jerk_acc
 		_jerk_acc = 0.0
 	_time += delta
-	var amount := clampf(speed / 6.0, 0.0, 1.5)
-	var run := clampf((speed - 5.0) / 5.0, 0.0, 1.0)
-	_phase += delta * speed / _step * PI
+	# 속도를 부드럽게 (멈추거나 뛰기 시작할 때 자세가 툭 바뀌지 않게). 마네킹은 일부러 뚝뚝
+	_spd_s = speed if _jerk_fps > 0.0 else lerpf(_spd_s, speed, 1.0 - exp(-8.0 * delta))
+	var sp := _spd_s
+	var amount := clampf(sp / 6.0, 0.0, 1.5)
+	var run := smoothstep(5.0, 9.5, sp)
+	_phase += delta * sp / _step * PI
 	if _phase > TAU * 64.0:
 		_phase -= TAU * 64.0
+	# 발을 디딜 때마다 쿵 (무거운 술래일수록 크게)
+	var c := cos(_phase)
+	if signf(c) != signf(_c_prev) and amount > 0.15 and _rig != "float" and _rig != "spider":
+		_stv -= 14.0 * (0.55 + 0.6 * run) * minf(amount, 1.2) * clampf(_bob * 18.0, 0.5, 1.7)
+	if absf(c) > 0.0001:
+		_c_prev = c
+	var n := ceili(delta / 0.025)
+	var sd := delta / float(n)
+	for k in n:
+		var r := _spring(_st, _stv, 0.0, 15.0, 0.32, sd)
+		_st = r.x
+		_stv = r.y
+		r = _spring(_hd, _hdv, _st, 9.0, 0.3, sd)
+		_hd = r.x
+		_hdv = r.y
 	_update_twitch(delta)
 	match _rig:
 		"hound": _pose_hound(amount, run)
@@ -2409,10 +2453,11 @@ func animate(delta: float, speed: float) -> void:
 		_: _pose_biped(amount, run)
 	if _tail.size() > 0:
 		for k in _tail.size():
-			_rot(_tail[k], Vector3(sin(_time * 2.2 - k * 0.7) * 0.06, sin(_time * 3.0 - k * 0.6) * (0.18 + 0.1 * amount), 0))
+			_rot(_tail[k], Vector3(sin(_time * 2.2 - k * 0.7) * 0.06 + _hd * 0.12, sin(_time * 3.0 - k * 0.6) * (0.18 + 0.1 * amount), 0))
 	if _attack_t > 0.0:
 		_attack_t -= delta
-		_pose_attack(clampf(1.0 - _attack_t / _attack_dur, 0.0, 1.0))
+		_atk_t += delta
+		_pose_attack()
 	if _mouth_t > 0.0 and _jaw:
 		_jaw.rotation.x -= 0.45 * _mouth_t   # 아래턱은 조금만 (몸에 파묻히지 않게)
 		_head.rotation.x += 0.7 * _mouth_t   # 위턱(머리)을 뒤로 크게 젖혀 입을 쩍 벌림
@@ -2424,68 +2469,102 @@ func animate(delta: float, speed: float) -> void:
 	_flicker_eyes(delta)
 
 
+## 천천히 고개를 기울이고 두리번 (가만히 있을 때 더 크게) → 섬뜩하게 이쪽을 살피는 느낌
+func _creep_head(idle: float) -> Vector3:
+	var tilt := _noise.get_noise_2d(_time * 0.3, 77.0) * 0.55
+	var peer := _noise.get_noise_2d(_time * 0.22, 13.0) * 0.7
+	var nod := _noise.get_noise_2d(_time * 0.27, 151.0) * 0.18
+	var k := 0.35 + 0.65 * idle
+	return Vector3(nod, peer, tilt) * k
+
+
 func _pose_biped(amount: float, run: float) -> void:
 	var s := sin(_phase)
 	var c := cos(_phase)
-	var br := sin(_time * 1.7)
-	var dip := absf(s) * _bob * amount + _limp * maxf(0.0, -s) * 0.08 * amount
-	_hips.position.y = _hip_y - dip + br * 0.004
-	_rot(_hips, Vector3(0, s * 0.1 * amount, s * 0.05 * amount + _limp * maxf(0.0, -s) * 0.1 * amount))
-	_rot(_spine, Vector3(_lean * run - 0.05 * amount + br * 0.012, -s * 0.06 * amount, 0))
-	_rot(_chest, Vector3(br * 0.02, -s * 0.12 * amount, 0))
+	var am := minf(amount, 1.0)
+	var idle := 1.0 - clampf(amount * 3.0, 0.0, 1.0)
+	var heavy := clampf(_bob * 18.0, 0.5, 1.7)
+	# 숨쉬기: 가만히 있을 땐 크고 느리게 들썩, 쫓을 땐 빠르게 헐떡
+	var br := sin(_time * lerpf(1.5, 5.5, run))
+	br = br * (0.6 + 0.4 * absf(br))
+	var bra := lerpf(1.0, 0.35, minf(amount * 2.0, 1.0))
+	# 디딜 때 아래로 쿵 떨어지는 무게감 (|sin|^3 → 착지 순간에 급하게 내려감)
+	var dip := pow(absf(s), 3.0) * _bob * amount * 1.4 + _limp * maxf(0.0, -s) * 0.1 * amount
+	# 체중 이동: 딛는 다리 쪽으로 골반이 옮겨가고 반대쪽 골반이 처짐
+	var shift := c * (0.03 + 0.02 * heavy) * am * (1.0 - 0.5 * run)
+	_hips.position = Vector3(shift, _hip_y - dip + br * 0.012 * bra + _st * 0.05 - 0.07 * run, 0.0)
+	_rot(_hips, Vector3(0, s * 0.12 * amount, -c * 0.06 * am * heavy + _limp * maxf(0.0, -s) * 0.12 * amount))
+	var lean := _lean * (0.35 * am + 1.25 * run)  # - = 앞으로 숙임 (쫓을 땐 사냥하듯 크게)
+	_rot(_spine, Vector3(lean - 0.04 * amount + br * 0.03 * bra + _st * 0.07, -s * 0.08 * amount, c * 0.05 * am * heavy))
+	_rot(_chest, Vector3(br * 0.045 * bra - 0.12 * run, -s * 0.15 * amount, c * 0.03 * am))
+	# 머리: 흔들림을 상쇄해 앞을 노려봄 + 쫓을 땐 목을 쭉 빼고 고개를 듦 + 충격을 늦게 받아 끄덕
 	var hv := _head_extra()
-	_rot(_neck, Vector3(-_lean * run * 0.5, 0, 0) + hv * 0.35)
-	_rot(_head, Vector3(c * 0.04 * amount, 0, 0) + hv * 0.65)
+	var cr := _creep_head(idle)
+	_rot(_neck, Vector3(-lean * 0.35 - 0.3 * run + _hd * 0.06, cr.y * 0.4, cr.z * 0.4) + hv * 0.35)
+	_rot(_head, Vector3(c * 0.03 * amount + 0.38 * run + cr.x - _hd * 0.12, cr.y * 0.6, cr.z * 0.6) + hv * 0.65)
 	if _jaw:
-		_rot(_jaw, Vector3(-maxf(0.0, sin(_time * 0.7)) * 0.08, 0, 0))
+		_rot(_jaw, Vector3(-maxf(0.0, sin(_time * 0.7)) * 0.08 - 0.15 * run * maxf(0.0, br), 0, 0))
+	var sa := sin(_phase - 0.5)    # 팔은 다리보다 늦게 따라옴 (휘청)
+	var se := sin(_phase - 1.0)    # 팔꿈치·손은 더 늦게
 	for i in 2:
 		var sg := 1.0 if i == 0 else -1.0
 		var sw := s * sg
 		var cw := c * sg
-		var st := _stride * amount * (1.0 - _limp * 0.6 * float(i))
+		var st := _stride * amount * (1.0 - _limp * 0.6 * float(i)) * (1.0 + 0.25 * run)
 		if _leg[i]:
 			var th := sw * st + 0.12 * run
-			var kn := -(maxf(0.0, cw) * _knee_amt * amount + 0.06 * amount + 0.5 * run * maxf(0.0, cw))
+			var kn := -(maxf(0.0, cw) * _knee_amt * amount + 0.06 * amount + 0.6 * run * maxf(0.0, cw) + 0.1 * run)
 			_rot(_leg[i], Vector3(th, 0, 0))
 			_rot(_knee[i], Vector3(kn, 0, 0))
-			_rot(_foot[i], Vector3(-(th + kn) * 0.7, 0, 0))
+			_rot(_foot[i], Vector3(-(th + kn) * 0.75, 0, 0))
 		if _arm[i] == null:
 			continue
+		var swa := sa * sg
 		if i == 1 and _hold_right:
-			_rot(_arm[i], Vector3(sw * 0.12 * amount + sin(_time * 0.8) * 0.02, 0, 0))
-			_rot(_elbow[i], Vector3(0.1 * run, 0, 0))
+			# 무기 든 팔: 무게 때문에 덜 흔들리고 축 처짐, 쫓을 땐 앞으로 들어 휘두를 준비
+			_rot(_arm[i], Vector3(swa * 0.14 * amount + 0.3 * run + sin(_time * 0.8) * 0.02 + _st * 0.04, 0, 0))
+			_rot(_elbow[i], Vector3(0.1 * amount + 0.45 * run, 0, 0))
 		else:
-			_rot(_arm[i], Vector3(-sw * _arm_amt * amount + sin(_time * 0.9 + i * 2.0) * 0.03, 0, 0))
-			_rot(_elbow[i], Vector3(0.15 * amount + 0.5 * run + maxf(0.0, -sw) * 0.25 * amount, 0, 0))
+			var reach := 0.6 * run  # 쫓을 땐 손을 앞으로 뻗어 움켜쥐려 함
+			_rot(_arm[i], Vector3(-swa * _arm_amt * amount * (1.0 + 0.7 * run) + reach + sin(_time * 0.9 + i * 2.0) * 0.03 - br * 0.03 * bra + _st * 0.06,
+					0, -sg * br * 0.04 * bra))
+			_rot(_elbow[i], Vector3(0.15 * amount + 0.65 * run + maxf(0.0, -se * sg) * 0.3 * amount, 0, 0))
+			if _hand[i]:
+				_rot(_hand[i], Vector3(sin(_time * 1.3 + i * 2.0) * 0.06 * idle + 0.35 * run * maxf(0.0, sin(_phase * 2.0 + i)), 0, 0))
 
 
-func _pose_float(amount: float, _run: float) -> void:
+func _pose_float(amount: float, run: float) -> void:
 	var br := sin(_time * 1.3)
-	_hips.position.y = _hip_y + sin(_time * 1.6) * 0.06
-	_rot(_hips, Vector3(0, sin(_time * 0.7) * 0.06, sin(_time * 1.1) * 0.035))
-	_rot(_spine, Vector3(-0.12 * amount + br * 0.02, 0, 0))
-	_rot(_chest, Vector3(br * 0.025, 0, 0))
+	var idle := 1.0 - clampf(amount * 3.0, 0.0, 1.0)
+	_hips.position = Vector3(sin(_time * 0.9) * 0.03, _hip_y + sin(_time * 1.6) * 0.06 - 0.08 * run, 0.0)
+	_rot(_hips, Vector3(-0.1 * minf(amount, 1.0), sin(_time * 0.7) * 0.06, sin(_time * 1.1) * 0.035))
+	_rot(_spine, Vector3(-0.12 * amount - 0.2 * run + br * 0.025, 0, sin(_time * 0.9 + 1.0) * 0.03))
+	_rot(_chest, Vector3(br * 0.03, 0, 0))
 	var hv := _head_extra()
-	_rot(_neck, hv * 0.35)
-	_rot(_head, hv * 0.65)
+	var cr := _creep_head(idle)
+	_rot(_neck, Vector3(0.15 * run, cr.y * 0.35, cr.z * 0.4) + hv * 0.35)
+	_rot(_head, Vector3(0.2 * run + cr.x, cr.y * 0.65, cr.z * 0.6) + hv * 0.65)
 	for i in 2:
 		var sg := -1.0 if i == 0 else 1.0
-		_rot(_arm[i], Vector3(sin(_time * 1.1 + i * 1.7) * 0.07 + 0.25 * amount, 0, sg * sin(_time * 0.8 + i) * 0.05))
-		_rot(_elbow[i], Vector3(sin(_time * 1.4 + i) * 0.1 - 0.15 * amount, 0, 0))
-		_rot(_hand[i], Vector3(sin(_time * 2.3 + i * 3.0) * 0.12, 0, 0))
+		# 떠다닐 때 팔이 늦게 따라와 흐느적, 쫓을 땐 두 팔을 앞으로 쭉 뻗음
+		_rot(_arm[i], Vector3(sin(_time * 1.1 + i * 1.7) * 0.08 + 0.25 * amount + 0.75 * run, 0, sg * (sin(_time * 0.8 + i) * 0.05 + 0.1 * run)))
+		_rot(_elbow[i], Vector3(sin(_time * 1.4 + i) * 0.1 - 0.15 * amount - 0.1 * run, 0, 0))
+		_rot(_hand[i], Vector3(sin(_time * 2.3 + i * 3.0) * 0.12 + 0.25 * run * maxf(0.0, sin(_time * 7.0 + i * 2.0)), 0, 0))
 
 
 func _pose_hound(amount: float, run: float) -> void:
 	var trot := [0.0, PI, PI, 0.0]
 	var gallop := [0.0, 0.35, PI, PI + 0.35]
-	_hips.position.y = _hip_y - absf(sin(_phase)) * 0.05 * amount + sin(_time * 2.0) * 0.006
-	_rot(_hips, Vector3(sin(_phase) * 0.08 * run, sin(_phase * 0.5) * 0.04 * amount, 0))
+	var idle := 1.0 - clampf(amount * 3.0, 0.0, 1.0)
+	var br := sin(_time * lerpf(2.0, 6.0, run))
+	_hips.position = Vector3(cos(_phase) * 0.025 * minf(amount, 1.0) * (1.0 - run), _hip_y - absf(sin(_phase)) * 0.06 * amount + br * 0.008 + _st * 0.05 - 0.05 * run, 0.0)
+	_rot(_hips, Vector3(sin(_phase) * 0.1 * run + _st * 0.04, sin(_phase * 0.5) * 0.04 * amount, cos(_phase) * 0.04 * amount * (1.0 - run)))
 	for i in 4:
 		var legs: Array = _legs4[i]
 		var off := lerpf(float(trot[i]), float(gallop[i]), run)
 		var ph := _phase + off
 		var lift := maxf(0.0, cos(ph)) * amount
-		_rot(legs[0], Vector3(sin(ph) * 0.5 * amount, 0, 0))
+		_rot(legs[0], Vector3(sin(ph) * 0.5 * amount * (1.0 + 0.3 * run), 0, 0))
 		if i < 2:
 			_rot(legs[1], Vector3(-lift * 0.9, 0, 0))
 			_rot(legs[2], Vector3(-lift * 0.5, 0, 0))
@@ -2496,13 +2575,16 @@ func _pose_hound(amount: float, run: float) -> void:
 		var n1 := _noise.get_noise_2d(_time * 2.5, h * 37.0)
 		var n2 := _noise.get_noise_2d(_time * 2.5, h * 37.0 + 100.0)
 		var tw := _twitch_v * (1.0 if h == 1 else -0.7)
-		_rot(_heads[h], Vector3(n1 * 0.3 + sin(_phase + h) * 0.08 * amount, n2 * 0.4, n2 * 0.15) + tw * 0.6)
-		_rot(_jaws[h], Vector3(-(0.12 + 0.25 * maxf(0.0, sin(_time * 2.3 + h * 2.1)) + 0.2 * run), 0, 0))
+		# 쉴 땐 킁킁 냄새 맡듯 고개를 숙였다 들고, 쫓을 땐 낮게 깔고 앞으로
+		var sniff := pow(maxf(0.0, sin(_time * 1.3 + h * 2.1)), 4.0) * 0.3 * idle
+		_rot(_heads[h], Vector3(n1 * 0.3 + sin(_phase + h) * 0.08 * amount - _hd * 0.1 - sniff + 0.15 * run, n2 * 0.4 * (1.0 - 0.6 * run), n2 * 0.15) + tw * 0.6)
+		_rot(_jaws[h], Vector3(-(0.12 + 0.25 * maxf(0.0, sin(_time * 2.3 + h * 2.1)) + 0.25 * run * maxf(0.0, br)), 0, 0))
 
 
 func _pose_spider(amount: float, _run: float) -> void:
-	_hips.position.y = _hip_y + absf(sin(_phase * 2.0)) * 0.03 * amount + sin(_time * 1.5) * 0.012
-	_rot(_hips, Vector3(sin(_time * 1.1) * 0.02, sin(_phase) * 0.04 * amount, 0))
+	var idle := 1.0 - clampf(amount * 3.0, 0.0, 1.0)
+	_hips.position = Vector3(sin(_phase * 0.8) * 0.02 * minf(amount, 1.0), _hip_y + absf(sin(_phase * 2.0)) * 0.03 * amount + sin(_time * 1.5) * 0.012, 0.0)
+	_rot(_hips, Vector3(sin(_time * 1.1) * 0.02, sin(_phase) * 0.04 * amount, sin(_phase * 0.8) * 0.03 * amount))
 	for i in _sp_legs.size():
 		var pair: Array = _sp_legs[i]
 		var side := -1.0 if i < 4 else 1.0
@@ -2511,58 +2593,81 @@ func _pose_spider(amount: float, _run: float) -> void:
 		var ph := _phase * 0.8 + grp * PI
 		var lift := maxf(0.0, sin(ph)) * amount
 		var fwd := -cos(ph) * amount
-		var idle := pow(maxf(0.0, sin(_time * 2.6 + i * 1.9)), 10.0) * 0.22 * (1.0 - minf(amount * 2.0, 1.0))
-		_rot(pair[0], Vector3(0, fwd * 0.22 * side, (lift * 0.35 + idle) * side))
+		var idle_t := pow(maxf(0.0, sin(_time * 2.6 + i * 1.9)), 10.0) * 0.22 * idle
+		_rot(pair[0], Vector3(0, fwd * 0.22 * side, (lift * 0.35 + idle_t) * side))
 		_rot(pair[1], Vector3(0, 0, -lift * 0.15 * side))
-	_rot(_abd, Vector3(sin(_time * 1.4) * 0.05, sin(_phase) * 0.06 * amount, 0))
+	_rot(_abd, Vector3(sin(_time * 1.4) * 0.06, sin(_phase) * 0.06 * amount + sin(_time * 0.6) * 0.04 * idle, 0))
 	_rot(_spine, Vector3(sin(_time * 1.2) * 0.04 - 0.12 * amount, sin(_time * 0.7) * 0.1, 0))
 	var hv := _head_extra()
-	_rot(_neck, hv * 0.4)
-	_rot(_head, hv * 0.6)
+	var cr := _creep_head(idle)
+	_rot(_neck, Vector3(cr.x * 0.5, cr.y * 0.4, cr.z * 0.5) + hv * 0.4)
+	_rot(_head, Vector3(cr.x * 0.5, cr.y * 0.6, cr.z * 0.7) + hv * 0.6)
 	for i in 2:
 		_rot(_arm[i], Vector3(sin(_time * 2.0 + i * 1.3) * 0.08, 0, 0))
 		_rot(_elbow[i], Vector3(sin(_time * 2.6 + i) * 0.1, 0, 0))
 
 
-func _pose_attack(p: float) -> void:
-	var w := smoothstep(0.0, 0.1, p) * (1.0 - smoothstep(0.85, 1.0, p))
-	var raise := 0.45
-	var slam := clampf((p - raise) / 0.14, 0.0, 1.0)
-	var a: float = lerpf(0.4, 2.9, 1.0 - pow(1.0 - p / raise, 2.0)) if p < raise else lerpf(2.9, 0.85, slam)
-	var lunge: float = lerpf(0.0, 0.12, p / raise) if p < raise else lerpf(0.12, -0.42, slam)
+func _pose_attack() -> void:
+	var t := _atk_t
+	var t0 := maxf(0.0, _atk_wind - ATK_STRIKE * 0.6)   # 내려치기 시작 (60% 지점 = 판정 순간)
+	var cock := 1.0 if t >= t0 else 1.0 - pow(1.0 - t / maxf(t0, 0.001), 3.0)  # 빠르게 치켜듦
+	var k := clampf((t - t0) / ATK_STRIKE, 0.0, 1.0)
+	var pre := t < t0
+	var after := maxf(0.0, t - t0 - ATK_STRIKE)
+	var settle := exp(-after * 20.0) * cos(after * 42.0)  # 넘쳤다가 출렁이며 멈춤
+	var rec := clampf((after - ATK_HOLD) / ATK_REC, 0.0, 1.0)
+	var w := minf(1.0, t / 0.02 + 0.3) * (1.0 - rec * rec * (3.0 - 2.0 * rec))
+	if not _atk_hit and k >= 0.6:
+		_atk_hit = true
+		_stv -= 16.0   # 쿵! 내려친 반동
+	# 주 팔 각도: 치켜듦 → 목표(0.8)보다 더 내려침 → 출렁
+	var a := lerpf(0.5, 2.95, cock) if pre else (lerpf(2.95, 0.4, k) if k < 1.0 else 0.8 - 0.4 * settle)
+	# 몸통: 뒤로 젖혔다가(+) 앞으로 확 숙임(-)
+	var lunge := 0.22 * cock if pre else (lerpf(0.22, -0.55, k) if k < 1.0 else -0.42 - 0.13 * settle)
+	var head_x := 0.25 * cock if pre else (lerpf(0.25, -0.38, k) if k < 1.0 else -0.3 - 0.08 * settle)
 	if _rig == "hound":
-		_hips.rotation.x += w * (0.1 if p < raise else -0.18)
-		_hips.position.z = lerpf(0.0, -0.25, w * slam)
+		_hips.rotation.x += w * (0.18 * cock if pre else -0.18)
+		_hips.position.y += w * (-0.1 * cock if pre else 0.0)
+		_hips.position.z += w * (0.12 * cock if pre else lerpf(0.12, -0.45, k) + (0.1 * settle if k >= 1.0 else 0.0))
 		for i in 2:
 			var hp: Node3D = _legs4[i][0]
-			hp.rotation.x += w * (0.9 if p < raise else 0.35)
+			hp.rotation.x += w * (1.0 * cock if pre else lerpf(1.0, 0.3, k))
 		for h in _heads.size():
-			_heads[h].rotation.x += w * (0.35 if p < raise else -0.45)
-			var open := -1.0 if p < raise + 0.06 else lerpf(-1.0, -0.05, clampf((p - raise - 0.06) / 0.07, 0.0, 1.0))
+			_heads[h].rotation.x += w * head_x * 1.4
+			var open := -1.05 if (pre or k < 0.6) else lerpf(-1.05, -0.05, clampf((k - 0.6) / 0.4, 0.0, 1.0))
 			_jaws[h].rotation.x = lerpf(_jaws[h].rotation.x, open, w)
 		return
 	if _rig == "spider":
 		for i: int in [0, 4]:
 			var side := -1.0 if i == 0 else 1.0
 			var hp: Node3D = _sp_legs[i][0]
-			hp.rotation.z += w * side * (1.0 if p < raise else 0.15)
+			hp.rotation.z += w * side * (1.1 * cock if pre else lerpf(1.1, -0.05, k) + (0.12 * settle if k >= 1.0 else 0.0))
 			hp.rotation.y += w * side * 0.35
+		_hips.position.z += w * (0.1 * cock if pre else lerpf(0.1, -0.25, k))
+		_hips.position.y += w * (0.06 * cock if pre else lerpf(0.06, -0.06, k))
 	for i in 2:
 		if _arm[i] == null:
 			continue
 		var r: Vector3 = _arm[i].rotation
 		if i == 1 or not _hold_right:
-			_arm[i].rotation = Vector3(lerpf(r.x, a, w), r.y, r.z * (1.0 - 0.5 * w))
-			_elbow[i].rotation.x = lerpf(_elbow[i].rotation.x, 0.75 if p < raise else 0.12, w)
+			_arm[i].rotation = Vector3(lerpf(r.x, a, w), r.y, r.z * (1.0 - 0.6 * w))
+			var el := 0.85 * cock if pre else lerpf(0.85, 0.05, k) + (0.1 if k >= 1.0 else 0.0)
+			_elbow[i].rotation.x = lerpf(_elbow[i].rotation.x, el, w)
 		else:
-			_arm[i].rotation = Vector3(lerpf(r.x, 1.1, w), r.y, r.z)
+			# 반대 팔: 치켜들 때 뒤로 당겨 균형 → 내려칠 때 앞으로 휙
+			_arm[i].rotation = Vector3(lerpf(r.x, -0.35 * cock if pre else lerpf(-0.35, 1.0, k), w), r.y, r.z)
 			_elbow[i].rotation.x = lerpf(_elbow[i].rotation.x, 0.35, w)
+	if _hold_right and _chest:
+		_chest.rotation.y += w * (-0.4 * cock if pre else lerpf(-0.4, 0.3, k))  # 무기 쪽 어깨를 뒤로 비틀었다가 휙
 	if _spine:
 		_spine.rotation.x += w * lunge
+	if _rig != "spider":
+		_hips.position.y += w * (-0.06 * cock if pre else lerpf(-0.06, -0.02, k))
+		_hips.position.z += w * (0.04 * cock if pre else lerpf(0.04, -0.1, k))
 	if _head:
-		_head.rotation.x += w * (0.15 if p < raise else -0.25)
+		_head.rotation.x += w * head_x
 	if _jaw and _jaw != mouth_jaw:
-		_jaw.rotation.x -= w * 0.5
+		_jaw.rotation.x -= w * (0.3 * cock if pre else 0.3 + 0.35 * k)
 
 
 ## 하마 입 벌리기 (0 = 다물기, 1 = 쩍 벌림)

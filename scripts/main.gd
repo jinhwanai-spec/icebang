@@ -301,6 +301,8 @@ var _creepy_timer := 10.0
 func _setup_horror() -> void:
 	# 가로등·간판·모닥불 중 일부가 불규칙하게 깜빡임
 	for l in _nav_region.find_children("*", "OmniLight3D", true, false):
+		if l.has_meta("lit_design"):
+			continue  # 조명마다 정해 둔 깜빡임(형광등·불꽃·경광등)이 따로 있음 (light_fx.gd)
 		if randf() < GameConfig.num("horror", "flicker_ratio", 0.4):
 			_flicker_lights.append([l, (l as OmniLight3D).light_energy])
 	# 계속 낮게 깔리는 불길한 소리

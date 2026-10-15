@@ -22,6 +22,7 @@ var roof_body: StaticBody3D
 var _cube: BoxMesh
 var _lights := 0
 const MAX_LIGHTS := 64
+const LightFX := preload("res://scripts/light_fx.gd")
 
 ## 실내 마감 (학교·병원에서 켬): 벽 아래쪽 판(타일·나무), 걸레받이·몰딩 색, 천장 재질
 var wainscot_mat: Material = null
@@ -522,25 +523,54 @@ func hole_rail(hole: Rect2, y: float, open_side: String) -> void:
 			part(p + Vector3.UP * 0.48, Vector3(0.04, 0.96, 0.04), col, "metal")
 
 
-## 천장 조명 (일부는 깜빡임). 전체 조명 수를 제한해서 가볍게
+## 천장 조명. 상태 4가지: 켜짐 / 깜빡임(웅웅 소리) / 희미하게 켜짐 / 고장(꺼진 등)
+## (맵 배치용 rng 는 예전과 똑같이 부르고, 나머지 조명 선택은 lb.light_rng 로 → 조명을 바꿔도 가구 배치가 그대로)
 func ceiling_light(p: Vector3, color := Color(1.0, 0.9, 0.7), energy := 0.9, rng_on := 0.45) -> void:
-	part(p + Vector3.DOWN * 0.03, Vector3(0.9, 0.05, 0.3), Color(1, 0.95, 0.85), "lit")
-	if _lights >= MAX_LIGHTS or rng.randf() > rng_on:
+	var on := false
+	var flick := false
+	if _lights < MAX_LIGHTS and rng.randf() <= rng_on:
+		_lights += 1
+		on = true
+		flick = rng.randf() < 0.3
+	var dim := false
+	var lr := lb.light_rng
+	if not on and lr.randf() < 0.3:
+		on = true
+		dim = true  # 꺼진 줄 알았던 등 일부는 힘없이 희미하게
+		flick = lr.randf() < 0.35
+	# 등 몸통 (회색 틀) + 형광관
+	part(p + Vector3.UP * 0.0, Vector3(0.98, 0.06, 0.36), Color(0.42, 0.43, 0.45), "metal")
+	var tube_pos := p + Vector3.DOWN * 0.035
+	var tube_size := Vector3(0.88, 0.03, 0.26)
+	if not on:
+		part(tube_pos, tube_size, Color(0.32, 0.34, 0.36), "trim")
 		return
-	_lights += 1
+	var tube_col := color.lerp(Color.WHITE, 0.35)
+	var tube_mat: StandardMaterial3D = null
+	if flick:
+		# 깜빡이는 등은 형광관도 같이 꺼졌다 켜지도록 따로 그림
+		tube_mat = LightFX.glow_mat(tube_col, 2.4 if not dim else 1.2, 0.6)
+		var mi := MeshInstance3D.new()
+		var bm := BoxMesh.new()
+		bm.size = tube_size
+		mi.mesh = bm
+		mi.material_override = tube_mat
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		mi.position = tube_pos
+		lb.region.add_child(mi)
+	else:
+		part(tube_pos, tube_size, tube_col * (1.0 if not dim else 0.7), "lit")
 	var l := OmniLight3D.new()
 	l.light_color = color
-	l.omni_range = 5.5
-	l.light_energy = energy
-	l.shadow_enabled = false
-	# 최적화: 멀리 있는 실내등은 꺼 둠 (부드럽게 사라짐)
-	l.distance_fade_enabled = true
-	l.distance_fade_begin = 28.0
-	l.distance_fade_length = 8.0
+	l.omni_range = 6.0 if not dim else 4.2
+	l.omni_attenuation = 1.3
+	l.light_energy = energy * (2.0 if not dim else 0.7)
 	l.position = p + Vector3.DOWN * 0.3
 	lb.region.add_child(l)
-	if rng.randf() < 0.3:
-		l.set_script(preload("res://scripts/flicker_light.gd"))
+	# 최적화: 멀리 있는 실내등은 꺼 둠 (부드럽게 사라짐), 가까운 몇 개만 그림자
+	LightFX.practical(l, 28.0, not dim and not flick)
+	if flick:
+		LightFX.flicker(l, "dying" if dim else "fluorescent", [tube_mat], true)
 
 
 # ================================================================ 방 나누기 (BSP)
@@ -1179,8 +1209,11 @@ func _furnish_rich(room: Rect2, y: float, kind: String) -> void:
 				sl.distance_fade_begin = 28.0
 				sl.distance_fade_length = 8.0
 				lb.region.add_child(sl)
+				LightFX.practical(sl, 28.0)
+				sl.spot_angle_attenuation = 0.6
+				sl.light_volumetric_fog_energy = 2.0
 				if rng.randf() < 0.5:
-					sl.set_script(preload("res://scripts/flicker_light.gd"))
+					LightFX.flicker(sl, "fluorescent", [], true)
 			# 기계·카트·산소통
 			part(p + Vector3(-1.5, 0.8, -0.6), Vector3(0.6, 1.6, 0.5), Color(0.3, 0.32, 0.35), "metal", true)
 			part(p + Vector3(-1.5, 1.35, -0.34), Vector3(0.45, 0.32, 0.02), Color(0.2, 0.9, 0.4), "lit")
@@ -1243,7 +1276,8 @@ func _furnish_rich(room: Rect2, y: float, kind: String) -> void:
 				rl.distance_fade_begin = 28.0
 				rl.distance_fade_length = 8.0
 				lb.region.add_child(rl)
-				rl.set_script(preload("res://scripts/flicker_light.gd"))
+				LightFX.practical(rl, 28.0, false)
+				LightFX.flicker(rl, "strobe")
 				part(rl.position + Vector3.UP * 0.1, Vector3(0.2, 0.15, 0.2), Color(1.0, 0.2, 0.15), "lit")
 		"storage":
 			# 철제 선반 (상자·통) 벽 따라 + 가운데 상자 더미

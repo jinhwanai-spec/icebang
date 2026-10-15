@@ -334,6 +334,15 @@ func _exit_sign(p: Vector3, facing: Vector3) -> void:
 	kit.part(p + facing * 0.04 - rt * 0.05 + Vector3.UP * 0.05, Vector3(0.04, 0.04, 0.01), Color(0.95, 1.0, 0.95), "lit", false, yaw)
 	kit.part(p + facing * 0.04 - rt * 0.06 - Vector3.UP * 0.02, Vector3(0.04, 0.09, 0.01), Color(0.95, 1.0, 0.95), "lit", false, yaw + 0.4)
 	kit.part(p + facing * 0.04 - rt * 0.16, Vector3(0.1, 0.02, 0.01), Color(0.95, 1.0, 0.95), "lit", false, yaw)
+	# 초록 불빛이 문 둘레 벽을 은은하게 물들임 (어두워도 출구가 보이게)
+	var gl := OmniLight3D.new()
+	gl.light_color = Color(0.2, 1.0, 0.45)
+	gl.light_energy = 0.6
+	gl.omni_range = 3.5
+	gl.light_volumetric_fog_energy = 1.2
+	gl.position = p + facing * 0.3
+	region.add_child(gl)
+	LightFX.practical(gl, 30.0, false)
 
 
 ## 복도 꾸미기: 신발장·사물함 줄, 게시판, 소화전, 손 씻는 곳, 쓰레기통, 얼룩

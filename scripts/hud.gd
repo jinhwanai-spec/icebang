@@ -31,6 +31,44 @@ void fragment() {
 }
 """
 
+## [손맛] 얼음 서리: 화면 가장자리에서 안쪽으로 번져 들어오는 성에 + 해동될수록 금이 감
+const FROST_SHADER := """
+shader_type canvas_item;
+uniform float progress = 0.0;
+uniform float crack = 0.0;
+uniform vec4 tint : source_color = vec4(0.78, 0.93, 1.0, 1.0);
+float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+vec2 hash2(vec2 p) { return fract(sin(vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3)))) * 43758.5453); }
+float vnoise(vec2 p) {
+	vec2 i = floor(p); vec2 f = fract(p); vec2 u = f * f * (3.0 - 2.0 * f);
+	return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), u.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), u.x), u.y);
+}
+float fbm(vec2 p) { float v = 0.0; float a = 0.5; for (int i = 0; i < 4; i++) { v += a * vnoise(p); p *= 2.07; a *= 0.5; } return v; }
+void fragment() {
+	vec2 c = (UV - 0.5) * vec2(1.7, 1.0);
+	float edge = length(c);
+	float n = fbm(UV * vec2(10.0, 6.0));
+	float reach = mix(1.15, 0.5, progress);
+	float f = smoothstep(reach, reach + 0.2, edge + (n - 0.5) * 0.4);
+	float feather = fbm(vec2(atan(c.y, c.x) * 7.0, edge * 9.0));
+	float a = f * (0.45 + 0.4 * feather);
+	vec2 g = UV * vec2(9.0, 5.0);
+	vec2 gi = floor(g);
+	float d1 = 9.0; float d2 = 9.0; vec2 cell = vec2(0.0);
+	for (int y = -1; y <= 1; y++) { for (int x = -1; x <= 1; x++) {
+		vec2 o = vec2(float(x), float(y));
+		vec2 pnt = o + hash2(gi + o);
+		float d = length(g - gi - pnt);
+		if (d < d1) { d2 = d1; d1 = d; cell = gi + o; } else if (d < d2) { d2 = d; }
+	} }
+	float line = 1.0 - smoothstep(0.0, 0.05, d2 - d1);
+	float show = step(hash(cell), crack) * smoothstep(0.0, 0.3, crack);
+	float cr = line * show * max(f, crack * 0.6);
+	vec3 col = tint.rgb * (0.8 + 0.35 * n) + vec3(cr * 0.5);
+	COLOR = vec4(col, clamp(a * 0.72 + cr * 0.5, 0.0, 1.0));
+}
+"""
+
 var main: Node  # main.gd
 
 var _top_label: Label
@@ -71,6 +109,28 @@ var _grain: ColorRect
 var _danger: ColorRect
 var _heart: AudioStreamPlayer
 var _heart_timer := 0.0
+# [손맛] 화면 피드백 상태
+var _feel_bound: Node = null
+var _hurt: ColorRect
+var _red_flash: ColorRect
+var _gold: ColorRect
+var _hurt_level := 0.0
+var _flash_level := 0.0
+var _gold_level := 0.0
+var _frost_prog := 0.0
+var _frost_crack := 0.0
+var _stamina_ghost: ColorRect
+var _stamina_shown := 1.0
+var _stamina_ghost_v := 1.0
+var _stamina_ghost_wait := 0.0
+var _stamina_idle := 0.0
+var _status_was_empty := true
+var _banner: Label
+var _banner_sub: Label
+var _banner_tw: Tween
+var _missions_seen := -1
+var _escape_seen := false
+var _fx_t := 0.0
 
 
 ## 약한 레트로 필터: 해상도를 살짝 낮추고 색 단계를 줄여 점무늬(디더링)를 아주 옅게
@@ -121,7 +181,17 @@ func _ready() -> void:
 	# 화면 효과 (가장 아래에 깔림)
 	_vignette = _make_overlay(root, Color.BLACK, 0.75, 0.3)
 	_camo = _make_overlay(root, Color(0.3, 0.9, 0.4), 0.0, 0.2)
-	_frost = _make_overlay(root, Color(0.75, 0.92, 1.0), 0.0, 0.15)
+	# [손맛] 서리: 가장자리부터 번져 들어오는 성에 (얼음일 때), 해동될수록 금
+	_frost = ColorRect.new()
+	_frost.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_frost.set_anchors_preset(Control.PRESET_FULL_RECT)
+	var fs := Shader.new()
+	fs.code = FROST_SHADER
+	var fm := ShaderMaterial.new()
+	fm.shader = fs
+	_frost.material = fm
+	_frost.visible = false
+	root.add_child(_frost)
 	# 공포 연출: 필름 노이즈 + 술래가 가까울수록 붉게 조여오는 화면
 	_grain = ColorRect.new()
 	_grain.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -135,6 +205,14 @@ func _ready() -> void:
 	_grain.visible = GameConfig.num("horror", "grain", 0.0) > 0.0  # 0이면 노이즈 끔 (화면이 깨끗하게)
 	root.add_child(_grain)
 	_danger = _make_overlay(root, Color(0.5, 0.0, 0.0), 0.0, 0.25)
+	# [손맛] 맞을 뻔/잡힘: 붉은 테두리 맥동 + 짧은 붉은 번쩍임, 봉인석 단계 성공: 은은한 금빛 테두리
+	_hurt = _make_overlay(root, Color(0.65, 0.0, 0.02), 0.0, 0.18)
+	_gold = _make_overlay(root, Color(1.0, 0.82, 0.45), 0.0, 0.3)
+	_red_flash = ColorRect.new()
+	_red_flash.color = Color(0.7, 0.0, 0.0, 0.0)
+	_red_flash.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_red_flash.set_anchors_preset(Control.PRESET_FULL_RECT)
+	root.add_child(_red_flash)
 	_heart = AudioStreamPlayer.new()
 	_heart.stream = SFX_HEART
 	add_child(_heart)
@@ -161,6 +239,13 @@ func _ready() -> void:
 	_stamina_fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_stamina_fill.position = Vector2(2, 2)
 	_stamina_fill.size = Vector2(256, 8)
+	# [손맛] 줄어든 만큼 잠깐 남는 흰 잔상 막대 (채움 막대 뒤)
+	_stamina_ghost = ColorRect.new()
+	_stamina_ghost.color = Color(1.0, 0.95, 0.85, 0.55)
+	_stamina_ghost.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_stamina_ghost.position = Vector2(2, 2)
+	_stamina_ghost.size = Vector2(256, 8)
+	_stamina_bg.add_child(_stamina_ghost)
 	_stamina_bg.add_child(_stamina_fill)
 	_ability_label = _make_label(root, 18, Control.PRESET_BOTTOM_LEFT)
 	_shared_label = _make_label(root, 16, Control.PRESET_BOTTOM_RIGHT)
@@ -199,6 +284,17 @@ func _ready() -> void:
 	_thaw_bar.show_percentage = false
 	thaw_box.add_child(_thaw_bar)
 	thaw_box.visible = false
+
+	# [손맛] 봉인석 가동·탈출구 열림 배너 (가운데 위)
+	_banner = _make_label(root, 40, Control.PRESET_CENTER_TOP)
+	_banner.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_banner.position.y += 175
+	_banner.add_theme_constant_override("outline_size", 10)
+	_banner.modulate.a = 0.0
+	_banner_sub = _make_label(root, 18, Control.PRESET_CENTER_TOP)
+	_banner_sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_banner_sub.position.y += 232
+	_banner_sub.modulate.a = 0.0
 
 	_build_pause_panel(root)
 	_build_result_panel(root)
@@ -244,7 +340,9 @@ func _process(delta: float) -> void:
 	if main == null or not main.ready_to_play:
 		return
 	var p = main.player
+	_bind_feel(p)
 	_update_heartbeat(delta, p)
+	_update_feel_fx(delta, p)
 
 	# --- 위쪽: 진행 상황
 	var alive := 0
@@ -277,13 +375,9 @@ func _process(delta: float) -> void:
 		_retro_mat.set_shader_parameter("pixel_res", vs * GameConfig.num("retro", "pixel_scale", 0.75))
 
 	# --- 스태미나
-	var ratio := clampf(p.stamina / GameConfig.num("stamina", "max", 100.0), 0.0, 1.0)
-	_stamina_fill.size.x = 256.0 * ratio
-	_stamina_fill.color = Color(1.0, 0.3, 0.2) if p.exhausted else Color(1.0, 0.85, 0.2)
-	_stamina_bg.visible = not p.is_dead and not p.escaped
+	_update_stamina_bar(delta, p)
 
 	# --- 화면 효과
-	_frost.material.set_shader_parameter("strength", 0.85 if p.is_frozen else 0.0)
 	_camo.material.set_shader_parameter("strength", 0.5 if p.is_hidden_from_seeker() else 0.0)
 
 	# --- 해동 게이지: 내가 얼었을 때 / 내가 동료를 녹이고 있을 때
@@ -358,6 +452,16 @@ func _process(delta: float) -> void:
 		_status_label.text = "얼음 다시 쓰기까지 %.1f초" % p.freeze_cooldown_left
 	else:
 		_status_label.text = ""
+	# [손맛] 안내 문구가 새로 뜨면 살짝 튀어나오듯
+	var empty := _status_label.text == ""
+	if _status_was_empty and not empty:
+		_status_label.pivot_offset = _status_label.size * 0.5
+		_status_label.scale = Vector2(0.86, 0.86)
+		_status_label.modulate.a = 0.0
+		var ptw := create_tween().set_parallel(true).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+		ptw.tween_property(_status_label, "scale", Vector2.ONE, 0.22)
+		ptw.tween_property(_status_label, "modulate:a", 1.0, 0.12)
+	_status_was_empty = empty
 
 	# --- 소환 창 (공간을 지배하는 자)
 	_summon_label.visible = p.summon_menu_open
@@ -467,7 +571,125 @@ func _update_heartbeat(delta: float, p) -> void:
 		_heart.play()
 	var pulse := maxf(0.0, 1.0 - (lerpf(0.85, 0.4, k) - _heart_timer) * 4.0) if near < hear else 0.0
 	k = maxf(k, 0.25) if near < hear else 0.0
+	# [손맛] 나를 쫓는 중이면 멀리 있어도 붉은 테두리가 은근히 남음 (추격 레이어와 같이)
+	if _feel_bound and is_instance_valid(_feel_bound):
+		k = maxf(k, float(_feel_bound.get("chase_vol")) * 0.3)
 	_danger.material.set_shader_parameter("strength", k * 0.55 + pulse * k * 0.35)
+
+
+# ---------------------------------------------------------------- [손맛] 화면 피드백
+
+## 내 캐릭터의 feel_fx 신호를 한 번만 연결
+func _bind_feel(p) -> void:
+	var f: Node = p.get("feel")
+	if f == _feel_bound or f == null:
+		return
+	_feel_bound = f
+	f.connect("hud_event", _on_feel_event)
+
+
+func _on_feel_event(kind: StringName, amount: float) -> void:
+	var m := GameConfig.num("feel", "hud_flash", 1.0)
+	match kind:
+		&"caught":
+			_flash_level = 1.0 * m
+			_hurt_level = 1.0 * m
+		&"near":
+			_hurt_level = maxf(_hurt_level, (0.35 + 0.4 * amount) * m)
+			_flash_level = maxf(_flash_level, 0.25 * amount * m)
+		&"chase":
+			_hurt_level = maxf(_hurt_level, 0.45 * m)
+		&"punch":
+			_gold_level = maxf(_gold_level, 0.25 * amount * m)
+		&"stage":
+			_gold_level = maxf(_gold_level, 0.55 * m)
+		&"freeze":
+			_frost_prog = minf(_frost_prog, 0.05)  # 가장자리부터 새로 번짐
+			_frost_crack = 0.0
+		&"thaw":
+			_frost_crack = 1.0  # 금이 쫙 가면서 서리가 빠르게 물러남
+
+
+## 붉은 맥동, 금빛 테두리, 서리, 배너
+func _update_feel_fx(delta: float, p) -> void:
+	_fx_t += delta
+	_hurt_level = maxf(0.0, _hurt_level - delta * 0.75)
+	_flash_level = maxf(0.0, _flash_level - delta * 2.4)
+	_gold_level = maxf(0.0, _gold_level - delta * 1.1)
+	var hp := _hurt_level * (0.8 + 0.2 * sin(_fx_t * 9.0))
+	_hurt.visible = _hurt_level > 0.0
+	_hurt.material.set_shader_parameter("strength", hp * 0.85)
+	_red_flash.visible = _flash_level > 0.0
+	_red_flash.color.a = _flash_level * 0.42
+	_gold.visible = _gold_level > 0.0
+	_gold.material.set_shader_parameter("strength", _gold_level * 0.5)
+	# 서리: 얼면 1.2초에 걸쳐 가장자리에서 번져 들어오고, 땡 받으면 금이 가며 빠르게 물러남
+	var amt := GameConfig.num("feel", "frost_overlay", 1.0)
+	var frost_on: bool = p.is_frozen and not p.is_dead and amt > 0.0
+	_frost_prog = move_toward(_frost_prog, 1.0 if frost_on else 0.0, delta * (0.85 if frost_on else 2.2))
+	if frost_on:
+		_frost_crack = clampf(p.thaw_progress / maxf(0.1, GameConfig.num("player", "thaw_time", 10.0)), 0.0, 1.0) * 0.85
+	_frost.visible = _frost_prog > 0.001
+	if _frost.visible:
+		var ease_p := 1.0 - pow(1.0 - _frost_prog, 2.2)
+		_frost.material.set_shader_parameter("progress", ease_p * amt)
+		_frost.material.set_shader_parameter("crack", _frost_crack)
+	# 배너: 봉인석 가동 / 탈출구 열림
+	if _missions_seen < 0:
+		_missions_seen = main.missions_done
+		_escape_seen = main.escape_phase
+	if main.missions_done > _missions_seen:
+		_missions_seen = main.missions_done
+		_show_banner("봉인석 가동", "%d / %d" % [main.missions_done, main.mission_total], Color(1.0, 0.86, 0.5))
+	if main.escape_phase and not _escape_seen:
+		_escape_seen = true
+		_show_banner("탈출구가 열렸어요", "서둘러요!", Color(0.6, 1.0, 0.75))
+
+
+func _show_banner(title: String, sub: String, col: Color) -> void:
+	_banner.text = title
+	_banner_sub.text = sub
+	_banner.add_theme_color_override("font_color", col)
+	_banner.pivot_offset = _banner.size * 0.5
+	_banner.scale = Vector2(1.35, 1.35)
+	_banner.modulate.a = 0.0
+	_banner_sub.modulate.a = 0.0
+	if _banner_tw and _banner_tw.is_valid():
+		_banner_tw.kill()
+	_banner_tw = create_tween()
+	_banner_tw.set_parallel(true).set_trans(Tween.TRANS_QUART).set_ease(Tween.EASE_OUT)
+	_banner_tw.tween_property(_banner, "scale", Vector2.ONE, 0.45)
+	_banner_tw.tween_property(_banner, "modulate:a", 1.0, 0.25)
+	_banner_tw.tween_property(_banner_sub, "modulate:a", 0.85, 0.4).set_delay(0.2)
+	_banner_tw.chain().tween_interval(1.8)
+	_banner_tw.chain().tween_property(_banner, "modulate:a", 0.0, 0.6)
+	_banner_tw.parallel().tween_property(_banner_sub, "modulate:a", 0.0, 0.6)
+	_gold_level = maxf(_gold_level, 0.4)
+
+
+## 스태미나 막대: 부드럽게 줄고, 줄어든 만큼 흰 잔상이 따라오고, 적으면 깜빡이며, 가득 차 있으면 흐려짐
+func _update_stamina_bar(delta: float, p) -> void:
+	var ratio := clampf(p.stamina / GameConfig.num("stamina", "max", 100.0), 0.0, 1.0)
+	_stamina_shown = lerpf(_stamina_shown, ratio, 1.0 - exp(-14.0 * delta))
+	if ratio >= _stamina_ghost_v:
+		_stamina_ghost_v = _stamina_shown
+		_stamina_ghost_wait = 0.4
+	else:
+		_stamina_ghost_wait -= delta
+		if _stamina_ghost_wait <= 0.0:
+			_stamina_ghost_v = move_toward(_stamina_ghost_v, ratio, delta * 0.5)
+	_stamina_fill.size.x = 256.0 * _stamina_shown
+	_stamina_ghost.size.x = 256.0 * maxf(_stamina_ghost_v, _stamina_shown)
+	var low: bool = ratio < 0.25 or p.exhausted
+	var base_col: Color = Color(1.0, 0.3, 0.2) if p.exhausted else Color(1.0, 0.85, 0.2).lerp(Color(1.0, 0.5, 0.15), clampf((0.4 - ratio) / 0.4, 0.0, 1.0))
+	var pulse := 0.5 + 0.5 * sin(_fx_t * (9.0 if p.exhausted else 6.0))
+	_stamina_fill.color = base_col.lerp(Color(1, 1, 1), pulse * 0.25) if low else base_col
+	_stamina_bg.color = Color(0.25 * pulse, 0, 0, 0.6) if low else Color(0, 0, 0, 0.55)
+	# 오래 가득 차 있으면 흐리게 (화면을 덜 가림)
+	_stamina_idle = _stamina_idle + delta if ratio >= 0.999 else 0.0
+	var want_a := 0.35 if _stamina_idle > 1.5 else 1.0
+	_stamina_bg.modulate.a = move_toward(_stamina_bg.modulate.a, want_a, delta * 2.5)
+	_stamina_bg.visible = not p.is_dead and not p.escaped
 
 
 func _unhandled_input(event: InputEvent) -> void:

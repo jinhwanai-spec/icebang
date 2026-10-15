@@ -152,8 +152,10 @@ func _hospital() -> void:
 	cl.omni_range = 12.0
 	cl.light_energy = 1.5
 	cl.position = Vector3(0, roof_y + 1.9, r.end.y + 1.0)
-	cl.set_script(preload("res://scripts/flicker_light.gd"))
 	region.add_child(cl)
+	LightFX.practical(cl, 60.0, false)
+	cl.light_volumetric_fog_energy = 2.5
+	LightFX.flicker(cl, "fluorescent", [cross])
 	# 간판: 글자 대신 흰 바탕 빨간 십자 (어느 나라에서나 알아봄)
 	for cx in [-2.6, 2.6]:
 		kit.part(Vector3(cx, Y0 + 3.95, r.end.y + 4.47), Vector3(0.75, 0.75, 0.02), Color(0.9, 0.9, 0.88), "lit")
@@ -181,8 +183,9 @@ func _hospital() -> void:
 	el.light_energy = 1.2
 	el.omni_range = 9.0
 	el.position = Vector3(r.end.x + 1.5, Y0 + 3.0, corr_z)
-	el.set_script(preload("res://scripts/flicker_light.gd"))
 	region.add_child(el)
+	LightFX.practical(el, 40.0, false)
+	LightFX.flicker(el, "fluorescent", [er])
 	# 바닥판·천장
 	kit.slab(inner, YB + 0.05, _mat["base_floor"], "w_bfloor", [], false, 0.3)
 	kit.slab(inner, Y0, _mat["hosp_floor"], "w_hfloor", [stA, stC], false, 0.25)
@@ -294,6 +297,15 @@ func _exit_sign(p: Vector3, facing: Vector3) -> void:
 	kit.part(p + facing * 0.04 - rt * 0.05 + Vector3.UP * 0.05, Vector3(0.04, 0.04, 0.01), Color(0.95, 1.0, 0.95), "lit", false, yaw)
 	kit.part(p + facing * 0.04 - rt * 0.06 - Vector3.UP * 0.02, Vector3(0.04, 0.09, 0.01), Color(0.95, 1.0, 0.95), "lit", false, yaw + 0.4)
 	kit.part(p + facing * 0.04 - rt * 0.16, Vector3(0.1, 0.02, 0.01), Color(0.95, 1.0, 0.95), "lit", false, yaw)
+	# 초록 불빛이 문 둘레 벽을 은은하게 물들임 (어두워도 출구가 보이게)
+	var gl := OmniLight3D.new()
+	gl.light_color = Color(0.2, 1.0, 0.45)
+	gl.light_energy = 0.6
+	gl.omni_range = 3.5
+	gl.light_volumetric_fog_energy = 1.2
+	gl.position = p + facing * 0.3
+	region.add_child(gl)
+	LightFX.practical(gl, 30.0, false)
 
 
 ## 엘리베이터 문 (장식) + 층 표시등
@@ -341,6 +353,9 @@ func _hosp_corridor(core: Rect2, corr_z: float, corr_w: float, y: float, h: floa
 	for i in 9:
 		var x := core.position.x + 3.0 + i * (core.size.x - 6.0) / 8.0
 		kit.ceiling_light(Vector3(x, y + h - 0.28, corr_z), Color(0.75, 0.95, 0.85) if not base else Color(1.0, 0.75, 0.5), 0.6, 0.3)
+		if base and i in [2, 6]:
+			# 지하 복도: 빙글빙글 도는 붉은 비상 경광등 (벽 위쪽)
+			LightFX.beacon(region, Vector3(x + 1.5, y + h - 0.45, corr_z + corr_w * 0.5 - 0.25))
 		match i % 4:
 			0:
 				_wheelchair(Vector3(x, y, corr_z + corr_w * 0.5 - 0.5))

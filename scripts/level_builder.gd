@@ -52,14 +52,19 @@ func _moon_shaft(at: Vector3, inward: Vector3) -> void:
 	_moon_count += 1
 	var sl := SpotLight3D.new()
 	sl.light_color = Color(0.55, 0.65, 1.0)
-	sl.light_energy = 2.2
-	sl.light_volumetric_fog_energy = 3.0
+	sl.light_energy = 2.6
+	sl.light_volumetric_fog_energy = 3.5
 	sl.spot_range = 9.0
-	sl.spot_angle = 22.0
+	sl.spot_angle = 24.0
+	sl.spot_attenuation = 0.6
+	sl.spot_angle_attenuation = 0.4
+	sl.light_specular = 0.2
 	sl.shadow_enabled = false
+	sl.light_projector = LightFX.window_cookie()  # 창살 모양 빛 무늬
 	sl.distance_fade_enabled = true
 	sl.distance_fade_begin = 35.0
 	sl.distance_fade_length = 10.0
+	sl.set_meta("lit_design", true)
 	# (맵을 만드는 중엔 아직 씬 트리 밖이라 global_* 대신 직접 변환을 계산)
 	var from := at - inward * 1.2 + Vector3.UP * 1.0
 	var to := at + inward * 3.0 + Vector3.DOWN * 1.8
@@ -86,6 +91,9 @@ func _floor_sign(p: Vector3, facing: Vector3, text: String, col := Color(0.2, 0.
 ## (테스트용) 바깥 풍경 확인 위치 [[카메라, 보는 곳], ...]
 var debug_views: Array = []
 var kit: BuildingKit
+const LightFX := preload("res://scripts/light_fx.gd")
+## 조명 전용 난수 (맵 모양을 정하는 rng 와 따로 써서, 조명을 바꿔도 맵 배치가 그대로)
+var light_rng := RandomNumberGenerator.new()
 var _building_mats: Array[StandardMaterial3D] = []
 var _rust_mats: Array[StandardMaterial3D] = []
 
@@ -107,6 +115,8 @@ func build(target: Node3D, map_seed: int) -> void:
 # ================================================================ 재질 (질감)
 
 func _make_materials() -> void:
+	LightFX.reset()
+	light_rng.seed = 4242
 	_mat["asphalt"] = _noise_mat(Color(0.16, 0.16, 0.17), 0.35, 0.95, 6.0)
 	_mat["sidewalk"] = _pattern_mat("tile", Color(0.42, 0.41, 0.39), 2.0)
 	_mat["concrete"] = _noise_mat(Color(0.36, 0.35, 0.33), 0.4, 0.95, 4.0)
@@ -329,7 +339,8 @@ var doorways: Array = []
 
 func _batch(key: String, mesh: Mesh, mat: Material, xf: Transform3D, color := Color.WHITE, shadow := true) -> void:
 	if not _batches.has(key):
-		_batches[key] = [mesh, mat, shadow, [], []]
+		# 유리창은 그림자를 만들지 않음 → 달빛이 창문으로 들어와 바닥에 창틀 모양으로 떨어짐
+		_batches[key] = [mesh, mat, shadow and not key.begins_with("b_glass"), [], []]
 	_batches[key][3].append(xf)
 	_batches[key][4].append(color)
 
@@ -512,6 +523,9 @@ var _deco := {}
 func _deco_mat(key: String) -> Material:
 	if _deco.has(key):
 		return _deco[key]
+	if key == "lit":
+		_deco[key] = _lit_shader_mat()
+		return _deco[key]
 	var m := StandardMaterial3D.new()
 	m.vertex_color_use_as_albedo = true
 	m.roughness = 0.85
@@ -536,6 +550,23 @@ func _deco_mat(key: String) -> Material:
 			m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 			m.albedo_texture = _web_tex()
 	_deco[key] = m
+	return m
+
+
+## 빛나는 부품 ("lit"): 부품 색 그대로 빛남 (초록 모니터는 초록, 형광등은 흰빛, 비상등은 빨강)
+func _lit_shader_mat() -> ShaderMaterial:
+	var sh := Shader.new()
+	sh.code = """shader_type spatial;
+render_mode cull_back;
+uniform float energy = 2.2;
+void fragment() {
+	ALBEDO = COLOR.rgb * 0.35;
+	ROUGHNESS = 0.4;
+	EMISSION = COLOR.rgb * COLOR.rgb * energy;
+}
+"""
+	var m := ShaderMaterial.new()
+	m.shader = sh
 	return m
 
 
@@ -848,6 +879,11 @@ func _sign(pos: Vector3, along_x: bool) -> void:
 		light.distance_fade_length = 8.0
 		region.add_child(light)
 		light.position = pos
+		LightFX.practical(light, 30.0, false)
+		light.light_energy = 1.1
+		light.omni_range = 5.0
+		if light_rng.randf() < 0.3:
+			LightFX.flicker(light, "fluorescent" if light_rng.randf() < 0.6 else "dying", [m])
 
 
 ## 공원: 풀숲이 무성하고 나무와 벤치가 있음. 가운데에 봉인석 자리
@@ -1024,12 +1060,35 @@ func _lamp(pos: Vector3) -> void:
 	_part(body, Vector3(0, 2.5, 0), _box_mesh(Vector3(0.14, 5.0, 0.14)), _mat["metal"])
 	_part(body, Vector3(0, 5.0, 0), _box_mesh(Vector3(0.5, 0.15, 0.3)), _mat["metal"])
 	if rng.randf() < 0.55:
-		var light := OmniLight3D.new()
-		light.light_color = Color(1.0, 0.72, 0.4)
-		light.omni_range = 9.0
-		light.light_energy = 1.3
-		light.distance_fade_enabled = true  # 최적화: 먼 가로등 빛은 생략
-		light.distance_fade_begin = 45.0
-		light.distance_fade_length = 10.0
-		light.position = Vector3(0, 4.8, 0)
+		# 나트륨 가로등: 아래로 퍼지는 원뿔 빛 (안개 속에서 빛기둥) + 빛나는 등갓 + 은은한 주변광
+		var glow := LightFX.glow_mat(Color(1.0, 0.7, 0.4), 4.0)
+		_part(body, Vector3(0, 4.9, 0), _box_mesh(Vector3(0.36, 0.04, 0.2)), glow)
+		var light := SpotLight3D.new()
+		light.light_color = Color(1.0, 0.66, 0.36)
+		light.spot_range = 12.0
+		light.spot_angle = 58.0
+		light.spot_attenuation = 0.9
+		light.spot_angle_attenuation = 0.7
+		light.light_energy = 3.2
+		light.light_volumetric_fog_energy = 2.2
+		light.position = Vector3(0, 4.85, 0)
+		light.rotation.x = -PI / 2.0
 		body.add_child(light)
+		LightFX.practical(light, 45.0)  # 최적화: 먼 가로등 빛은 생략, 가까우면 그림자
+		var r := light_rng.randf()
+		if r >= 0.3:
+			var halo := OmniLight3D.new()
+			halo.light_color = Color(1.0, 0.66, 0.36)
+			halo.omni_range = 5.0
+			halo.light_energy = 0.35
+			halo.position = Vector3(0, 4.6, 0)
+			body.add_child(halo)
+			LightFX.practical(halo, 35.0, false)
+		if r < 0.15:
+			LightFX.flicker(light, "dying", [glow])
+		elif r < 0.3:
+			LightFX.flicker(light, "fluorescent", [glow])
+		elif r < 0.55:
+			LightFX.moths(body, Vector3(0, 4.6, 0))
+	else:
+		_part(body, Vector3(0, 4.9, 0), _box_mesh(Vector3(0.36, 0.04, 0.2)), _flat_mat(Color(0.12, 0.12, 0.11), 0.5))

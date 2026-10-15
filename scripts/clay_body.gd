@@ -5,6 +5,18 @@ extends Node3D
 ## 큰 둥근 머리 + 통통한 몸 + 짧은 팔다리를 도형(구, 캡슐)으로 만들고,
 ## 캐릭터마다 색과 액세서리를 붙입니다. 걷기/달리기/얼음 포즈도 여기서 움직여요.
 ## 나중에 진짜 3D 모델을 구하면 이 노드만 모델로 바꾸면 됩니다.
+##
+## 움직임 (animate 가 매 프레임 자동): 서기(숨쉬기·두리번)/걷기/달리기/살금살금(느리면 웅크림)을 속도로 부드럽게 섞음,
+## 발 디딜 때 말랑 찌그러짐, 머리 늦게 따라옴, 회전할 때 안쪽으로 기울기, 멈출 때 앞으로 쏠림, 얼음 '퐁'+오들오들,
+## 땡 풀림 부르르, 떨어질 때 공중 자세 + 착지 찌그러짐 (부모 CharacterBody3D 의 velocity.y/is_on_floor 로 자동 판단)
+## 다른 스크립트에서 불러도 되는 것 (안 불러도 게임은 그대로 동작):
+##   land_impact(strength: float)                 착지 충격 0..1
+##   hit_react(dir: Vector3, strength := 1.0)     맞았을 때 움찔 (dir = 때린 쪽 → 나, 월드 방향)
+##   set_crouch(on: bool)                         웅크리기 강제
+##   set_airborne(state: int)                     1 공중 / 0 땅 / -1 자동(기본)
+##   roll_pose(t: float)                          구르는 동안 매 프레임 진행도 0..1 → 몸을 웅크림
+##   lean(amount: float)                          앞(+)/뒤(-)로 더 숙이기 (라디안, 0 = 끔)
+## 뼈대: self → Rig(몸 전체) → 몸통(_torso) → Head(목, 높이 1m 위 머리 치장 포함) / 팔, Rig → 다리·엉덩이
 
 var _mat: StandardMaterial3D
 var _accent: StandardMaterial3D
@@ -34,16 +46,20 @@ func build(character_id: String, cos := {}) -> void:
 	_mat = _clay(color)
 	_accent = _clay(color.darkened(0.35))
 
+	# 몸 전체(몸통·다리·엉덩이)를 담는 뼈대: 찌그러짐·기울기·착지 반동은 여기에만 줌 (self 는 이모트/구르기가 씀)
+	_rig = Node3D.new()
+	_rig.name = "Rig"
+	add_child(_rig)
 	_torso = Node3D.new()
-	add_child(_torso)
+	_rig.add_child(_torso)
 	# 몸통 (위아래로 살짝 긴 구). 옷 색은 셰이더로 몸에 바로 칠함 (dress)
 	_body_mi = _sphere(_torso, Vector3(0, 0.66, 0), 0.32, Vector3(1.0, 1.25, 0.9), _mat)
 	_body_color = color
 	# 머리 (크고 둥글게)
 	_sphere(_torso, Vector3(0, 1.28, 0), 0.4, Vector3.ONE, _mat)
 	# 다리
-	_left_leg = _limb(self, Vector3(-0.14, 0.4, 0), 0.115, 0.42, _mat)
-	_right_leg = _limb(self, Vector3(0.14, 0.4, 0), 0.115, 0.42, _mat)
+	_left_leg = _limb(_rig, Vector3(-0.14, 0.4, 0), 0.115, 0.42, _mat)
+	_right_leg = _limb(_rig, Vector3(0.14, 0.4, 0), 0.115, 0.42, _mat)
 	# 팔 (어깨에서 아래로, 살짝 벌어짐)
 	_left_arm = _limb(_torso, Vector3(-0.31, 0.86, 0), 0.09, 0.4, _mat)
 	_right_arm = _limb(_torso, Vector3(0.31, 0.86, 0), 0.09, 0.4, _mat)
@@ -52,9 +68,32 @@ func build(character_id: String, cos := {}) -> void:
 	# 엉덩이: 몸통 뒤 아래쪽이 살짝 동그랗게 나온 모양 (항상 몸의 일부, 춤출 때 실룩실룩)
 	_hips = Node3D.new()
 	_hips.position = Vector3(0, 0.47, -0.06)
-	add_child(_hips)
+	_rig.add_child(_hips)
 	_hips_mi = _sphere(_hips, Vector3(0, 0, 0), 0.27, Vector3(1.12, 0.78, 0.88), _mat)
 	Cosmetics.apply(self, cos)
+	_make_head()
+	_body_base = _body_mi.scale
+	_seed = randf() * 20.0
+	_look_cd = randf_range(1.0, 3.0)
+
+
+## 목 관절: 몸통에 붙은 것 중 높이 1m 위(머리 + 눈·머리카락·모자 등 머리 치장)를 목 노드로 옮김
+## → 머리만 따로 끄덕/갸웃/두리번 (처형인의 머리 떼기도 '높이 1m 위' 기준이라 그대로 동작)
+const NECK := Vector3(0, 1.02, 0)
+
+func _make_head() -> void:
+	_head = Node3D.new()
+	_head.name = "Head"
+	_head.position = NECK
+	_torso.add_child(_head)
+	for ch in _torso.get_children():
+		if ch == _head or ch == _left_arm or ch == _right_arm:
+			continue
+		var n := ch as Node3D
+		if n and n.position.y > 1.0:
+			_torso.remove_child(n)
+			_head.add_child(n)
+			n.position -= NECK
 
 
 var _body_mi: MeshInstance3D
@@ -169,22 +208,90 @@ func _animate_cosmetics(delta: float) -> void:
 ## 매 프레임: speed = 수평 이동 속도
 var _last_speed := 0.0
 
+# ---- 절차적 애니메이션 상태 (매 프레임 할당 없이 숫자만 갱신)
+var _rig: Node3D
+var _head: Node3D
+var _body_base := Vector3(1.0, 1.25, 0.9)
+var _seed := 0.0
+var _t := 0.0
+var _spd_s := 0.0          # 부드럽게 만든 속도
+var _accel_s := 0.0        # 속도 변화 (출발 +, 멈춤 -)
+var _step_amt := 0.0       # 걸음 크기 0..1
+var _run_s := 0.0          # 달리기 정도 0..1
+var _sneak_hold := 0.0
+var _crouch_s := 0.0       # 웅크림 정도 0..1
+var _crouch_forced := false
+var _c_prev := 1.0         # 발 디딤 감지용
+var _yaw_prev := 0.0
+var _yaw_init := false
+var _turn_s := 0.0         # 몸이 도는 속도 (라디안/초, + = 왼쪽)
+# 스프링 (값, 속도) — 출렁이며 제자리로 돌아오는 점토 느낌
+var _sq := 0.0             # 찌그러짐 (+ 납작, - 길쭉)
+var _sqv := 0.0
+var _ln := 0.0             # 몸통 앞 숙임
+var _lnv := 0.0
+var _bk := 0.0             # 좌우 기울기 (회전할 때 안쪽으로)
+var _bkv := 0.0
+var _hp := 0.0             # 머리 끄덕 (+ 앞으로)
+var _hpv := 0.0
+var _hr := 0.0             # 머리 갸웃
+var _hrv := 0.0
+var _look := 0.0           # 머리 두리번 (좌우)
+var _look_target := 0.0
+var _look_cd := 2.0
+var _arm_l := Vector3(0, 0, -0.25)
+var _arm_r := Vector3(0, 0, 0.25)
+var _leg_l := Vector3.ZERO
+var _leg_r := Vector3.ZERO
+var _lean_extra := 0.0
+# 얼음
+var _was_frozen := false
+var _freeze_t := 10.0
+var _thaw_t := 10.0
+var _fz_l := Vector3.ZERO
+var _fz_r := Vector3.ZERO
+# 공중 / 착지
+var _air_forced := -1      # -1 자동, 0 땅, 1 공중
+var _air_time := 0.0
+var _air_on := false
+var _air := 0.0
+var _fall_v := 0.0
+var _prev_y := 0.0
+var _land := 0.0           # 착지 충격 (줄어듦)
+# 구르기 웅크림
+var _roll_req := 0.0
+var _roll_k := 0.0
+
+
 func animate(delta: float, speed: float, frozen: bool) -> void:
 	_last_speed = speed
 	_animate_cosmetics(delta)
 	if _orbit:
 		_orbit.rotate_y(delta * 2.5)
 		_orbit.position.y = 1.0 + sin(Time.get_ticks_msec() / 400.0) * 0.08
+	if _rig == null:
+		return
+	var dt := clampf(delta, 0.0001, 0.05)
+	_t += dt
+	_track_motion(dt)
 	if frozen:
 		_clear_props()
-		# 얼음 포즈: 만세 하고 굳음
-		_left_arm.rotation = Vector3(0, 0, -2.6)
-		_right_arm.rotation = Vector3(0, 0, 2.6)
-		_left_leg.rotation.x = 0.0
-		_right_leg.rotation.x = 0.0
+		_frozen_pose(dt)
 		return
+	if _was_frozen:
+		# 땡! 풀려남: 부르르 털고 기지개
+		_was_frozen = false
+		_thaw_t = 0.0
+		_sqv -= 2.6
+		_hpv -= 4.0
 	if emote != "":
+		_reset_rig()
 		_emote_anim(delta)
+		# 이모트가 끝나면 마지막 자세에서 부드럽게 원래대로 돌아오도록 기억
+		_arm_l = _left_arm.rotation
+		_arm_r = _right_arm.rotation
+		_leg_l = _left_leg.rotation
+		_leg_r = _right_leg.rotation
 		return
 	_last_emote = ""
 	if _dance_t > 0.0:
@@ -205,26 +312,7 @@ func animate(delta: float, speed: float, frozen: bool) -> void:
 			_hips.rotation = Vector3.ZERO
 			_hips.scale = Vector3.ONE
 	_dance_t = 0.0
-	_torso.rotation.y = 0.0
-	_torso.rotation.z = 0.0
-	_torso.position.x = 0.0
-	_torso.position.z = 0.0
-	_left_leg.rotation.z = 0.0
-	_right_leg.rotation.z = 0.0
-	var amount := clampf(speed / 4.5, 0.0, 1.6)
-	if amount > 0.05:
-		_phase += delta * (5.0 + speed * 1.3)
-	else:
-		_phase = lerpf(_phase, roundf(_phase / PI) * PI, 10.0 * delta)
-	var swing := sin(_phase) * 0.7 * amount
-	_left_leg.rotation.x = swing
-	_right_leg.rotation.x = -swing
-	_left_arm.rotation = Vector3(-swing * 0.9, 0, -0.25)
-	_right_arm.rotation = Vector3(swing * 0.9, 0, 0.25)
-	# 통통 튀는 느낌 + 숨쉬기
-	var t := Time.get_ticks_msec() / 1000.0
-	_torso.position.y = absf(sin(_phase)) * 0.05 * amount + sin(t * 2.0) * 0.008
-	_torso.rotation.x = -0.12 * amount  # 달릴수록 앞으로 숙임
+	_locomotion(dt, speed)
 	if _punch_t > 0.0:
 		_punch_t -= delta
 		# 빠르게 쭉 뻗고(처음 25%) 잠깐 유지했다가 천천히 돌아옴
@@ -232,10 +320,320 @@ func animate(delta: float, speed: float, frozen: bool) -> void:
 		var k := clampf(p / 0.25, 0.0, 1.0) if p < 0.6 else clampf((1.0 - p) / 0.4, 0.0, 1.0)
 		_left_arm.rotation = Vector3(-1.65 * k, 0, -0.25 * (1.0 - k))
 		_right_arm.rotation = Vector3(0.5 * k, 0, 0.25 + 0.3 * k)
-		_torso.rotation.y = -0.45 * k  # 펀치하는 쪽 어깨가 앞으로
-		_torso.rotation.x = 0.12 * k
-		_left_leg.rotation.x = -0.35 * k
-		_right_leg.rotation.x = 0.35 * k
+		_arm_l = _left_arm.rotation
+		_arm_r = _right_arm.rotation
+		_torso.rotation.y = lerpf(_torso.rotation.y, -0.45, k)  # 펀치하는 쪽 어깨가 앞으로
+		_torso.rotation.x = lerpf(_torso.rotation.x, 0.12, k)
+		_left_leg.rotation.x = lerpf(_left_leg.rotation.x, -0.35, k)
+		_right_leg.rotation.x = lerpf(_right_leg.rotation.x, 0.35, k)
+
+
+## 스프링 한 걸음: (값, 속도) → 새 (값, 속도). w = 단단함(클수록 빠름), z = 감쇠(작을수록 출렁)
+static func _spring(x: float, v: float, target: float, w: float, z: float, dt: float) -> Vector2:
+	v += (w * w * (target - x) - 2.0 * z * w * v) * dt
+	return Vector2(x + v * dt, v)
+
+
+## 이모트 중에는 뼈대를 원래대로 (이모트는 self·몸통·팔다리를 직접 움직임)
+func _reset_rig() -> void:
+	_rig.position = Vector3.ZERO
+	_rig.rotation = Vector3.ZERO
+	_rig.scale = Vector3.ONE
+	_head.rotation = Vector3.ZERO
+	_body_mi.scale = _body_base
+	_sq = 0.0
+	_sqv = 0.0
+
+
+## 몸이 도는 속도, 떨어지는 중인지 추적 (얼음·이모트 중에도 계속 갱신)
+func _track_motion(dt: float) -> void:
+	if not is_inside_tree():
+		return
+	var par := get_parent() as Node3D
+	var yaw := rotation.y + (par.global_rotation.y if par else 0.0)
+	var rate := 0.0
+	if _yaw_init:
+		rate = wrapf(yaw - _yaw_prev, -PI, PI) / dt
+		if absf(rate) > 25.0:
+			rate = 0.0  # 순간이동·처음 방향 잡기
+	_yaw_prev = yaw
+	_yaw_init = true
+	_turn_s = lerpf(_turn_s, rate, 1.0 - exp(-10.0 * dt))
+	# 떨어지는 중? (계단 내려가기와 구분: 바닥에서 떨어져 있고 빠르게 내려갈 때만)
+	var gy := global_position.y
+	var vy := (gy - _prev_y) / dt
+	var grounded := false
+	var cb := par as CharacterBody3D
+	if cb:
+		vy = cb.velocity.y
+		grounded = cb.is_on_floor()
+	_prev_y = gy
+	var want := vy < -3.0 and not grounded
+	if _air_forced >= 0:
+		want = _air_forced == 1
+	_air_time = _air_time + dt if want else 0.0
+	var now := _air_time > 0.08 or _air_forced == 1
+	if now:
+		_fall_v = maxf(_fall_v, -vy)
+	elif _air_on:
+		land_impact(clampf(_fall_v / 9.0, 0.25, 1.0))
+		_fall_v = 0.0
+	_air_on = now
+
+
+## 얼음 포즈: 만세! 하고 '퐁' 튀어 굳은 뒤 오들오들 떨림
+func _frozen_pose(dt: float) -> void:
+	if not _was_frozen:
+		_was_frozen = true
+		_freeze_t = 0.0
+		_fz_l = _left_arm.rotation
+		_fz_r = _right_arm.rotation
+		_sqv -= 3.2   # 위로 쭉 늘어났다가
+		_hpv -= 5.0   # 고개를 젖힘
+		_reset_head_look()
+	_freeze_t += dt
+	var x := clampf(_freeze_t / 0.18, 0.0, 1.0)
+	# 살짝 넘쳤다가 제자리 (back-out)
+	var c1 := 2.2
+	var k := 1.0 + (c1 + 1.0) * pow(x - 1.0, 3.0) + c1 * pow(x - 1.0, 2.0)
+	_arm_l = _fz_l.lerp(Vector3(-0.12, 0, -2.6), k)
+	_arm_r = _fz_r.lerp(Vector3(-0.12, 0, 2.6), k)
+	# 떨림: 가끔 더 세게 오들오들
+	var burst := 0.35 + 0.65 * pow(maxf(0.0, sin(_t * 1.7 + _seed)), 6.0)
+	var sh := burst * smoothstep(0.25, 0.5, _freeze_t)
+	_left_arm.rotation = _arm_l + Vector3(0, 0, sin(_t * 61.0) * 0.025 * sh)
+	_right_arm.rotation = _arm_r + Vector3(0, 0, sin(_t * 57.0 + 1.0) * 0.025 * sh)
+	_leg_l = _leg_l.lerp(Vector3(0, 0, -0.05), 1.0 - exp(-20.0 * dt))
+	_leg_r = _leg_r.lerp(Vector3(0, 0, 0.05), 1.0 - exp(-20.0 * dt))
+	_left_leg.rotation = _leg_l
+	_right_leg.rotation = _leg_r
+	var tw := 1.0 - exp(-18.0 * dt)
+	_torso.rotation = _torso.rotation.lerp(Vector3(-0.06, 0, sin(_t * 49.0) * 0.012 * sh), tw)
+	_torso.position = _torso.position.lerp(Vector3(sin(_t * 43.0) * 0.006 * sh, 0, 0), tw)
+	if _hips:
+		_hips.position = _hips.position.lerp(HIPS_BASE, tw)
+		_hips.rotation = _hips.rotation.lerp(Vector3.ZERO, tw)
+	var r := _spring(_sq, _sqv, 0.0, 20.0, 0.22, dt)
+	_sq = clampf(r.x, -0.3, 0.3)
+	_sqv = r.y
+	r = _spring(_hp, _hpv, -0.12, 16.0, 0.25, dt)
+	_hp = r.x
+	_hpv = r.y
+	_head.rotation = Vector3(_hp, 0.0, sin(_t * 47.0) * 0.015 * sh)
+	_rig.scale = Vector3(1.0 + 0.5 * _sq, 1.0 - _sq, 1.0 + 0.5 * _sq)
+	_rig.position = _rig.position.lerp(Vector3.ZERO, tw)
+	_rig.rotation = _rig.rotation.lerp(Vector3.ZERO, tw)
+	_body_mi.scale = _body_base
+	_bk = 0.0
+	_bkv = 0.0
+	_ln = 0.0
+	_lnv = 0.0
+
+
+func _reset_head_look() -> void:
+	_look = 0.0
+	_look_target = 0.0
+
+
+## 걷기·달리기·살금살금·서 있기를 속도에 따라 자연스럽게 섞음
+func _locomotion(dt: float, speed: float) -> void:
+	# ---- 속도·자세 정도 (부드럽게)
+	var prev := _spd_s
+	_spd_s = lerpf(_spd_s, speed, 1.0 - exp(-12.0 * dt))
+	_accel_s = lerpf(_accel_s, (_spd_s - prev) / dt, 1.0 - exp(-10.0 * dt))
+	if speed > 0.5 and speed < 3.3:
+		_sneak_hold = minf(_sneak_hold + dt, 0.6)
+	elif speed >= 3.3:
+		_sneak_hold = 0.0
+	else:
+		_sneak_hold = maxf(0.0, _sneak_hold - dt * 0.5)
+	var crouch_t := 1.0 if (_crouch_forced or _sneak_hold > 0.2) else 0.0
+	_crouch_s = lerpf(_crouch_s, crouch_t, 1.0 - exp(-7.0 * dt))
+	_run_s = lerpf(_run_s, smoothstep(4.8, 7.2, speed), 1.0 - exp(-6.0 * dt))
+	_air = lerpf(_air, 1.0 if _air_on else 0.0, 1.0 - exp(-(14.0 if _air_on else 20.0) * dt))
+	_roll_k = lerpf(_roll_k, _roll_req, 1.0 - exp(-25.0 * dt))
+	_roll_req = 0.0
+	_land = maxf(0.0, _land - dt * 3.0)
+	var cr := _crouch_s
+	var run := _run_s
+	var move := smoothstep(0.15, 1.6, _spd_s)
+	var amount := clampf(_spd_s / 4.5, 0.0, 1.0)
+	# 제자리에서 몸을 돌리면 발을 콩콩 옮김
+	var shuffle := clampf((absf(_turn_s) - 1.2) * 0.2, 0.0, 0.45) * (1.0 - move)
+	var step_t := maxf(move * lerpf(0.55, 1.0, amount), shuffle) * (1.0 - _air)
+	_step_amt = lerpf(_step_amt, step_t, 1.0 - exp(-10.0 * dt))
+	var st := _step_amt
+	# ---- 걸음 위상
+	if st > 0.03:
+		_phase += dt * ((4.6 + 1.25 * _spd_s) * (1.0 - 0.3 * cr) + shuffle * 10.0)
+		if _phase > TAU * 64.0:
+			_phase -= TAU * 64.0
+	else:
+		_phase = lerpf(_phase, roundf(_phase / PI) * PI, 1.0 - exp(-8.0 * dt))
+	# 살금살금: 발을 내딛는 끝에서 잠깐 멈칫 (조심스러운 걸음)
+	var ph := _phase + 0.22 * cr * sin(2.0 * _phase)
+	var s := sin(ph)
+	var c := cos(ph)
+	# 발 디딤 순간 (다리가 가장 벌어질 때): 점토가 '말랑' 찌그러지고 머리가 끄덕
+	if signf(c) != signf(_c_prev) and st > 0.2:
+		_sqv += (0.75 + 1.0 * run) * st * (1.0 - 0.6 * cr)
+		_hpv += (1.0 + 1.6 * run) * st * (1.0 - 0.5 * cr)
+	_c_prev = c if absf(c) > 0.0001 else _c_prev
+
+	# ---- 다리
+	var leg_amp := lerpf(0.52, 0.8, run) * lerpf(1.0, 0.72, cr) * st
+	var swing := s * leg_amp
+	var splay := 0.02 + 0.15 * cr + 0.12 * _land
+	var ll := Vector3(swing, 0, -splay)
+	var rl := Vector3(-swing, 0, splay)
+	if _air > 0.01:
+		var flut := sin(_t * 9.0) * 0.12
+		ll = ll.lerp(Vector3(-0.4 + flut, 0, -0.12), _air)
+		rl = rl.lerp(Vector3(0.25 - flut, 0, 0.12), _air)
+	if _roll_k > 0.01:
+		ll = ll.lerp(Vector3(-1.3, 0, -0.1), _roll_k)
+		rl = rl.lerp(Vector3(-1.3, 0, 0.1), _roll_k)
+	_leg_l = _leg_l.lerp(ll, 1.0 - exp(-30.0 * dt))
+	_leg_r = _leg_r.lerp(rl, 1.0 - exp(-30.0 * dt))
+	_left_leg.rotation = _leg_l
+	_right_leg.rotation = _leg_r
+
+	# ---- 숨쉬기·대기 흔들림
+	var idle := 1.0 - move
+	var br := sin(_t * 2.1 + _seed)
+	_body_mi.scale = _body_base * Vector3(1.0 + 0.014 * br, 1.0 + 0.01 * br, 1.0 + 0.02 * br)
+
+	# ---- 팔 (다리보다 살짝 늦게 따라와서 휘청)
+	var sa := sin(ph - 0.35)
+	var arm_amp := lerpf(0.62, 1.2, run) * lerpf(1.0, 0.35, cr) * st
+	var fwd := -0.22 * run * st - 0.5 * cr
+	var out := 0.22 + 0.2 * run + 0.18 * cr - 0.03 * br * idle + 0.5 * _land
+	var al := Vector3(-sa * arm_amp + fwd, 0, -out)
+	var ar := Vector3(sa * arm_amp + fwd, 0, out)
+	if _air > 0.01:
+		var fl := sin(_t * 14.0) * 0.25
+		al = al.lerp(Vector3(-0.3, 0, -1.7 - fl), _air)
+		ar = ar.lerp(Vector3(-0.3, 0, 1.7 - fl), _air)
+	if _roll_k > 0.01:
+		al = al.lerp(Vector3(-1.5, 0, -0.35), _roll_k)
+		ar = ar.lerp(Vector3(-1.5, 0, 0.35), _roll_k)
+	var arm_rate := 1.0 - exp(-(16.0 if _thaw_t > 0.6 else 9.0) * dt)
+	_arm_l = _arm_l.lerp(al, arm_rate)
+	_arm_r = _arm_r.lerp(ar, arm_rate)
+	_left_arm.rotation = _arm_l
+	_right_arm.rotation = _arm_r
+
+	# ---- 몸통 숙임 (스프링: 멈출 때 앞으로 쏠렸다가 출렁 돌아옴)
+	var acc := _accel_s
+	var acc_lean := clampf(acc * 0.010, -0.0, 0.14) + clampf(-acc * 0.013, 0.0, 0.32)
+	var lean_t := 0.07 * move * amount + 0.2 * run + 0.24 * cr + acc_lean + _lean_extra - 0.08 * _air + 0.5 * _roll_k + 0.04 * _land
+	var r := _spring(_ln, _lnv, lean_t, 9.0, 0.32, dt)
+	_ln = r.x
+	_lnv = r.y
+	# 회전할 때 안쪽으로 기울기 (빠를수록 크게)
+	var bank_t := clampf(-_turn_s * _spd_s * 0.016, -0.26, 0.26)
+	r = _spring(_bk, _bkv, bank_t, 10.0, 0.45, dt)
+	_bk = r.x
+	_bkv = r.y
+	# 찌그러짐 스프링 (발 디딤·착지·얼음 풀림 충격을 받아 말랑하게 출렁)
+	r = _spring(_sq, _sqv, 0.04 * cr - 0.05 * _air, 22.0, 0.28, dt)
+	_sq = clampf(r.x, -0.3, 0.3)
+	_sqv = r.y
+
+	var bob := (0.5 + 0.5 * cos(2.0 * ph)) * lerpf(0.03, 0.075, run) * (1.0 - 0.6 * cr) * st
+	var sway := c * lerpf(0.045, 0.03, run) * st * (1.0 + cr)
+	var idle_sway := sin(_t * 0.8 + _seed) * 0.022 * idle
+	var tz := sway + idle_sway
+	var ty := -s * lerpf(0.11, 0.08, run) * st
+	# 땡 풀림: 부르르 털기
+	if _thaw_t < 0.6:
+		_thaw_t += dt
+		var e := 1.0 - _thaw_t / 0.6
+		tz += sin(_thaw_t * 46.0) * 0.16 * e * e
+		ty += sin(_thaw_t * 31.0) * 0.12 * e * e
+	_look_update(dt, move, cr)
+	ty += _look * 0.18
+	_torso.rotation = Vector3(_ln, ty, tz)
+	# 허리(높이 0.42)를 축으로 숙이도록 위치 보정
+	var waist := Vector3(0, 0.42, 0)
+	var drop := -0.11 * cr - 0.08 * _land + bob + 0.004 * br * idle
+	_torso.position = waist - _torso.basis * waist + Vector3(-sway * 0.25, drop, 0)
+	if _hips:
+		_hips.position = HIPS_BASE + Vector3(c * 0.014 * st - sway * 0.2, drop * 0.85, -0.03 * cr)
+		_hips.rotation = Vector3(0, s * 0.15 * st, -c * 0.05 * st)
+		_hips.scale = Vector3.ONE
+
+	# ---- 머리 (몸보다 늦게 따라오고 넘쳐서 출렁)
+	r = _spring(_hp, _hpv, -_ln * 0.45 + 0.08 * cr + 0.25 * _roll_k, 13.0, 0.3, dt)
+	_hp = r.x
+	_hpv = r.y
+	r = _spring(_hr, _hrv, -_bk * 0.6 - tz * 0.5 + sin(_t * 0.6 + _seed * 2.0) * 0.04 * idle, 11.0, 0.3, dt)
+	_hr = r.x
+	_hrv = r.y
+	_head.rotation = Vector3(_hp, _look * 0.82, _hr)
+
+	# ---- 뼈대 전체: 다리가 벌어진 만큼 내려와서 발이 바닥에 붙어 있음 + 찌그러짐 + 기울기
+	_rig.position = Vector3(0, -0.42 * (1.0 - cos(swing)), 0)
+	_rig.rotation = Vector3(0, 0, _bk)
+	_rig.scale = Vector3(1.0 + 0.5 * _sq, 1.0 - _sq, 1.0 + 0.5 * _sq)
+
+
+## 머리 두리번: 가만히 서 있으면 가끔 주위를 둘러봄, 걸을 땐 도는 쪽을 먼저 봄, 살금살금일 땐 좌우 살핌
+func _look_update(dt: float, move: float, cr: float) -> void:
+	_look_cd -= dt
+	if _look_cd <= 0.0:
+		_look_cd = randf_range(1.4, 4.0)
+		_look_target = 0.0 if randf() < 0.35 else randf_range(-0.75, 0.75)
+	var tgt := _look_target * (1.0 - move)
+	tgt += clampf(_turn_s * 0.12, -0.5, 0.5) * move
+	tgt += sin(_t * 0.9 + _seed) * 0.45 * cr * move
+	_look = lerpf(_look, tgt, 1.0 - exp(-6.0 * dt))
+
+
+# ================================================================ 다른 스크립트에서 부르는 동작 (선택)
+
+## 착지 충격: strength 0..1 (높이 떨어질수록 크게). 몸이 납작해졌다 출렁, 다리 벌리고 팔 벌림
+func land_impact(strength: float) -> void:
+	var k := clampf(strength, 0.0, 1.5)
+	_sqv += 5.5 * k
+	_hpv += 5.0 * k
+	_lnv += 0.8 * k
+	_land = maxf(_land, k)
+
+
+## 맞았을 때 움찔: dir = 때린 쪽에서 나에게 오는 방향 (월드 좌표). 그 방향으로 몸이 젖혀짐
+func hit_react(dir: Vector3, strength := 1.0) -> void:
+	if not is_inside_tree():
+		return
+	var l := global_basis.inverse() * dir
+	l.y = 0.0
+	if l.length_squared() > 0.0001:
+		l = l.normalized()
+	_lnv += l.z * 5.0 * strength
+	_bkv += -l.x * 5.0 * strength
+	_sqv += 2.5 * strength
+	_hpv += l.z * 9.0 * strength
+	_hrv += -l.x * 8.0 * strength
+
+
+## 웅크리기 강제 (true = 웅크림). 속도가 느리면 자동으로도 웅크림
+func set_crouch(on: bool) -> void:
+	_crouch_forced = on
+
+
+## 공중 자세 강제: 1 = 공중, 0 = 땅, -1 = 자동(기본, 떨어지는 속도로 판단)
+func set_airborne(state: int) -> void:
+	_air_forced = clampi(state, -1, 1)
+
+
+## 구르기 웅크림: 구르는 동안 매 프레임 t(0..1 진행도)로 부름. 안 부르면 저절로 풀림
+func roll_pose(t: float) -> void:
+	_roll_req = sin(clampf(t, 0.0, 1.0) * PI) * 0.6 + (0.4 if t < 1.0 else 0.0)
+
+
+## 몸을 앞(+)/뒤(-)로 더 숙이기 (예: 밀기, 버티기). 0 = 원래대로. 라디안
+func lean(amount: float) -> void:
+	_lean_extra = clampf(amount, -0.5, 0.6)
 
 
 const HIPS_BASE := Vector3(0, 0.47, -0.06)
