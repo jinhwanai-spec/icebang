@@ -58,7 +58,8 @@ func block(center: Vector3, size: Vector3, mat: Material, key: String, collide :
 	if size.x <= 0.01 or size.y <= 0.01 or size.z <= 0.01:
 		return
 	# 같은 이름이라도 재질이 다르면 따로 모음 (안 그러면 처음 재질로 다 그려짐)
-	lb._batch(key + "#%d" % mat.get_instance_id(), _cube, mat, Transform3D(basis * Basis.from_scale(size), center), col)
+	var bkey := key + "#%d" % mat.get_instance_id()
+	lb._batch(bkey, _cube, mat, Transform3D(basis * Basis.from_scale(size), center), col)
 	if collide:
 		var cs := CollisionShape3D.new()
 		var bs := BoxShape3D.new()
@@ -66,6 +67,9 @@ func block(center: Vector3, size: Vector3, mat: Material, key: String, collide :
 		cs.shape = bs
 		cs.transform = Transform3D(basis, center)
 		(roof_body if roof else body).add_child(cs)
+		# 창문 유리: 파쿠르로 깨고 넘을 수 있게 기록 (유리 가운데, 크기, 방향, 충돌, 그림 번호)
+		if key == "b_glass" or key == "b_lit":
+			lb.windows.append({"c": center, "size": size, "basis": basis, "cs": cs, "key": bkey, "idx": lb._batches[bkey][3].size() - 1})
 
 
 ## 가구를 놓을 때 비워 둘 문 앞 공간 (furnish_room 이 잠깐 정함). 크기 0 이면 검사 안 함
@@ -1465,16 +1469,23 @@ func _chair(p: Vector3, yaw: float, col: Color, knocked := false) -> void:
 
 ## 칠판 낙서
 func _chalk(p: Vector3, n: Vector3) -> void:
-	var lines := ["자 습", "오늘의 할 일: 살아남기", "뒤를 돌아보지 마", "3월 14일 (수)", "숙제: p.112", "여기 누가 있어", "떠 들 지 마"]
-	var l := Label3D.new()
-	l.text = lines[rng.randi() % lines.size()] + ("\n" + lines[rng.randi() % lines.size()] if rng.randf() < 0.4 else "")
-	l.font_size = 64
-	l.pixel_size = 0.004
-	l.modulate = Color(0.9, 0.92, 0.88, 0.85)
-	l.position = p
-	l.rotation.y = atan2(n.x, n.z)
-	l.visibility_range_end = 18.0
-	lb.region.add_child(l)
+	# 글자 대신 분필 낙서: 수식 줄 · 도형 · 화살표
+	var yaw := atan2(n.x, n.z)
+	var rt := Vector3(cos(yaw), 0, -sin(yaw))
+	var c := Color(0.88, 0.9, 0.86)
+	for row in rng.randi_range(2, 4):
+		var x0 := rng.randf_range(-1.3, -0.4)
+		var len := rng.randf_range(0.6, 1.8)
+		var q := p + n * 0.01 + Vector3.UP * (0.35 - row * 0.25) + rt * (x0 + len * 0.5)
+		part(q, Vector3(len, 0.025, 0.005) if absf(n.z) > 0.5 else Vector3(0.005, 0.025, len), c, "trim")
+	var sh := p + n * 0.01 + rt * rng.randf_range(0.6, 1.3) + Vector3.UP * rng.randf_range(-0.1, 0.25)
+	for k in 4:
+		var a := k * PI / 2.0
+		var o := (rt * cos(a) + Vector3.UP * sin(a)) * 0.22
+		var along: Vector3 = (rt * -sin(a) + Vector3.UP * cos(a)).abs()
+		var sz := along * 0.44 + Vector3(0.025, 0.025, 0.025) - along * 0.025
+		sz = Vector3(maxf(sz.x, 0.005) if absf(n.x) < 0.5 else 0.005, sz.y, maxf(sz.z, 0.005) if absf(n.z) < 0.5 else 0.005)
+		part(sh + o, sz, c, "trim")
 
 
 ## 벽시계

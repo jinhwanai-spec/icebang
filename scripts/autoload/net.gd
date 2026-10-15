@@ -18,6 +18,9 @@ var players := {}
 ## 지금 판 설정 (방장이 정해서 모두에게 보냄)
 var match_config := {}
 var my_name := "플레이어"
+## 게임 방식: "classic" = 지금 방식 (AI 술래) / "turncoat" = 술래 변신 (판 중간에 무작위 플레이어 한 명이 술래로 변함)
+var match_mode := "classic"
+const MODE_NAMES := {"classic": "기본 (AI 술래)", "turncoat": "술래 변신 (무작위 플레이어가 술래로)"}
 
 
 func _ready() -> void:
@@ -146,6 +149,36 @@ func register(player_name: String, cos := {}) -> void:
 		return
 	players[id] = {"name": player_name, "character": "", "ready": false, "in_game": false, "cos": cos}
 	sync_players.rpc(players)
+	sync_mode.rpc(match_mode)
+
+
+## 방장: 게임 방식 바꾸기 (모두에게 알림)
+func toggle_mode() -> void:
+	if not multiplayer.is_server():
+		return
+	sync_mode.rpc("turncoat" if match_mode == "classic" else "classic")
+
+
+@rpc("authority", "reliable", "call_local")
+func sync_mode(mode: String) -> void:
+	match_mode = mode if MODE_NAMES.has(mode) else "classic"
+	lobby_changed.emit()
+
+
+## 누군가 창문 유리를 깨고 넘음 → 모두의 화면에서 그 유리가 깨짐
+@rpc("any_peer", "reliable", "call_local")
+func window_broken(index: int) -> void:
+	var m := _main()
+	if m:
+		m.call("break_window", index)
+
+
+## 방장 → 모두: slot 자리의 플레이어가 술래로 변함
+@rpc("authority", "reliable", "call_local")
+func turn_seeker(slot: int) -> void:
+	var m := _main()
+	if m:
+		m.call("net_turn_seeker", slot)
 
 
 @rpc("authority", "reliable")
@@ -254,6 +287,7 @@ func start_match() -> void:
 		"map": SaveData.test_map if SaveData.test_map != "" else ["city", "forest", "school", "hospital"][randi() % 4],
 		"stage": SaveData.stage,
 		"slots": slots,
+		"mode": match_mode,
 	}
 	begin_match.rpc(cfg)
 

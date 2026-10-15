@@ -124,20 +124,57 @@ func _process(delta: float) -> void:
 
 # ---------------------------------------------------------------- 이모트
 
-## 이모트 목록: [아이디, 이름, 길이(초), 보는 방향("back"=엉덩이가 카메라 쪽, "front"=얼굴이 카메라 쪽)]
-## 숫자키 1~0 순서. 소리는 audio/emote_<아이디>.wav, 효과는 emote_fx.gd
+## 이모트 목록: [아이디, 이름, 길이(초), 보는 방향("back"=엉덩이가 카메라 쪽, "front"=얼굴이 카메라 쪽), 분류, 가격]
+## 분류: cute(귀여운) / crude(저질) / funny(웃긴). 가격 0 = 처음부터 가짐
+## 상점(치장 상점의 이모트 탭)에서 사고, 숫자키 1~0 칸에 장착 (SaveData.emote_slots)
+## 소리는 audio/emote_<아이디>.wav, 효과는 emote_fx.gd. 순서는 멀티 통신 번호라 뒤에만 추가할 것 (최대 62개)
 const EMOTES := [
-	["butt_dance", "엉덩이 춤", 3.0, "back"],
-	["fart", "방귀 뿡", 2.2, "back"],
-	["disco", "디스코 (노래)", 6.4, "front"],
-	["trot", "트로트 어깨춤 (노래)", 6.4, "front"],
-	["poop", "응가", 3.2, "front"],
-	["chicken", "닭 흉내", 3.4, "front"],
-	["dead", "죽은 척", 3.5, "front"],
-	["robot", "로봇 춤", 3.5, "front"],
-	["gaedari", "개다리 춤", 3.6, "front"],
-	["dizzy", "빙글빙글", 3.2, "front"],
+	["butt_dance", "엉덩이 춤", 3.0, "back", "crude", 0],
+	["fart", "방귀 뿡", 2.2, "back", "crude", 0],
+	["disco", "디스코 (노래)", 6.4, "front", "funny", 0],
+	["trot", "트로트 어깨춤 (노래)", 6.4, "front", "funny", 0],
+	["poop", "응가", 3.2, "front", "crude", 0],
+	["chicken", "닭 흉내", 3.4, "front", "funny", 0],
+	["dead", "죽은 척", 3.5, "front", "funny", 0],
+	["robot", "로봇 춤", 3.5, "front", "funny", 0],
+	["gaedari", "개다리 춤", 3.6, "front", "funny", 0],
+	["dizzy", "빙글빙글", 3.2, "front", "cute", 0],
+	# 귀여운
+	["heart_hands", "손하트", 3.0, "front", "cute", 300],
+	["wave_hi", "손 흔들기", 2.6, "front", "cute", 200],
+	["bunny_hop", "깡총깡총", 3.2, "front", "cute", 350],
+	["shy", "부끄부끄", 3.0, "front", "cute", 300],
+	["clap", "짝짝짝", 2.8, "front", "cute", 200],
+	["aegyo", "볼콕 애교", 3.0, "front", "cute", 400],
+	["twirl", "발레 빙그르", 3.4, "front", "cute", 450],
+	["kiss_blow", "손 키스", 2.6, "front", "cute", 350],
+	["cheer", "응원 폼폼", 3.4, "front", "cute", 500],
+	["sleepy_nap", "꾸벅꾸벅 졸기", 3.6, "front", "cute", 400],
+	# 저질
+	["nose_pick", "코딱지 파기", 3.4, "front", "crude", 300],
+	["butt_slap", "엉덩이 찰싹", 2.8, "back", "crude", 350],
+	["burp", "꺼억 트림", 2.4, "front", "crude", 250],
+	["armpit_fart", "겨드랑이 방귀", 3.0, "front", "crude", 350],
+	["butt_scoot", "엉덩이 썰매", 3.4, "back", "crude", 400],
+	["dog_pee", "강아지 쉬야", 3.2, "back", "crude", 450],
+	["tongue", "메롱", 2.6, "front", "crude", 200],
+	["sniff_pits", "겨드랑이 킁킁", 3.0, "front", "crude", 300],
+	["rocket_fart", "초강력 방귀", 3.2, "back", "crude", 600],
+	["butt_scratch", "엉덩이 긁기", 3.0, "back", "crude", 250],
+	# 웃긴
+	["floss", "플로스 춤", 4.0, "front", "funny", 500],
+	["worm", "웜 춤", 3.6, "back", "funny", 550],
+	["flex", "근육 자랑", 3.0, "front", "funny", 350],
+	["slip", "바나나 꽈당", 3.2, "front", "funny", 450],
+	["headbang", "헤드뱅잉", 3.6, "front", "funny", 400],
+	["moonwalk", "문워크", 3.6, "front", "funny", 600],
+	["sneeze", "에취 재채기", 2.6, "front", "funny", 250],
+	["facepalm", "어이없음", 2.8, "front", "funny", 250],
+	["tantrum", "떼쓰기", 3.6, "front", "funny", 400],
+	["air_guitar", "에어 기타", 4.0, "front", "funny", 550],
 ]
+const EMOTE_CATS := {"cute": "귀여운", "crude": "저질", "funny": "웃긴"}
+const EMOTE_DEFAULT_SLOTS := ["butt_dance", "fart", "disco", "trot", "poop", "chicken", "dead", "robot", "gaedari", "dizzy"]
 const EmoteFx := preload("res://scripts/emote_fx.gd")
 const IceFx := preload("res://scripts/ice_fx.gd")
 var _ice_mat: ShaderMaterial
@@ -215,6 +252,8 @@ func speed_multiplier() -> float:
 	var m := 1.0 + (boost_amount if boost_left > 0.0 else 0.0)
 	if item == "shoes":
 		m += GameConfig.num("mechanic", "shoes_speed", 0.1)
+	if fall_slow_left > 0.0:
+		m *= 1.0 - fall_slow_amount  # 창문 파쿠르로 뛰어내린 뒤 (진통제로도 못 없앰)
 	if painkiller_left > 0.0:
 		return m  # 진통제: 감속 무시
 	if slow_left > 0.0:
@@ -493,7 +532,52 @@ func show_emote(text: String) -> void:
 # ---------------------------------------------------------------- 매 프레임 공통 처리
 
 ## 자식 스크립트의 _physics_process 맨 처음에 불러 줍니다.
+## 창문 파쿠르 착지 감속: 남은 시간, 감속 비율 (2층 30% 4초, 3층 50% 6초)
+var fall_slow_left := 0.0
+var fall_slow_amount := 0.0
+
+
+## 높은 곳에서 떨어져 착지: 떨어진 높이로 층을 판단해서 잠깐 느려짐 (1층 높이는 없음)
+func land_from_height(drop: float) -> void:
+	var floor_h := 3.6
+	if drop < floor_h * 0.75:
+		return
+	var secs := 4.0
+	var amt := 0.3
+	if drop >= floor_h * 1.6:
+		secs = 6.0
+		amt = 0.5
+	if fall_slow_left <= 0.0 or amt >= fall_slow_amount:
+		fall_slow_amount = amt
+		fall_slow_left = maxf(fall_slow_left, secs)
+
+
+# ---------------------------------------------------------------- 멀티 '술래 변신' 모드
+
+## 이 생존자가 술래로 변했으면 그 술래 (변한 사람이 직접 술래를 움직임)
+var turned_seeker: Seeker = null
+
+
+func become_seeker(sk: Seeker) -> void:
+	if turned_seeker or sk == null:
+		return
+	turned_seeker = sk
+	if is_frozen:
+		is_frozen = false
+		ice_mesh.visible = false
+		frozen_changed.emit(false)
+	if in_locker and has_method("exit_locker"):
+		call("exit_locker")
+	stop_dance()
+	remove_from_group("survivor")
+	body.visible = false
+	add_collision_exception_with(sk)
+	sk.add_collision_exception_with(self)
+	sk.possess(self)
+
+
 func _common_physics(delta: float) -> void:
+	fall_slow_left = max(0.0, fall_slow_left - delta)
 	freeze_cooldown_left = max(0.0, freeze_cooldown_left - delta)
 	blend_time_left = max(0.0, blend_time_left - delta)
 	paint_time_left = max(0.0, paint_time_left - delta)
@@ -825,10 +909,10 @@ func net_flags() -> int:
 	if chained_by: f |= 8
 	if rooted_left > 0.0: f |= 16
 	if bleed_time_left > 0.0: f |= 32
-	if is_shadowed() or in_locker: f |= 64
+	if is_shadowed() or in_locker or turned_seeker: f |= 64
 	if dance_left > 0.0:
 		f |= 128
-		f |= (maxi(0, EMOTES.find(emote_info(emote_id))) + 1) << 8  # 어떤 이모트인지
+		f |= (maxi(0, EMOTES.find(emote_info(emote_id))) + 1) << 8  # 어떤 이모트인지 (6비트)
 	return f
 
 
@@ -864,7 +948,7 @@ func net_target(pos: Vector3, yaw: float, speed: float, flags: int, thaw: float)
 		bleed_time_left = 1.0 if flags & 32 != 0 else 0.0
 	body.visible = flags & 64 == 0
 	if flags & 128 != 0:
-		var idx := ((flags >> 8) & 15) - 1
+		var idx := ((flags >> 8) & 63) - 1
 		var id: String = EMOTES[idx][0] if idx >= 0 and idx < EMOTES.size() else "butt_dance"
 		if dance_left <= 0.0 or emote_id != id:
 			start_emote(id, 0.3)

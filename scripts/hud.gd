@@ -339,6 +339,8 @@ func _process(delta: float) -> void:
 		_status_label.text = p.nearby_prop.call("prompt", p)
 	elif p.nearby_web:
 		_status_label.text = "[E] 거미줄 걷어내기"
+	elif p.has_method("nearest_window") and p.can_interact() and p.is_on_floor() and _window_hint(p):
+		_status_label.text = "[E] 창문 넘기 (2층 이상에서 뛰어내리면 잠깐 느려져요)"
 	elif p.nearby_rat:
 		_status_label.text = p.nearby_rat.get_meta("prompt", "[E] 쥐 잡기 (잡으면 술래가 위치를 알게 돼요)")
 	elif p.is_repairing:
@@ -411,13 +413,43 @@ func _process(delta: float) -> void:
 	else:
 		noise_text = "준비됨"
 	var emote_text := "준비됨" if SaveData.has_ability("emote") else "잠김"
-	_shared_label.text = "공통 능력 (얼음 상태에서)\n[F] 소리 내기: %s\n[G] 이모티콘: %s\n이모트 (숫자키, 다시 누르면 멈춤)\n[1]엉덩이춤 [2]방귀 [3]디스코♪ [4]트로트♪ [5]응가\n[6]닭흉내 [7]죽은척 [8]로봇춤 [9]개다리춤 [0]빙글빙글" % [noise_text, emote_text]
+	_shared_label.text = "공통 능력 (얼음 상태에서)\n[F] 소리 내기: %s\n[G] 이모티콘: %s\n이모트 (숫자키, 다시 누르면 멈춤)\n%s" % [noise_text, emote_text, _emote_slots_text()]
+
+
+var _win_check_t := 0.0
+var _win_near := false
+
+## 창문 안내는 0.2초마다만 검사 (창문이 많아서)
+func _window_hint(p) -> bool:
+	var now := Time.get_ticks_msec() / 1000.0
+	if now - _win_check_t > 0.2:
+		_win_check_t = now
+		_win_near = p.nearest_window() >= 0
+	return _win_near
+
+
+var _emote_text_cache := ""
+var _emote_text_key := ""
+
+## 장착한 이모트 칸 안내 (5칸씩 두 줄)
+func _emote_slots_text() -> String:
+	var key := str(SaveData.emote_slots)
+	if key == _emote_text_key:
+		return _emote_text_cache
+	var parts := []
+	for k in 10:
+		var id: String = SaveData.emote_slots[k]
+		var e := SaveData.emote_row(id)
+		parts.append("[%d]%s" % [(k + 1) % 10, e[1] if not e.is_empty() else "-"])
+	_emote_text_key = key
+	_emote_text_cache = " ".join(parts.slice(0, 5)) + "\n" + " ".join(parts.slice(5, 10))
+	return _emote_text_cache
 
 
 ## 술래가 heartbeat_distance(6m) 안에 오면 두근두근. 가까울수록 빠르고 크게, 화면이 붉게 조여옴
 func _update_heartbeat(delta: float, p) -> void:
 	var near := INF
-	if not p.is_dead:
+	if not p.is_dead and p.turned_seeker == null:
 		for sk in main.seekers:
 			if sk.is_active() and not sk.is_disguised():  # 변신한 마녀는 심장이 안 뜀 (속이기)
 				near = minf(near, p.global_position.distance_to(sk.global_position))

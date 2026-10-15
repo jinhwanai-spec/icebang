@@ -139,12 +139,13 @@ func _process(delta: float) -> void:
 		return  # 판정·폭주·탈출은 방장 컴퓨터가 계산해서 알려 줌
 	if not raged and round_time >= GameConfig.num("seeker", "rage_time", 600.0):
 		_enrage_all("10분이 지났어요... 술래들이 폭주합니다!")
+	_update_turncoat(delta)
 	if escape_phase:
 		_update_escape(delta)
 		if _round_over:
 			return
-	# 판정: 맵 안에 남은 사람 기준 (탈출한 사람은 빠짐)
-	var inside := survivors.filter(func(s: Survivor) -> bool: return not s.is_dead and not s.escaped)
+	# 판정: 맵 안에 남은 사람 기준 (탈출한 사람·술래로 변한 사람은 빠짐)
+	var inside := survivors.filter(func(s: Survivor) -> bool: return not s.is_dead and not s.escaped and s.turned_seeker == null)
 	var escaped_n := survivors.filter(func(s: Survivor) -> bool: return s.escaped).size()
 	if escape_phase and escaped_n > 0 and inside.all(func(s: Survivor) -> bool: return s.is_frozen or s.chained_by != null):
 		_finish_escape()  # 움직일 수 있는 사람이 모두 나감 → 남은 얼음 동료는 탈락
@@ -855,6 +856,121 @@ func _net_spawn_characters() -> void:
 		sk.killed.connect(_on_seeker_killed)
 		seekers.append(sk)
 	seeker = seekers[0]
+	# 술래 변신 모드: 처음엔 술래가 없고, 방장이 무작위 시간에 무작위 플레이어를 술래로 바꿈
+	if str(Net.match_config.get("mode", "classic")) == "turncoat":
+		for sk in seekers:
+			sk.make_dormant()
+		if host:
+			_turn_left = 25.0 + _true_random(0, 45000) / 1000.0
+
+
+## 술래 변신까지 남은 시간 (방장만 셈. 0 이하 = 이미 변했거나 기본 모드)
+var _turn_left := 0.0
+
+
+## 규칙성 없는 진짜 무작위 정수 [lo, hi] (운영체제의 암호용 난수 사용: 자리 순서·시간과 무관)
+func _true_random(lo: int, hi: int) -> int:
+	var bytes := Crypto.new().generate_random_bytes(8)
+	var v := 0
+	for b in bytes:
+		v = ((v << 8) | b) & 0x3FFFFFFFFFFFFFFF
+	return lo + v % (hi - lo + 1)
+
+
+func _update_turncoat(delta: float) -> void:
+	if _turn_left <= 0.0:
+		return
+	_turn_left -= delta
+	if _turn_left > 0.0:
+		return
+	var slots: Array = Net.match_config["slots"]
+	var cands: Array = []
+	for i in survivors.size():
+		var s := survivors[i]
+		if int(slots[i]["peer"]) != 0 and not s.is_dead and not s.escaped:
+			cands.append(i)
+	if cands.is_empty():
+		return
+	# 후보 순서도 섞은 뒤 고름 (누가 먼저 들어왔는지·자리 번호와 관계없음)
+	for k in range(cands.size() - 1, 0, -1):
+		var j := _true_random(0, k)
+		var t: int = cands[k]
+		cands[k] = cands[j]
+		cands[j] = t
+	Net.turn_seeker.rpc(cands[_true_random(0, cands.size() - 1)])
+
+
+## (모든 컴퓨터) slot 자리 플레이어가 술래로 변함
+func net_turn_seeker(slot: int) -> void:
+	if slot < 0 or slot >= survivors.size() or seekers.is_empty():
+		return
+	var s := survivors[slot]
+	s.become_seeker(seekers[0])
+	if s == player:
+		hud.show_message("당신이 술래로 변했어요!  생존자에게 닿으면 잡아요  (Shift 달리기)", 5.0)
+	else:
+		hud.show_message("누군가 술래로 변했어요...!  도망쳐요!", 4.0)
+
+
+# ---------------------------------------------------------------- 창문 파쿠르
+
+const SFX_GLASS := preload("res://audio/glass_break.wav")
+
+func level_windows() -> Array:
+	return _builder.windows if _builder else []
+
+
+## 창문 유리를 깸 (충돌 없애고, 그림 숨기고, 파편·소리). 멀티에서는 Net.window_broken 으로 모두에게
+func break_window(index: int) -> void:
+	var ws := level_windows()
+	if index < 0 or index >= ws.size():
+		return
+	var w: Dictionary = ws[index]
+	if w.get("broken", false):
+		return
+	w["broken"] = true
+	(w["cs"] as CollisionShape3D).set_deferred("disabled", true)
+	var c: Vector3 = w["c"]
+	if w.has("mmi") and is_instance_valid(w["mmi"]):
+		var mm := (w["mmi"] as MultiMeshInstance3D).multimesh
+		mm.set_instance_transform(int(w["idx"]), Transform3D(Basis.from_scale(Vector3.ONE * 0.0001), c))
+	var pt := CPUParticles3D.new()
+	pt.one_shot = true
+	pt.emitting = true
+	pt.amount = 40
+	pt.lifetime = 1.2
+	pt.explosiveness = 0.95
+	pt.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
+	var sz: Vector3 = w["size"]
+	pt.emission_box_extents = Vector3(sz.x * 0.45, sz.y * 0.45, 0.02)
+	pt.direction = Vector3(0, 0, 1)
+	pt.spread = 70.0
+	pt.initial_velocity_min = 1.0
+	pt.initial_velocity_max = 3.5
+	pt.gravity = Vector3(0, -12, 0)
+	pt.angle_max = 180.0
+	pt.scale_amount_min = 0.4
+	pt.scale_amount_max = 1.0
+	var bm := BoxMesh.new()
+	bm.size = Vector3(0.09, 0.06, 0.005)
+	var gm := StandardMaterial3D.new()
+	gm.albedo_color = Color(0.7, 0.85, 0.95, 0.7)
+	gm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	gm.metallic = 0.6
+	gm.roughness = 0.1
+	bm.material = gm
+	pt.mesh = bm
+	add_child(pt)
+	pt.global_transform = Transform3D(w["basis"], c)
+	get_tree().create_timer(2.0).timeout.connect(pt.queue_free)
+	var au := AudioStreamPlayer3D.new()
+	au.stream = SFX_GLASS
+	au.max_distance = 30.0
+	au.unit_size = 5.0
+	add_child(au)
+	au.global_position = c
+	au.play()
+	au.finished.connect(au.queue_free)
 
 
 ## 화면 알림: 방장이면 모두에게도 보냄
@@ -997,5 +1113,10 @@ func net_peer_left(peer: int, who: String, to_lobby := false) -> void:
 		if s.net_owner == peer:
 			s.net_owner = 0
 			s.net_puppet = false
+			if s.turned_seeker:  # 술래로 변한 사람이 나감 → 술래는 AI가 이어서 함
+				s.turned_seeker.possessed_by = null
+				s.turned_seeker._enter_patrol()
+				s.set_physics_process(false)
+				s.visible = false
 	if not _ended:
 		say("%s 님이 %s. 봇이 대신해요" % [who, "로비로 갔어요" if to_lobby else "나갔어요"], 3.0)

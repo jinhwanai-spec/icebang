@@ -51,6 +51,7 @@ var _mp_chars: GridContainer
 var _mp_start: Button
 var _mp_wait: Label
 var _mp_ready: Button
+var _mp_mode: Button
 
 
 func _ready() -> void:
@@ -444,6 +445,10 @@ func _build_multi_page() -> Control:
 	var back := _button("방 나가기", _leave_multi)
 	back.custom_minimum_size.x = 180
 	row.add_child(back)
+	_mp_mode = _button("", func() -> void: Net.toggle_mode())
+	_mp_mode.custom_minimum_size.x = 330
+	_mp_mode.tooltip_text = "술래 변신: AI 술래 없이 시작하고, 판 중간에 무작위 플레이어 한 명이 갑자기 술래로 변해요"
+	row.add_child(_mp_mode)
 	_mp_start = _button("게임 시작", func() -> void: Net.start_match(), true)
 	_mp_start.custom_minimum_size.x = 280
 	row.add_child(_mp_start)
@@ -473,6 +478,9 @@ func _refresh_multi() -> void:
 	_mp_connect.visible = not Net.active
 	_mp_lobby.visible = in_lobby
 	_mp_start.visible = Net.is_host()
+	_mp_mode.visible = in_lobby
+	_mp_mode.disabled = not Net.is_host()
+	_mp_mode.text = "방식: %s" % Net.MODE_NAMES.get(Net.match_mode, "")
 	_mp_start.disabled = not (Net.all_picked() and Net.all_ready())
 	if not Net.all_picked():
 		_mp_start.text = "모두 캐릭터를 골라야 해요"
@@ -625,6 +633,14 @@ var _w_view: SubViewport
 var _w_body: ClayBody
 var _w_pivot: Node3D
 var _w_drag := false
+# 이모트 탭
+var _w_ebox: VBoxContainer
+var _w_ecats: HBoxContainer
+var _w_eslots: GridContainer
+var _w_ecat := ""           # "" = 전체
+var _w_eslot := 0           # 장착할 칸 (0~9 = 숫자키 1~0)
+var _w_epick := ""          # 미리 보는 이모트
+var _w_etime := 0.0
 
 
 func _build_wardrobe_page() -> Control:
@@ -632,7 +648,7 @@ func _build_wardrobe_page() -> Control:
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override("separation", 14)
 	_center(page).add_child(col)
-	col.add_child(_header("치장 상점", "코인으로 눈·머리·옷·장신구를 사서 꾸며요 · 모든 캐릭터에 똑같이 적용돼요"))
+	col.add_child(_header("치장 상점", "코인으로 눈·머리·옷·장신구·이모트를 사요 · 이모트는 숫자키 1~0 칸에 장착"))
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 18)
 	col.add_child(row)
@@ -722,6 +738,18 @@ func _build_wardrobe_page() -> Control:
 	top.add_child(_w_tabs)
 	_w_coins = _label("", 18, Color("ffd36b"))
 	top.add_child(_w_coins)
+	# 이모트 탭에서만 보이는 줄: 분류 버튼 + 숫자키 칸 10개
+	_w_ebox = VBoxContainer.new()
+	_w_ebox.add_theme_constant_override("separation", 8)
+	right.add_child(_w_ebox)
+	_w_ecats = HBoxContainer.new()
+	_w_ecats.add_theme_constant_override("separation", 8)
+	_w_ebox.add_child(_w_ecats)
+	_w_eslots = GridContainer.new()
+	_w_eslots.columns = 5
+	_w_eslots.add_theme_constant_override("h_separation", 6)
+	_w_eslots.add_theme_constant_override("v_separation", 6)
+	_w_ebox.add_child(_w_eslots)
 	var scroll := ScrollContainer.new()
 	scroll.custom_minimum_size = Vector2(700, 480)
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
@@ -746,7 +774,18 @@ func _build_wardrobe_page() -> Control:
 
 func _process(delta: float) -> void:
 	if _w_body and is_instance_valid(_w_body) and _pages.has("wardrobe") and (_pages["wardrobe"] as Control).visible:
-		if not _w_drag:
+		if _w_slot == "emote" and _w_epick != "":
+			# 이모트 미리보기: 얼굴(또는 엉덩이)이 카메라 쪽, 끝나면 반복
+			var e := SaveData.emote_row(_w_epick)
+			if not _w_drag:
+				_w_pivot.rotation.y = lerp_angle(_w_pivot.rotation.y, PI if (not e.is_empty() and e[3] == "back") else 0.0, delta * 4.0)
+			_w_etime += delta
+			if not e.is_empty() and _w_etime > float(e[2]) + 0.6:
+				_w_etime = 0.0
+				_w_body.emote = ""
+				_w_body.animate(delta, 0.0, false)
+				_w_body.emote = _w_epick
+		elif not _w_drag:
 			_w_pivot.rotate_y(delta * 0.35)
 		_w_body.animate(delta, 0.0, false)
 
@@ -769,11 +808,26 @@ func _refresh_wardrobe() -> void:
 				owned += 1
 		var b := _button("%s  %d/%d" % [Cosmetics.SLOT_NAMES[slot], owned, all.size()], func() -> void:
 			_w_slot = slot
+			_w_epick = ""
 			_refresh_wardrobe(), on)
-		b.custom_minimum_size = Vector2(130, 42)
+		b.custom_minimum_size = Vector2(118, 42)
 		_w_tabs.add_child(b)
+	var eown := 0
+	for e in Survivor.EMOTES:
+		if SaveData.owns_emote(e[0]):
+			eown += 1
+	var eb := _button("이모트  %d/%d" % [eown, Survivor.EMOTES.size()], func() -> void:
+		_w_slot = "emote"
+		_w_pick = ""
+		_refresh_wardrobe(), _w_slot == "emote")
+	eb.custom_minimum_size = Vector2(118, 42)
+	_w_tabs.add_child(eb)
 	for c in _w_grid.get_children():
 		c.queue_free()
+	_w_ebox.visible = _w_slot == "emote"
+	if _w_slot == "emote":
+		_refresh_emote_tab()
+		return
 	for it in Cosmetics.items_in(_w_slot):
 		var id: String = it[0]
 		var own := SaveData.owns_cos(id)
@@ -801,6 +855,92 @@ func _refresh_wardrobe() -> void:
 	_w_rebuild()
 
 
+## 이모트 탭: 분류 버튼, 숫자키 칸 10개, 이모트 목록
+func _refresh_emote_tab() -> void:
+	for c in _w_ecats.get_children():
+		c.queue_free()
+	for cat in ["", "cute", "crude", "funny"]:
+		var name: String = "전체" if cat == "" else Survivor.EMOTE_CATS[cat]
+		var cb := _button(name, func() -> void:
+			_w_ecat = cat
+			_refresh_wardrobe(), _w_ecat == cat)
+		cb.custom_minimum_size = Vector2(90, 34)
+		_w_ecats.add_child(cb)
+	var hint := _label("  칸을 고르고 → 이모트를 눌러 장착", 13, C_DIM)
+	_w_ecats.add_child(hint)
+	for c in _w_eslots.get_children():
+		c.queue_free()
+	for k in 10:
+		var e := SaveData.emote_row(SaveData.emote_slots[k])
+		var sb := Button.new()
+		sb.custom_minimum_size = Vector2(134, 40)
+		sb.text = "[%d] %s" % [(k + 1) % 10, e[1] if not e.is_empty() else "비어 있음"]
+		sb.add_theme_font_size_override("font_size", 13)
+		sb.clip_text = true
+		var sel := k == _w_eslot
+		sb.add_theme_stylebox_override("normal", _box(C_PANEL_HI if sel else C_PANEL, C_ICE if sel else C_LINE, 2 if sel else 1, 8, 6))
+		sb.add_theme_stylebox_override("hover", _box(C_PANEL_HI, C_DIM, 1, 8, 6))
+		sb.add_theme_stylebox_override("pressed", _box(C_PANEL_HI, C_ICE, 2, 8, 6))
+		sb.pressed.connect(func() -> void:
+			_w_eslot = k
+			if not e.is_empty():
+				_w_preview_emote(e[0])
+			_refresh_wardrobe())
+		_w_eslots.add_child(sb)
+	var cat_cols := {"cute": Color("ff9ec4"), "crude": Color("b8d46a"), "funny": Color("ffd36b")}
+	for e in Survivor.EMOTES:
+		if _w_ecat != "" and e[4] != _w_ecat:
+			continue
+		var id: String = e[0]
+		var own := SaveData.owns_emote(id)
+		var slot := SaveData.emote_slots.find(id)
+		var b := Button.new()
+		b.custom_minimum_size = Vector2(166, 74)
+		b.text = "%s\n%s · %s" % [e[1], Survivor.EMOTE_CATS[e[4]], ("[%d]번 칸" % ((slot + 1) % 10)) if slot >= 0 else ("보유" if own else "● %d" % e[5])]
+		b.add_theme_font_size_override("font_size", 14)
+		b.icon = _dot_texture(cat_cols[e[4]])
+		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		var picked := id == _w_epick
+		var border: Color = C_ICE if picked else (Color("ffd36b") if slot >= 0 else C_LINE)
+		b.add_theme_stylebox_override("normal", _box(C_PANEL_HI if picked else C_PANEL, border, 2 if (picked or slot >= 0) else 1, 10, 10))
+		b.add_theme_stylebox_override("hover", _box(C_PANEL_HI, C_DIM, 1, 10, 10))
+		b.add_theme_stylebox_override("pressed", _box(C_PANEL_HI, C_ICE, 2, 10, 10))
+		if not own:
+			b.add_theme_color_override("font_color", C_DIM)
+		b.pressed.connect(func() -> void:
+			_w_preview_emote(id)
+			_refresh_wardrobe())
+		_w_grid.add_child(b)
+	# 왼쪽 정보·버튼
+	if _w_epick == "":
+		_w_info.text = "이모트를 누르면 미리 볼 수 있어요"
+		_w_action.text = "이모트를 골라 주세요"
+		_w_action.disabled = true
+	else:
+		var pe := SaveData.emote_row(_w_epick)
+		_w_info.text = "이모트 · %s (%s)" % [pe[1], Survivor.EMOTE_CATS[pe[4]]]
+		if SaveData.owns_emote(_w_epick):
+			var in_slot: bool = SaveData.emote_slots[_w_eslot] == _w_epick
+			_w_action.text = "[%d]번 칸에 장착됨" % ((_w_eslot + 1) % 10) if in_slot else "[%d]번 칸에 장착하기" % ((_w_eslot + 1) % 10)
+			_w_action.disabled = in_slot
+		else:
+			_w_action.text = "구매하고 [%d]번 칸에 장착  ● %d" % [(_w_eslot + 1) % 10, pe[5]]
+			_w_action.disabled = SaveData.coins < int(pe[5])
+			if _w_action.disabled:
+				_w_info.text += "   (코인이 부족해요)"
+	if _w_body == null or not is_instance_valid(_w_body):
+		_w_rebuild()
+
+
+func _w_preview_emote(id: String) -> void:
+	_w_epick = id
+	_w_etime = 0.0
+	if _w_body and is_instance_valid(_w_body):
+		_w_body.emote = ""
+		_w_body.animate(0.016, 0.0, false)
+		_w_body.emote = id
+
+
 func _w_update_action() -> void:
 	if _w_pick == "":
 		_w_info.text = "아이템을 누르면 미리 입어 볼 수 있어요"
@@ -821,6 +961,11 @@ func _w_update_action() -> void:
 
 
 func _on_wardrobe_action() -> void:
+	if _w_slot == "emote":
+		if _w_epick != "" and (SaveData.owns_emote(_w_epick) or SaveData.buy_emote(_w_epick)):
+			SaveData.equip_emote(_w_eslot, _w_epick)
+		_refresh_wardrobe()
+		return
 	if _w_pick == "":
 		for slot in _w_try:
 			if SaveData.owns_cos(_w_try[slot]):
@@ -839,6 +984,9 @@ func _w_rebuild() -> void:
 	_w_pivot.add_child(_w_body)
 	var cid: String = CharacterDB.ORDER[maxi(0, _w_char.selected)]
 	_w_body.build(cid, _w_try)
+	if _w_slot == "emote" and _w_epick != "":
+		_w_body.emote = _w_epick
+		_w_etime = 0.0
 
 
 func _on_buy(id: String) -> void:

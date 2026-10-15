@@ -241,8 +241,13 @@ func _on_knockback_landed() -> void:
 # ---------------------------------------------------------------- 매 프레임
 
 func _physics_process(delta: float) -> void:
+	if dormant:
+		return
 	if net_puppet:
 		_net_puppet_update(delta)
+		return
+	if possessed_by:
+		_possessed_update(delta)
 		return
 	_stun_left = max(0.0, _stun_left - delta)
 	_reveal_left = max(0.0, _reveal_left - delta)
@@ -647,6 +652,11 @@ func net_target(pos: Vector3, rot: float, vel: Vector3, st: int, vis: bool, rage
 
 
 func _net_puppet_update(delta: float) -> void:
+	if possessed_by and is_instance_valid(possessed_by) and not possessed_by.net_puppet and state != State.KNOCKBACK:
+		# 내가 변신한 술래: 내 캐릭터 위치를 바로 따라감 (방장 응답을 기다리면 화면이 늦음)
+		_follow_possessor(delta)
+		_footsteps(delta)
+		return
 	if not _net_has:
 		return
 	var smp := _smooth.sample()
@@ -657,6 +667,113 @@ func _net_puppet_update(delta: float) -> void:
 	velocity = _net_vel
 	_footsteps(delta)
 	_update_label()
+
+
+# ---------------------------------------------------------------- 멀티 '술래 변신' 모드
+
+## 아직 아무도 변하지 않음: 숨어 있고 아무것도 안 함
+var dormant := false
+## 술래로 변한 생존자 (그 사람이 직접 조종)
+var possessed_by: Survivor = null
+var _poss_last := Vector3.ZERO
+
+
+func make_dormant() -> void:
+	dormant = true
+	visible = false
+	collision.set_deferred("disabled", true)
+	global_position = Vector3(0, -60, 0)
+
+
+func possess(s: Survivor) -> void:
+	possessed_by = s
+	dormant = false
+	visible = true
+	body.visible = true
+	collision.set_deferred("disabled", false)
+	chase_target = null
+	state = State.CHASE  # 생존자들 화면의 긴장 연출용 (실제로는 사람이 조종)
+	global_position = s.global_position
+	_poss_last = s.global_position
+	_turn_burst(s.global_position)
+
+
+## 변신하는 순간: 검붉은 연기가 확 퍼짐 (보기만 하는 효과)
+func _turn_burst(at: Vector3) -> void:
+	var pt := CPUParticles3D.new()
+	pt.one_shot = true
+	pt.emitting = true
+	pt.amount = 60
+	pt.lifetime = 1.4
+	pt.explosiveness = 0.9
+	pt.direction = Vector3.UP
+	pt.spread = 180.0
+	pt.initial_velocity_min = 1.5
+	pt.initial_velocity_max = 4.0
+	pt.gravity = Vector3(0, 0.6, 0)
+	pt.scale_amount_min = 0.3
+	pt.scale_amount_max = 0.8
+	var sm := SphereMesh.new()
+	sm.radius = 0.25
+	sm.height = 0.5
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color(0.12, 0.02, 0.03, 0.8)
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.emission_enabled = true
+	mat.emission = Color(0.5, 0.02, 0.02)
+	sm.material = mat
+	pt.mesh = sm
+	get_tree().current_scene.add_child(pt)
+	pt.global_position = at + Vector3.UP
+	get_tree().create_timer(2.0).timeout.connect(pt.queue_free)
+
+
+func _follow_possessor(_delta: float) -> void:
+	var p := possessed_by.global_position
+	var mv := p - _poss_last
+	mv.y = 0.0
+	velocity = mv / maxf(get_physics_process_delta_time(), 0.001)
+	if mv.length() > 0.004:
+		rotation.y = lerp_angle(rotation.y, atan2(-mv.x, -mv.z), 0.35)
+	global_position = p
+	_poss_last = p
+
+
+## 사람이 조종하는 술래 (방장 컴퓨터): 위치는 변한 사람을 따라가고, 닿으면 잡는 건 원래처럼
+func _possessed_update(delta: float) -> void:
+	if not is_instance_valid(possessed_by):
+		possessed_by = null
+		return
+	_stun_left = max(0.0, _stun_left - delta)
+	_reveal_left = max(0.0, _reveal_left - delta)
+	_lock_left = max(0.0, _lock_left - delta)
+	_slow_left = max(0.0, _slow_left - delta)
+	reveal_label.visible = _reveal_left > 0.0
+	if state == State.KNOCKBACK:
+		_update_label()
+		return
+	if state != State.DISABLED:
+		state = State.CHASE
+	_follow_possessor(delta)
+	if state != State.DISABLED and _stun_left <= 0.0 and _float_left <= 0.0:
+		_update_attack(delta)
+		_catch_nearby_survivors()
+	_float_left = max(0.0, _float_left - delta)
+	_footsteps(delta)
+	_update_label()
+
+
+## 변신한 사람이 지금 못 움직이는 상태 (기절·날아가는 중·무중력·봉인)
+func possessed_frozen() -> bool:
+	return state == State.DISABLED or state == State.KNOCKBACK or _stun_left > 0.0 or _float_left > 0.0
+
+
+## 변신한 사람의 이동 속도 배율 (술래 종류 속도·결계·무중력 구슬 감속)
+func possessed_speed_mult() -> float:
+	var m := _speed_mult * _zone_slow_multiplier()
+	if _slow_left > 0.0:
+		m *= 1.0 - _slow_factor
+	return m
 
 
 ## 잡는 거리 (처형인은 도끼라서 더 김)

@@ -59,14 +59,6 @@ func _school_fence() -> void:
 	_mark_indestructible(_box(Vector3(0, h / 2, half + 4.0), Vector3(8, h, 0.6), brick))  # 정문 바깥 (나갈 수 없음)
 	# 녹슨 철문 반쯤 열림
 	_box(Vector3(-1.5, 1.1, half + 0.2), Vector3(3.0, 2.2, 0.08), _mat["metal"], true, 0.6)
-	var sign := Label3D.new()
-	sign.text = "새 빛 초 등 학 교"
-	sign.font_size = 64
-	sign.pixel_size = 0.01
-	sign.modulate = Color(0.75, 0.72, 0.62)
-	sign.position = Vector3(-3.3, 2.4, half - 0.5)
-	sign.rotation.y = PI
-	region.add_child(sign)
 	# 담장 따라 나무와 풀숲 (숨을 곳)
 	for i in 34:
 		var t := rng.randf_range(-half + 4, half - 4)
@@ -263,7 +255,6 @@ func _main_building() -> void:
 				kit.ceiling_light(Vector3(lx, y + FH - 0.25, rr.get_center().y), Color(0.85, 0.95, 1.0), 0.75, 0.3)
 			var dn := Vector3(0, 0, 1) if rr.get_center().y < corr_z else Vector3(0, 0, -1)
 			var da: Vector3 = rm["door_at"]
-			kit.room_sign(Vector3(da.x + 1.25, y + 2.6, da.z), rm["name"], dn)
 		# 복도 끝 칸과 계단실 사이 벽 (복도 쪽은 열림)
 		for xw in [core.position.x, core.end.x]:
 			for side in [-1.0, 1.0]:
@@ -276,7 +267,7 @@ func _main_building() -> void:
 			_entrance_hall(Rect2(core.position.x + 33.5, corr_z + corr_w * 0.5, 7.5, inner.end.y - corr_z - corr_w * 0.5), fy)
 		for sx in [-1.0, 1.0]:
 			var wx: float = core.position.x - 0.1 if sx < 0 else core.end.x + 0.1
-			_floor_sign(Vector3(wx, y + 2.5, corr_z - corr_w * 0.5 - 2.2), Vector3(sx, 0, 0), "%d층" % (k + 1))
+			_floor_sign(Vector3(wx, y + 2.5, corr_z - corr_w * 0.5 - 2.2), Vector3(sx, 0, 0), "%dF" % (k + 1))
 		# 끝 칸(계단실)에 사물함 하나씩 + 청소도구
 		props.append(["locker", Vector3(inner.end.x - 0.5, y, corr_z + corr_w * 0.5 + 2.2), -PI / 2.0])
 		props.append(["locker", Vector3(inner.position.x + 0.5, y, corr_z + corr_w * 0.5 + 2.2), PI / 2.0])
@@ -288,14 +279,12 @@ func _main_building() -> void:
 	# 옥상: 난간·물탱크·실외기 + 학교 이름 글자 (정면 2층 위)
 	_rooftop(r, y0 + FH * 2 + 0.2)
 	_rooftop(r.grow(-6.0), y0 + FH * 2 + 0.2)
-	var nm := Label3D.new()
-	nm.text = "새 빛 초 등 학 교"
-	nm.font_size = 128
-	nm.pixel_size = 0.012
-	nm.modulate = Color(0.85, 0.82, 0.7)
-	nm.outline_size = 0
-	nm.position = Vector3(-14, y0 + FH * 2 - 0.55, r.end.y + 0.16)
-	region.add_child(nm)
+	# 정면 큰 시계 (학교 이름 대신)
+	var ck := Vector3(-14, y0 + FH * 2 - 0.55, r.end.y + 0.12)
+	kit.part(ck, Vector3(1.5, 1.5, 0.08), Color(0.85, 0.82, 0.7), "trim")
+	kit.part(ck + Vector3(0, 0, 0.05), Vector3(1.25, 1.25, 0.02), Color(0.92, 0.9, 0.84), "lit")
+	kit.part(ck + Vector3(0, 0.22, 0.07), Vector3(0.06, 0.45, 0.02), Color(0.08, 0.08, 0.08))
+	kit.part(ck + Vector3(0.15, -0.1, 0.07), Vector3(0.05, 0.35, 0.02), Color(0.08, 0.08, 0.08), "trim", false, 1.0)
 
 
 ## 중앙 현관: 양옆 신발장, 거울, 교훈 액자, 우산꽂이, 발판
@@ -314,14 +303,10 @@ func _entrance_hall(r: Rect2, y: float) -> void:
 					kit.part(Vector3(x - s * 0.15, y + 0.12 + row * 0.33, z + rng.randf_range(-0.5, 0.5)), Vector3(0.25, 0.09, 0.1), [Color(0.9, 0.9, 0.9), Color(0.2, 0.2, 0.25), Color(0.8, 0.2, 0.2)][rng.randi() % 3], "trim")
 	# 거울 + 교훈 액자 (복도 쪽 벽 위)
 	kit.part(Vector3(r.get_center().x, y + 2.9, r.position.y + 0.1), Vector3(3.0, 0.9, 0.05), Color(0.45, 0.33, 0.22), "trim")
-	var motto := Label3D.new()
-	motto.text = "바르게  슬기롭게  튼튼하게"
-	motto.font_size = 64
-	motto.pixel_size = 0.005
-	motto.modulate = Color(0.95, 0.9, 0.75)
-	motto.position = Vector3(r.get_center().x, y + 2.9, r.position.y + 0.14)
-	motto.visibility_range_end = 22.0
-	region.add_child(motto)
+	# 액자 속 그림 (하늘·언덕·해)
+	kit.part(Vector3(r.get_center().x, y + 2.95, r.position.y + 0.13), Vector3(2.7, 0.4, 0.01), Color(0.55, 0.7, 0.8))
+	kit.part(Vector3(r.get_center().x, y + 2.65, r.position.y + 0.13), Vector3(2.7, 0.3, 0.01), Color(0.4, 0.55, 0.3))
+	kit.part(Vector3(r.get_center().x + 0.8, y + 3.0, r.position.y + 0.14), Vector3(0.25, 0.25, 0.01), Color(0.95, 0.8, 0.3))
 	kit.part(Vector3(r.get_center().x, y + 1.5, r.end.y - 0.4), Vector3(0.9, 0.04, 0.6), Color(0.25, 0.2, 0.15), "trim")
 	kit.part(Vector3(r.end.x - 0.6, y + 0.35, r.end.y - 0.8), Vector3(0.35, 0.7, 0.35), Color(0.3, 0.3, 0.32), "metal", true)
 	kit.part(Vector3(r.get_center().x, y + 0.01, r.end.y - 1.2), Vector3(2.4, 0.02, 1.2), Color(0.15, 0.25, 0.18), "trim")
@@ -343,15 +328,12 @@ func _school_finish() -> void:
 func _exit_sign(p: Vector3, facing: Vector3) -> void:
 	var yaw := atan2(facing.x, facing.z)
 	kit.part(p, Vector3(0.6, 0.22, 0.06), Color(0.1, 0.9, 0.35), "lit", false, yaw)
-	var l := Label3D.new()
-	l.text = "비상구"
-	l.font_size = 32
-	l.pixel_size = 0.005
-	l.modulate = Color(0.95, 1.0, 0.95)
-	l.position = p + facing * 0.04
-	l.rotation.y = yaw
-	l.visibility_range_end = 20.0
-	region.add_child(l)
+	# 글자 대신 달리는 사람 + 문 그림
+	var rt := Vector3(cos(yaw), 0, -sin(yaw))
+	kit.part(p + facing * 0.04 + rt * 0.17, Vector3(0.12, 0.17, 0.01), Color(0.95, 1.0, 0.95), "lit", false, yaw)
+	kit.part(p + facing * 0.04 - rt * 0.05 + Vector3.UP * 0.05, Vector3(0.04, 0.04, 0.01), Color(0.95, 1.0, 0.95), "lit", false, yaw)
+	kit.part(p + facing * 0.04 - rt * 0.06 - Vector3.UP * 0.02, Vector3(0.04, 0.09, 0.01), Color(0.95, 1.0, 0.95), "lit", false, yaw + 0.4)
+	kit.part(p + facing * 0.04 - rt * 0.16, Vector3(0.1, 0.02, 0.01), Color(0.95, 1.0, 0.95), "lit", false, yaw)
 
 
 ## 복도 꾸미기: 신발장·사물함 줄, 게시판, 소화전, 손 씻는 곳, 쓰레기통, 얼룩
@@ -399,21 +381,15 @@ func _corridor_dressing(core: Rect2, inner: Rect2, corr_z: float, corr_w: float,
 			i2 += 1
 		x += 6.0
 	# 표어·포스터 (복도 북쪽 벽 높은 곳)
-	var slogans := ["복도에서 뛰지 맙시다", "바른 말 고운 말", "꿈을 키우는 새빛 어린이", "조용히 걸어요", "손을 깨끗이 씻어요", "학교 폭력 NO!"]
 	for i in 5:
 		var px := core.position.x + 6.0 + i * (core.size.x - 12.0) / 4.0
 		var zn := corr_z - corr_w * 0.5 + 0.03
 		var col: Color = [Color(0.85, 0.75, 0.3), Color(0.4, 0.65, 0.85), Color(0.85, 0.45, 0.4), Color(0.55, 0.75, 0.45)][i % 4]
 		kit.part(Vector3(px, y + 2.75, zn + 0.01), Vector3(2.2, 0.45, 0.02), col)
-		var sl := Label3D.new()
-		sl.text = slogans[(i + int(y)) % slogans.size()]
-		sl.font_size = 48
-		sl.pixel_size = 0.005
-		sl.modulate = Color(0.12, 0.12, 0.14)
-		sl.outline_size = 0
-		sl.position = Vector3(px, y + 2.75, zn + 0.03)
-		sl.visibility_range_end = 20.0
-		region.add_child(sl)
+		# 글자 대신 아이 그림 같은 도형 몇 개
+		for d in 3:
+			var dc: Color = [Color(0.95, 0.95, 0.9), Color(0.2, 0.2, 0.25), Color(0.9, 0.3, 0.25), Color(0.25, 0.45, 0.8)][(i + d + int(y)) % 4]
+			kit.part(Vector3(px - 0.7 + d * 0.7, y + 2.75 + (0.05 if d % 2 == 0 else -0.05), zn + 0.03), Vector3(0.28 + 0.08 * ((i + d) % 2), 0.28, 0.01), dc, "trim", false, 0.0)
 	# 복도 바닥 얼룩·종이, 천장 조명 (일부 깜빡임)
 	kit.grime(Rect2(core.position.x, corr_z - corr_w * 0.5, core.size.x, corr_w), fy, FH, 0.35, 0.08, [2, 3])
 	for i in 9:
@@ -518,14 +494,10 @@ func _yard_props() -> void:
 	var board := _prop(Vector3(5, 0, 62), PI, Vector3(2.2, 2.2, 0.3))
 	_part(board, Vector3(0, 1.4, 0), _box_mesh(Vector3(2.2, 1.2, 0.08)), _flat_mat(Color(0.18, 0.3, 0.42), 0.7))
 	_part(board, Vector3(0, 0.6, 0), _box_mesh(Vector3(0.1, 1.2, 0.1)), _mat["metal"])
-	var bl := Label3D.new()
-	bl.text = "교내 안내도\n본관 ↑   체육관 ↗"
-	bl.font_size = 40
-	bl.pixel_size = 0.006
-	bl.position = Vector3(5, 1.45, 61.94)
-	bl.rotation.y = PI
-	bl.visibility_range_end = 20.0
-	region.add_child(bl)
+	# 안내도: 건물 모양 블록
+	_part(board, Vector3(-0.4, 1.55, -0.05), _box_mesh(Vector3(1.0, 0.35, 0.02)), _flat_mat(Color(0.8, 0.75, 0.6), 0.8))
+	_part(board, Vector3(0.6, 1.5, -0.05), _box_mesh(Vector3(0.5, 0.5, 0.02)), _flat_mat(Color(0.7, 0.45, 0.35), 0.8))
+	_part(board, Vector3(-0.2, 1.05, -0.05), _box_mesh(Vector3(1.3, 0.25, 0.02)), _flat_mat(Color(0.4, 0.6, 0.35), 0.8))
 	# 놀이터 (동쪽)
 	var pg := Vector3(55, 0.0, 12)
 	_box(pg + Vector3(0, 0.02, 0), Vector3(18, 0.04, 16), _noise_mat(Color(0.42, 0.37, 0.28), 0.4, 1.0, 2.0))  # 모래

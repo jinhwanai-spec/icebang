@@ -93,6 +93,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		spring_arm.rotation.x = clamp(spring_arm.rotation.x - motion.relative.y * MOUSE_SENSITIVITY,
 				deg_to_rad(-55.0), deg_to_rad(40.0))
 
+	if turned_seeker:
+		return  # 술래로 변함: 움직이기·시점만 (닿으면 잡음)
 	if is_dead or escaped:
 		# 관전 중: 좌클릭 다음 / 우클릭 이전 / V 자유 시점
 		if event is InputEventMouseButton and event.pressed:
@@ -135,7 +137,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		freeze()
 		summon_menu_open = false
 	elif event.is_action_pressed("interact"):
-		if not _try_kill_rat() and not _try_clear_web() and not use_nearby_prop():
+		if not _try_kill_rat() and not _try_clear_web() and not use_nearby_prop() and not _try_window_parkour():
 			_try_open_minigame()
 	elif event.is_action_pressed("roll"):
 		if not (minigame and is_instance_valid(minigame)):
@@ -156,6 +158,7 @@ func _unhandled_input(event: InputEvent) -> void:
 
 func _physics_process(delta: float) -> void:
 	_common_physics(delta)
+	_parkour_land_check()
 	noise_cooldown_left = max(0.0, noise_cooldown_left - delta)
 	_update_cooldowns(delta)
 	is_repairing = false
@@ -174,6 +177,9 @@ func _physics_process(delta: float) -> void:
 	if is_dead or escaped:
 		_locker_view(false)
 		_spectate()
+		return
+	if turned_seeker:
+		_seeker_move(delta)
 		return
 	if in_locker:
 		velocity = Vector3.ZERO
@@ -259,6 +265,131 @@ func _physics_process(delta: float) -> void:
 	velocity += take_external_pull()
 	_face_direction(dir, delta)
 	_footsteps(delta, dir.length() > 0.1, noise, interval, volume)
+	move_and_slide()
+
+
+# ---------------------------------------------------------------- 창문 파쿠르
+
+## 바라보는 앞쪽의 넘을 수 있는 창문 (없으면 -1). 창턱이 발보다 0.2~1.5m 위, 1.3m 안
+var _parkour_air := false
+var _parkour_floor_y := 0.0
+
+func nearest_window() -> int:
+	var g := _game()
+	if g == null or not g.has_method("level_windows"):
+		return -1
+	var ws: Array = g.call("level_windows")
+	var fwd := look_direction()
+	fwd.y = 0.0
+	fwd = fwd.normalized()
+	var best := -1
+	var best_d := 1.4
+	for i in ws.size():
+		var w: Dictionary = ws[i]
+		var sz: Vector3 = w["size"]
+		if sz.x < 0.9 or sz.y < 0.8:
+			continue  # 너무 작은 창
+		var c: Vector3 = w["c"]
+		var sill := c.y - sz.y * 0.5
+		if sill < global_position.y + 0.2 or sill > global_position.y + 1.5:
+			continue
+		var b: Basis = w["basis"]
+		var rel := c - global_position
+		rel.y = 0.0
+		if absf(rel.dot(b.x)) > sz.x * 0.5 + 0.1:
+			continue
+		var dn := absf(rel.dot(b.z))
+		if dn > 1.3 or rel.length() > best_d:
+			continue
+		if rel.length() > 0.3 and fwd.dot(rel.normalized()) < 0.35:
+			continue  # 창문을 보고 있어야 함
+		best = i
+		best_d = rel.length()
+	return best
+
+
+## E: 창문을 깨고 넘어서 밖(또는 안)으로. 높은 층에서 뛰어내리면 착지 후 잠깐 느려짐
+func _try_window_parkour() -> bool:
+	if not can_interact() or not is_on_floor():
+		return false
+	var i := nearest_window()
+	if i < 0:
+		return false
+	var w: Dictionary = (_game().call("level_windows") as Array)[i]
+	if Net.in_match():
+		Net.window_broken.rpc(i)
+	else:
+		_game().call("break_window", i)
+	var c: Vector3 = w["c"]
+	var sz: Vector3 = w["size"]
+	var n: Vector3 = (w["basis"] as Basis).z
+	n.y = 0.0
+	n = n.normalized()
+	var side := signf((global_position - c).dot(n))
+	if side == 0.0:
+		side = 1.0
+	var sill := c.y - sz.y * 0.5
+	var along := clampf((global_position - c).dot((w["basis"] as Basis).x), -sz.x * 0.3, sz.x * 0.3)
+	var mid: Vector3 = c + (w["basis"] as Basis).x * along
+	var start := global_position
+	var top := Vector3(mid.x, sill + 0.25, mid.z)
+	var target := mid - n * side * 0.9
+	target.y = sill + 0.05
+	var dur := 0.55
+	_parkour_floor_y = start.y
+	set_meta("vaulting", true)
+	pulled_time_left = maxf(pulled_time_left, dur)
+	var arc := func(p: float) -> void:
+		if not is_instance_valid(self):
+			return
+		if p < 0.5:
+			global_position = start.lerp(top, p * 2.0) + Vector3.UP * sin(p * PI) * 0.25
+		else:
+			global_position = top.lerp(target, (p - 0.5) * 2.0)
+		velocity = Vector3.ZERO
+	var done := func() -> void:
+		remove_meta("vaulting")
+		velocity = -n * side * 2.5  # 살짝 앞으로 떨어짐
+		_parkour_air = true
+	var tw := create_tween()
+	tw.tween_method(arc, 0.0, 1.0, dur)
+	tw.tween_callback(done)
+	return true
+
+
+## 파쿠르 뒤 착지 확인 (떨어진 높이 → 감속)
+func _parkour_land_check() -> void:
+	if not _parkour_air or has_meta("vaulting"):
+		return
+	if is_on_floor():
+		_parkour_air = false
+		var drop := _parkour_floor_y - global_position.y
+		land_from_height(drop)
+		if fall_slow_left > 0.0:
+			notice.emit("쿵! 높은 곳에서 떨어져 %d초 동안 %d%% 느려져요" % [roundi(fall_slow_left), roundi(fall_slow_amount * 100.0)])
+
+
+## 술래로 변한 뒤 (멀티 '술래 변신' 모드): 걷기 = 수색 속도, Shift = 추격 속도. 기절·날아감 중엔 못 움직임
+func _seeker_move(delta: float) -> void:
+	var sk := turned_seeker
+	if not is_instance_valid(sk):
+		turned_seeker = null
+		return
+	if sk.state == Seeker.State.KNOCKBACK:
+		global_position = sk.global_position  # 강펀치에 맞아 날아가는 술래를 따라감
+		velocity = Vector3.ZERO
+		return
+	var input := Input.get_vector("move_left", "move_right", "move_forward", "move_back")
+	var dir := pivot.global_basis * Vector3(input.x, 0.0, input.y)
+	dir.y = 0.0
+	dir = dir.normalized() * min(input.length(), 1.0)
+	var speed := 0.0
+	if not sk.possessed_frozen():
+		speed = sk.chase_speed() if Input.is_action_pressed("run") else GameConfig.num("seeker", "investigate_speed", 4.8)
+		speed *= sk.possessed_speed_mult()  # 폭주 배율도 여기에 들어 있음
+	velocity.x = dir.x * speed
+	velocity.z = dir.z * speed
+	_face_direction(dir, delta)
 	move_and_slide()
 
 
@@ -1198,10 +1329,15 @@ func use_noise_ability() -> void:
 	_spawn_lure_sound(target)
 
 
-## 이모트 (숫자키 1~0). 술래 놀리기용, 게임에는 영향 없음
-func _use_emote_slot(i: int) -> void:
-	if i >= EMOTES.size():
-		notice.emit("%d번 이모트는 비어 있어요" % ((i + 1) % 10))
+## 이모트 (숫자키 1~0 = 장착 칸 0~9). 술래 놀리기용, 게임에는 영향 없음
+func _use_emote_slot(slot: int) -> void:
+	var eid: String = SaveData.emote_slots[slot] if slot < SaveData.emote_slots.size() else ""
+	var i := -1
+	for k in EMOTES.size():
+		if EMOTES[k][0] == eid:
+			i = k
+	if i < 0:
+		notice.emit("%d번 칸에 장착한 이모트가 없어요 (치장 상점 → 이모트)" % ((slot + 1) % 10))
 		return
 	if is_frozen or is_dead or escaped or in_locker or is_shadowed() or chained_by or rooted_left > 0.0 \
 			or (minigame and is_instance_valid(minigame)) or not is_on_floor():

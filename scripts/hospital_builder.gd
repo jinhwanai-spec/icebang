@@ -154,13 +154,13 @@ func _hospital() -> void:
 	cl.position = Vector3(0, roof_y + 1.9, r.end.y + 1.0)
 	cl.set_script(preload("res://scripts/flicker_light.gd"))
 	region.add_child(cl)
-	var lbl := Label3D.new()
-	lbl.text = "성 모 병 원"
-	lbl.font_size = 96
-	lbl.pixel_size = 0.007
-	lbl.modulate = Color(0.85, 0.85, 0.85)
-	lbl.position = Vector3(0, Y0 + 3.95, r.end.y + 4.47)
-	region.add_child(lbl)
+	# 간판: 글자 대신 흰 바탕 빨간 십자 (어느 나라에서나 알아봄)
+	for cx in [-2.6, 2.6]:
+		kit.part(Vector3(cx, Y0 + 3.95, r.end.y + 4.47), Vector3(0.75, 0.75, 0.02), Color(0.9, 0.9, 0.88), "lit")
+		kit.part(Vector3(cx, Y0 + 3.95, r.end.y + 4.49), Vector3(0.55, 0.16, 0.02), Color(0.85, 0.08, 0.06), "lit")
+		kit.part(Vector3(cx, Y0 + 3.95, r.end.y + 4.49), Vector3(0.16, 0.55, 0.02), Color(0.85, 0.08, 0.06), "lit")
+	for k in 3:
+		kit.part(Vector3(-1.1 + k * 1.1, Y0 + 3.95, r.end.y + 4.46), Vector3(0.7, 0.08, 0.02), Color(0.75, 0.8, 0.8), "trim")
 	_box(Vector3(0, Y0 + 3.95, r.end.y + 4.35), Vector3(8.0, 0.9, 0.2), _flat_mat(Color(0.12, 0.25, 0.3), 0.6), false)
 	# 동쪽 옆문 위 빨간 "응급실" 간판 + 구급차 진입 차양
 	var er := StandardMaterial3D.new()
@@ -169,13 +169,10 @@ func _hospital() -> void:
 	er.emission = Color(1.0, 0.12, 0.1)
 	er.emission_energy_multiplier = 1.5
 	_box(Vector3(r.end.x + 0.2, Y0 + 3.1, corr_z), Vector3(0.2, 0.7, 3.0), er, false)
-	var erl := Label3D.new()
-	erl.text = "응 급 실"
-	erl.font_size = 72
-	erl.pixel_size = 0.007
-	erl.position = Vector3(r.end.x + 0.32, Y0 + 3.1, corr_z)
-	erl.rotation.y = PI / 2.0
-	region.add_child(erl)
+	# 응급실 간판: 흰 십자 두 개
+	for dz in [-0.9, 0.9]:
+		kit.part(Vector3(r.end.x + 0.32, Y0 + 3.1, corr_z + dz), Vector3(0.02, 0.14, 0.48), Color(1.0, 0.95, 0.9), "lit")
+		kit.part(Vector3(r.end.x + 0.32, Y0 + 3.1, corr_z + dz), Vector3(0.02, 0.48, 0.14), Color(1.0, 0.95, 0.9), "lit")
 	_bx("trim", Vector3(r.end.x + 3.0, Y0 + 3.6, corr_z), Vector3.BACK, Vector3.RIGHT, Vector3(5.0, 0.25, 6.0), Color(0.7, 0.72, 0.72))
 	for dz in [-2.6, 2.6]:
 		kit.part(Vector3(r.end.x + 5.3, Y0 + 1.8, corr_z + dz), Vector3(0.25, 3.6, 0.25), Color(0.7, 0.7, 0.72), "trim", true)
@@ -237,19 +234,10 @@ func _hospital() -> void:
 				kit.ceiling_light(Vector3(lx, ry + h - 0.28, rr.get_center().y), Color(0.75, 0.95, 0.85) if not base else Color(1.0, 0.8, 0.55), 0.8, 0.35)
 			var dn := Vector3(0, 0, 1) if rr.get_center().y < corr_z else Vector3(0, 0, -1)
 			var da: Vector3 = rm["door_at"]
-			kit.room_sign(Vector3(da.x + 1.25, ry + 2.6, da.z), rm["name"], dn)
 			if kind == "operating":
 				# 문 위 "수술중" 빨간 불 (켜져 있거나 꺼져 있음)
 				var on := rng.randf() < 0.6
 				kit.part(Vector3(da.x, ry + 2.55, da.z) + dn * 0.12, Vector3(0.9, 0.28, 0.06), Color(1.0, 0.1, 0.08) if on else Color(0.25, 0.05, 0.05), "lit" if on else "trim")
-				var ol := Label3D.new()
-				ol.text = "수 술 중"
-				ol.font_size = 40
-				ol.pixel_size = 0.005
-				ol.position = Vector3(da.x, ry + 2.55, da.z) + dn * 0.16
-				ol.rotation.y = atan2(dn.x, dn.z)
-				ol.visibility_range_end = 20.0
-				region.add_child(ol)
 		# 1층 로비 (현관 앞 빈 칸): 접수대·대기 의자·안내판
 		if fy == Y0:
 			var lob := Rect2(-2.75 + core.position.x + 33.75 - 0.0, corr_z + corr_w * 0.5, 12.0, inner.end.y - corr_z - corr_w * 0.5)
@@ -300,15 +288,12 @@ func _basement_finish() -> void:
 func _exit_sign(p: Vector3, facing: Vector3) -> void:
 	var yaw := atan2(facing.x, facing.z)
 	kit.part(p, Vector3(0.6, 0.22, 0.06), Color(0.1, 0.9, 0.35), "lit", false, yaw)
-	var l := Label3D.new()
-	l.text = "비상구"
-	l.font_size = 32
-	l.pixel_size = 0.005
-	l.modulate = Color(0.95, 1.0, 0.95)
-	l.position = p + facing * 0.04
-	l.rotation.y = yaw
-	l.visibility_range_end = 20.0
-	region.add_child(l)
+	# 글자 대신 달리는 사람 + 문 그림
+	var rt := Vector3(cos(yaw), 0, -sin(yaw))
+	kit.part(p + facing * 0.04 + rt * 0.17, Vector3(0.12, 0.17, 0.01), Color(0.95, 1.0, 0.95), "lit", false, yaw)
+	kit.part(p + facing * 0.04 - rt * 0.05 + Vector3.UP * 0.05, Vector3(0.04, 0.04, 0.01), Color(0.95, 1.0, 0.95), "lit", false, yaw)
+	kit.part(p + facing * 0.04 - rt * 0.06 - Vector3.UP * 0.02, Vector3(0.04, 0.09, 0.01), Color(0.95, 1.0, 0.95), "lit", false, yaw + 0.4)
+	kit.part(p + facing * 0.04 - rt * 0.16, Vector3(0.1, 0.02, 0.01), Color(0.95, 1.0, 0.95), "lit", false, yaw)
 
 
 ## 엘리베이터 문 (장식) + 층 표시등
@@ -331,14 +316,10 @@ func _lobby(r: Rect2, y: float) -> void:
 	kit.part(Vector3(r.end.x - 1.0, y + 0.55, c.y - 1.0), Vector3(0.8, 1.1, 4.0), Color(0.75, 0.75, 0.72), "trim", true)
 	kit.part(Vector3(r.end.x - 1.0, y + 1.12, c.y - 1.0), Vector3(1.0, 0.05, 4.2), Color(0.45, 0.32, 0.22), "trim")
 	kit.part(Vector3(r.end.x - 0.9, y + 1.35, c.y - 1.5), Vector3(0.05, 0.3, 0.45), Color(0.08, 0.08, 0.1), "glass")
-	var s := Label3D.new()
-	s.text = "접 수 · 수 납"
-	s.font_size = 56
-	s.pixel_size = 0.006
-	s.position = Vector3(r.end.x - 0.15, y + 2.6, c.y - 1.0)
-	s.rotation.y = -PI / 2.0
-	s.visibility_range_end = 24.0
-	region.add_child(s)
+	for k in 3:
+		kit.part(Vector3(r.end.x - 0.16, y + 2.6, c.y - 1.8 + k * 0.8), Vector3(0.02, 0.32, 0.32), Color(0.9, 0.92, 0.9), "lit")
+	kit.part(Vector3(r.end.x - 0.17, y + 2.6, c.y - 1.8), Vector3(0.02, 0.08, 0.24), Color(0.8, 0.1, 0.08), "lit")
+	kit.part(Vector3(r.end.x - 0.17, y + 2.6, c.y - 1.8), Vector3(0.02, 0.24, 0.08), Color(0.8, 0.1, 0.08), "lit")
 	kit.part(Vector3(r.end.x - 0.13, y + 2.6, c.y - 1.0), Vector3(0.04, 0.5, 2.6), Color(0.2, 0.4, 0.45))
 	# 대기 의자 줄 (현관 쪽 비워 둠)
 	for row in 3:
@@ -375,14 +356,9 @@ func _hosp_corridor(core: Rect2, corr_z: float, corr_w: float, y: float, h: floa
 		# 천장에 매달린 안내판
 		if i % 3 == 1 and not base:
 			kit.part(Vector3(x, y + h - 0.7, corr_z), Vector3(0.06, 0.35, 1.6), Color(0.15, 0.35, 0.4))
-			var l := Label3D.new()
-			l.text = ["← 응급실   수술실 →", "← 병동   검사실 →", "← 비상구   엘리베이터 →"][rng.randi() % 3]
-			l.font_size = 40
-			l.pixel_size = 0.005
-			l.position = Vector3(x + 0.04, y + h - 0.7, corr_z)
-			l.rotation.y = PI / 2.0
-			l.visibility_range_end = 20.0
-			region.add_child(l)
+			for s in [-1.0, 1.0]:
+				kit.part(Vector3(x + 0.04 * s, y + h - 0.7, corr_z + 0.45 * s), Vector3(0.01, 0.06, 0.45), Color(0.9, 0.95, 0.95), "lit")
+				kit.part(Vector3(x + 0.04 * s, y + h - 0.7, corr_z + 0.62 * s), Vector3(0.01, 0.14, 0.06), Color(0.9, 0.95, 0.95), "lit")
 	# 지하: 천장 배관
 	if base:
 		for k in 3:

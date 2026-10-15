@@ -21,6 +21,9 @@ var graphics := "high"
 ## 치장: 산 아이템 목록, 칸별 착용 아이템 (cosmetics.gd)
 var owned_cos: Array = ["eyes_basic", "hair_none", "outfit_none", "acc_none"]
 var equipped := {"eyes": "eyes_basic", "hair": "hair_none", "outfit": "outfit_none", "acc": "acc_none"}
+## 이모트: 산 이모트 목록, 숫자키 1~0 칸에 장착한 이모트 ("" = 빈 칸)
+var owned_emotes: Array = []
+var emote_slots: Array = ["butt_dance", "fart", "disco", "trot", "poop", "chicken", "dead", "robot", "gaedari", "dizzy"]
 ## 테스트용으로 고른 맵 ("" = 랜덤). 저장하지 않음
 var test_map := ""
 ## 능력 이름 → 해금 여부
@@ -52,6 +55,10 @@ func load_game() -> void:
 		unlocked[id] = bool(cfg.get_value("unlocked", id, false))
 	owned_cos = cfg.get_value("cosmetics", "owned", owned_cos)
 	equipped = cfg.get_value("cosmetics", "equipped", equipped)
+	owned_emotes = cfg.get_value("emotes", "owned", owned_emotes)
+	var sl: Array = cfg.get_value("emotes", "slots", emote_slots)
+	if sl.size() == 10:
+		emote_slots = sl
 
 
 func save_game() -> void:
@@ -67,6 +74,8 @@ func save_game() -> void:
 		cfg.set_value("unlocked", id, unlocked[id])
 	cfg.set_value("cosmetics", "owned", owned_cos)
 	cfg.set_value("cosmetics", "equipped", equipped)
+	cfg.set_value("emotes", "owned", owned_emotes)
+	cfg.set_value("emotes", "slots", emote_slots)
 	cfg.save(SAVE_PATH)
 
 
@@ -116,6 +125,40 @@ func equip_cos(id: String) -> void:
 	if it.is_empty() or not owns_cos(id):
 		return
 	equipped[it[2]] = id
+	save_game()
+
+
+## 이모트 정보 [아이디, 이름, 길이, 방향, 분류, 가격] (survivor.gd EMOTES)
+func emote_row(id: String) -> Array:
+	for e in Survivor.EMOTES:
+		if e[0] == id:
+			return e
+	return []
+
+
+func owns_emote(id: String) -> bool:
+	var e := emote_row(id)
+	return not e.is_empty() and (int(e[5]) == 0 or owned_emotes.has(id))
+
+
+func buy_emote(id: String) -> bool:
+	var e := emote_row(id)
+	if e.is_empty() or owns_emote(id) or coins < int(e[5]):
+		return false
+	coins -= int(e[5])
+	owned_emotes.append(id)
+	save_game()
+	return true
+
+
+## slot: 0~9 (숫자키 1~0). 같은 이모트가 다른 칸에 있으면 그 칸과 맞바꿈
+func equip_emote(slot: int, id: String) -> void:
+	if slot < 0 or slot > 9 or (id != "" and not owns_emote(id)):
+		return
+	var old := emote_slots.find(id)
+	if id != "" and old >= 0 and old != slot:
+		emote_slots[old] = emote_slots[slot]
+	emote_slots[slot] = id
 	save_game()
 
 

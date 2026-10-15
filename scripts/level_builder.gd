@@ -321,6 +321,10 @@ func _shuffle(arr: Array) -> void:
 var _batches := {}  # 이름 → [메시, 재질, 그림자 여부, [Transform3D...], [Color...]]
 
 
+## 파쿠르로 넘을 수 있는 창문 유리 목록 (building_kit.block 이 채움). main.gd 가 깨진 유리를 처리
+var windows: Array = []
+
+
 func _batch(key: String, mesh: Mesh, mat: Material, xf: Transform3D, color := Color.WHITE, shadow := true) -> void:
 	if not _batches.has(key):
 		_batches[key] = [mesh, mat, shadow, [], []]
@@ -345,6 +349,9 @@ func _flush_batches() -> void:
 		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if b[2] else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		region.add_child(mmi)
 		paintable.append(mmi)
+		for w in windows:
+			if w["key"] == key and not w.has("mmi"):
+				w["mmi"] = mmi
 	_batches.clear()
 
 
