@@ -298,7 +298,11 @@ func _physics_process(delta: float) -> void:
 	_ability_update(delta)
 
 	if _lock_left > 0.0:
-		_stop()  # 능력 쓰는 중 (대쉬 준비 등)
+		# 팔을 휘두르는 동안에는 노린 생존자를 계속 쫓아감 (멈추면 달리는 생존자가 사거리 밖으로 빠져나감)
+		if _attack_left > 0.0 and _attack_target and is_instance_valid(_attack_target):
+			_move_dir(_attack_target.global_position - global_position, delta, chase_speed())
+		else:
+			_stop()  # 능력 쓰는 중 (대쉬 준비 등)
 	else:
 		match state:
 			State.PATROL:
@@ -795,7 +799,7 @@ func _before_attack(_s: Survivor) -> bool:
 func _start_attack(s: Survivor) -> void:
 	var windup := GameConfig.num("seeker", "attack_windup", 0.08)
 	var recover := GameConfig.num("seeker", "attack_recover", 0.07)
-	var k := _attack_speed_mult()
+	var k := _attack_speed_mult() * GameConfig.num("seeker", "attack_speed", 1.1)
 	if enraged:  # 폭주: 공격 속도 증가
 		k *= 1.0 + GameConfig.num("seeker", "rage_attack_speed", 0.3)
 	windup /= k

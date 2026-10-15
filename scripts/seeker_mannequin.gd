@@ -3,10 +3,12 @@ extends Seeker
 ## - (패시브) 누군가 쳐다보고 있으면 그 자리에서 굳어 움직이지도 잡지도 못함.
 ##   아무도 안 볼 때는 2배 빠르게 움직임
 ##   (유저: 화면에 마네킹이 보이면 '쳐다보는 중' / 동료 봇: 15m 안에서 마네킹 쪽을 보고 있으면)
-## - 기습: 아무도 안 보고 있을 때, 30m 안의 생존자 등 뒤로 순간이동. 나타난 뒤 0.5초 못 움직임 (쿨 5초)
+## - 기습: 30m 안의 생존자 등 뒤로 순간이동. 나타난 뒤 0.5초 못 움직임 (쿨 balance.cfg ambush_cooldown)
+##   누가 쳐다보는 중에도 watched_escape_time 초 동안 계속 보이면 기습을 써서 그 시선을 벗어날 수 있음
 
 var watched := false
 var _ambush_cd := 0.0
+var _watched_for := 0.0
 
 
 func _ready() -> void:
@@ -16,12 +18,16 @@ func _ready() -> void:
 
 func _ability_update(delta: float) -> void:
 	watched = _is_watched()
+	_watched_for = _watched_for + delta if watched else 0.0
 	_ambush_cd = max(0.0, _ambush_cd - delta)
-	if watched or _lock_left > 0.0 or _ambush_cd > 0.0 or state == State.CHASE:
+	# 쳐다보는 중: 잠깐(watched_escape_time) 버틴 뒤 기습으로 시선 밖(생존자 등 뒤)으로 빠져나감
+	var escape := watched and _watched_for >= GameConfig.num("mannequin", "watched_escape_time", 1.0)
+	if (watched and not escape) or _lock_left > 0.0 or _ambush_cd > 0.0 or (state == State.CHASE and not escape):
 		return
 	var s := _nearest_targetable(GameConfig.num("mannequin", "ambush_range", 30.0))
-	if s == null or global_position.distance_to(s.global_position) < 8.0:
+	if s == null or (not escape and global_position.distance_to(s.global_position) < 8.0):
 		return
+	_watched_for = 0.0
 	var behind := s.global_position - _forward_of(s) * 2.6
 	_teleport_to(behind)
 	rotation.y = atan2(-(s.global_position.x - global_position.x), -(s.global_position.z - global_position.z))
