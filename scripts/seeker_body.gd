@@ -2724,12 +2724,37 @@ func set_tint(color: Color) -> void:
 # ================================================================ 모델 기반 술래 (Meshy 고퀄 메시 + 스켈레톤 애니메이션)
 ## path: glb, clips: idle/walk/run/attack 이름, walk_v/run_v: 클립 원래 속도(m/s),
 ## atk: [올려든 시점, 내려찍는 시점, 끝] (초), eyes: 머리뼈 기준 눈 위치(모델 공간, +Z가 앞)
+const _IDLE := "Combat_Stance"
+const _ORC := "Slow_Orc_Walk_inplace"
+const _CHARGE := "Standard_Forward_Charge_inplace"
+const _SPRINT := "Lean_Forward_Sprint_inplace"
 const MODELS := {
 	"butcher": {"path": "res://models/seekers/butcher.glb", "scale": 1.05, "eye": Color(1.0, 0.42, 0.08),
-		"idle": "Combat_Stance", "walk": "Slow_Orc_Walk_inplace", "run": "Standard_Forward_Charge_inplace",
-		"attack": "Charged_Axe_Chop", "hit": "Hit_Reaction", "walk_v": 0.55, "run_v": 5.2,
+		"walk": _ORC, "run": _CHARGE, "attack": "Charged_Axe_Chop", "walk_v": 0.55, "run_v": 5.2,
 		"atk": [4.12, 4.45, 4.95], "eyes": [Vector3(-0.066, 2.55, 0.19), Vector3(0.066, 2.55, 0.19)],
-		"skin": Color(0.66, 0.55, 0.52), "weapon": ["RightHand", "_model_cleaver", Vector3(-0.82, 1.93, 0.12)]},
+		"skin": Color(0.66, 0.55, 0.52), "weapon": "_model_cleaver"},
+	"rat": {"path": "res://models/seekers/rat.glb", "scale": 1.0, "eye": Color(1.0, 0.12, 0.08),
+		"walk": "Sneaky_Walk_inplace", "run": _SPRINT, "attack": "Left_Slash", "walk_v": 0.6, "run_v": 5.3,
+		"atk": [1.05, 1.35, 1.8], "eyes": [Vector3(-0.08, 2.28, 0.82), Vector3(0.08, 2.28, 0.82)], "skin": Color(0.8, 0.74, 0.7)},
+	"mannequin": {"path": "res://models/seekers/mannequin.glb", "scale": 1.0, "eye": Color(0.55, 0.75, 1.0),
+		"walk": _ORC, "run": _CHARGE, "attack": "Punch_Forward_with_Both_Fists", "walk_v": 0.55, "run_v": 5.2,
+		"atk": [0.3, 0.6, 1.1], "eyes": [Vector3(-0.05, 2.83, -0.04), Vector3(0.05, 2.83, -0.04)], "jerk": 9.0, "light": 0.06},
+	"puppeteer": {"path": "res://models/seekers/puppeteer.glb", "scale": 1.0, "eye": Color(0.6, 1.0, 0.75),
+		"walk": "Unsteady_Walk_inplace", "run": _SPRINT, "attack": "Right_Hand_Sword_Slash", "walk_v": 0.7, "run_v": 5.3,
+		"atk": [0.25, 0.52, 0.95], "eyes": [Vector3(-0.045, 2.86, -0.05), Vector3(0.045, 2.86, -0.05)], "light": 0.07},
+	"psycho": {"path": "res://models/seekers/psycho.glb", "scale": 1.0, "eye": Color(1.0, 0.1, 0.1),
+		"walk": "Limping_Walk_inplace", "run": _CHARGE, "attack": "Heavy_Hammer_Swing", "walk_v": 0.45, "run_v": 5.2,
+		"atk": [1.2, 1.52, 1.8], "eyes": [Vector3(-0.048, 2.69, 0.15), Vector3(0.048, 2.69, 0.15)], "skin": Color(0.85, 0.8, 0.78)},
+	"executioner": {"path": "res://models/seekers/executioner.glb", "scale": 1.0, "eye": Color(1.0, 0.5, 0.1),
+		"walk": _ORC, "run": _CHARGE, "attack": "Charged_Axe_Chop", "walk_v": 0.55, "run_v": 5.2,
+		"atk": [4.12, 4.45, 4.95], "eyes": [Vector3(-0.07, 2.7, 0.31), Vector3(0.07, 2.7, 0.31)],
+		"skin": Color(0.8, 0.72, 0.66), "weapon": "_model_axe"},
+	"diet": {"path": "res://models/seekers/diet.glb", "scale": 1.0, "eye": Color(1.0, 0.85, 0.15),
+		"walk": _ORC, "run": _CHARGE, "attack": "Charged_Ground_Slam", "walk_v": 0.55, "run_v": 5.2,
+		"atk": [1.3, 1.63, 2.1], "eyes": [Vector3(-0.075, 2.63, 0.27), Vector3(0.075, 2.63, 0.27)]},
+	"witch": {"path": "res://models/seekers/witch.glb", "scale": 1.0, "eye": Color(0.5, 1.0, 0.2),
+		"walk": "Elderly_Shaky_Walk_inplace", "run": _SPRINT, "attack": "mage_soell_cast", "walk_v": 0.45, "run_v": 5.3,
+		"atk": [0.3, 0.6, 1.0], "eyes": [Vector3(-0.055, 2.79, 0.39), Vector3(0.055, 2.79, 0.39)], "skin": Color(0.82, 0.85, 0.8)},
 }
 var _ap: AnimationPlayer
 var _skel3d: Skeleton3D
@@ -2743,14 +2768,14 @@ func _build_model(d: Dictionary) -> void:
 	_mdef = d
 	_S = float(d.get("scale", 1.0))
 	_eye_color = d.get("eye", _eye_color)
-	_light_energy = 0.22
+	_light_energy = float(d.get("light", 0.16))
 	var inst := (load(d["path"]) as PackedScene).instantiate() as Node3D
 	inst.rotation.y = PI   # Meshy 모델은 +Z가 앞, 게임은 -Z가 앞
 	_root.add_child(inst)
 	_ap = inst.find_children("*", "AnimationPlayer", true, false)[0] as AnimationPlayer
 	_skel3d = inst.find_children("*", "Skeleton3D", true, false)[0] as Skeleton3D
 	for k in ["idle", "walk", "run"]:
-		var a := _ap.get_animation(d[k])
+		var a := _ap.get_animation(d.get(k, _IDLE))
 		if a:
 			a.loop_mode = Animation.LOOP_LINEAR
 	# 재질: 거친 피부·가죽 (Forward+에서 반짝이지 않게)
@@ -2776,14 +2801,29 @@ func _build_model(d: Dictionary) -> void:
 		var pts: Array = []
 		for e: Vector3 in d["eyes"]:
 			pts.append(e)
-		_eyes_at(holder, pts, 0.028, 0.55)
+		_eyes_at(holder, pts, float(d.get("eye_r", 0.024)), 0.4)
 		if _eye_light:
 			_eye_light.position = (pts[0] + pts[1]) * 0.5 + Vector3(0, -0.05, 0.3)
 	if d.has("weapon"):
-		var hh := _bone_holder(inst, d["weapon"][0])
+		var hh := _bone_holder(inst, "RightHand")
 		if hh:
-			call(d["weapon"][1], hh, d["weapon"][2])
-	_play(d["idle"], 0.0)
+			# 주먹 위치: 손목에서 팔 방향으로 조금 더
+			var hand := _rest_model(inst, "RightHand")
+			var fore := _rest_model(inst, "RightForeArm")
+			call(d["weapon"], hh, hand + (hand - fore).normalized() * 0.1)
+	_play(d.get("idle", _IDLE), 0.0)
+
+
+func _rest_model(inst: Node3D, bone: String) -> Vector3:
+	var bi := _skel3d.find_bone(bone)
+	if bi < 0:
+		return Vector3.ZERO
+	var to_model := Transform3D.IDENTITY
+	var n: Node = _skel3d
+	while n != inst and n is Node3D:
+		to_model = (n as Node3D).transform * to_model
+		n = n.get_parent()
+	return (to_model * _skel3d.get_bone_global_rest(bi)).origin
 
 
 ## 뼈를 따라다니는 노드. 반환된 노드 안에서는 모델 공간(T포즈) 좌표를 그대로 쓰면 됨
@@ -2835,6 +2875,36 @@ func _model_cleaver(holder: Node3D, fist: Vector3) -> void:
 		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 
 
+## 사형집행인의 거대한 도끼 (긴 자루가 주먹에서 앞으로, 끝에 넓은 도끼날)
+func _model_axe(holder: Node3D, fist: Vector3) -> void:
+	var wood := StandardMaterial3D.new()
+	wood.albedo_color = Color(0.14, 0.09, 0.055)
+	wood.roughness = 0.88
+	var steel := StandardMaterial3D.new()
+	steel.albedo_color = Color(0.17, 0.16, 0.15)
+	steel.metallic = 0.8
+	steel.roughness = 0.55
+	var rust := StandardMaterial3D.new()
+	rust.albedo_color = Color(0.15, 0.03, 0.02)
+	rust.roughness = 0.6
+	axe_in_hand = Node3D.new()
+	holder.add_child(axe_in_hand)
+	var g := Geo.new()
+	_tube(g, _line(fist + Vector3(0, 0, -0.25), fist + Vector3(0, 0, 1.05), 6), PackedFloat32Array([0.04, 0.042, 0.042, 0.04, 0.04, 0.038]), {"sides": 8})
+	_mi(axe_in_hand, g, wood)
+	var xf := Transform3D(Basis(Vector3(0, 0, 1), Vector3(-1, 0, 0), Vector3(0, -1, 0)), fist)
+	g = Geo.new()
+	var head := PackedVector2Array([Vector2(0.78, 0.04), Vector2(1.08, 0.04), Vector2(1.2, 0.5), Vector2(0.98, 0.42), Vector2(0.86, 0.42), Vector2(0.64, 0.5)])
+	_extrude(g, head, PackedFloat32Array([0.03, 0.03, 0.006, 0.02, 0.02, 0.006]), xf)
+	_mi(axe_in_hand, g, steel)
+	g = Geo.new()
+	var smear := PackedVector2Array([Vector2(0.7, 0.4), Vector2(1.16, 0.4), Vector2(1.2, 0.5), Vector2(0.64, 0.5)])
+	_extrude(g, smear, PackedFloat32Array([0.012, 0.012, 0.012, 0.012]), xf)
+	_mi(axe_in_hand, g, rust)
+	for mi: MeshInstance3D in axe_in_hand.find_children("*", "MeshInstance3D", true, false):
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+
+
 func _play(clip: String, blend: float, spd: float = 1.0) -> void:
 	if _cur_clip != clip:
 		_ap.play(clip, blend)
@@ -2864,11 +2934,23 @@ func _animate_model(delta: float, speed: float) -> void:
 	else:
 		var sp := _spd_s
 		if sp < 0.35:
-			_play(_mdef["idle"], 0.25)
+			_play(_mdef.get("idle", _IDLE), 0.25)
 		elif sp < 3.0:
 			_play(_mdef["walk"], 0.25, clampf(sp / float(_mdef["walk_v"]), 0.8, 3.2))
 		else:
 			_play(_mdef["run"], 0.2, clampf(sp / float(_mdef["run_v"]), 0.6, 1.6))
+		if _mdef.has("jerk"):
+			# 마네킹: 멈추면 숨도 안 쉬고 완전히 굳음, 움직일 땐 스톱모션처럼 뚝뚝
+			var spd := _ap.speed_scale
+			_ap.speed_scale = 0.0
+			if speed >= 0.05:
+				_jerk_acc += delta
+				var step := 1.0 / float(_mdef["jerk"])
+				if _jerk_acc >= step:
+					_ap.speed_scale = spd
+					_ap.advance(_jerk_acc)
+					_ap.speed_scale = 0.0
+					_jerk_acc = 0.0
 	_flicker_eyes(delta)
 
 
