@@ -153,13 +153,18 @@ static func apply(main: Node3D, map_id: String) -> void:
 		moon.light_angular_distance = 0.5  # 부드러운 그림자 끝
 		moon.shadow_blur = 1.5
 		moon.shadow_bias = 0.05
-		moon.directional_shadow_max_distance = 55.0 if high else 35.0
-		moon.directional_shadow_blend_splits = high
+		# 최적화: 달 그림자가 가장 무거움 (PC 도시 측정 209 → 275fps 차이) → 2단계 분할, 거리 줄임
+		moon.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
+		moon.directional_shadow_max_distance = 42.0 if high else 30.0
+		moon.directional_shadow_blend_splits = false
 
-	# --- 맵의 모든 불빛이 안개를 비추게 (따로 정하지 않은 불빛만)
+	# --- 안개를 비추는 불빛 (최적화): 따로 정하지 않은 작은 불빛은 안개 계산에서 뺌.
+	#     도시처럼 불빛이 많으면 모든 불빛이 안개를 비출 때 프레임이 크게 떨어짐 (PC 147 → 104fps)
+	#     가로등·달빛·경광등처럼 빛기둥이 보여야 하는 불빛만 따로 값을 정해 둠
 	for l in main.find_children("*", "Light3D", true, false):
 		if (l is OmniLight3D or l is SpotLight3D) and is_equal_approx((l as Light3D).light_volumetric_fog_energy, 1.0):
-			(l as Light3D).light_volumetric_fog_energy = 1.6
+			var big: bool = (l is OmniLight3D and (l as OmniLight3D).omni_range >= 7.0) or l is SpotLight3D
+			(l as Light3D).light_volumetric_fog_energy = 0.8 if (big and map_id != "city") else 0.0
 
 	# --- 가까운 불빛 몇 개만 그림자 (천장등·가로등·모닥불이 가구·사람 그림자를 드리움)
 	if high and GameConfig.num("graphics", "shadow_lights", 4.0) > 0.0:

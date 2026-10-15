@@ -1082,6 +1082,7 @@ func _lamp(pos: Vector3) -> void:
 			halo.omni_range = 5.0
 			halo.light_energy = 0.35
 			halo.position = Vector3(0, 4.6, 0)
+			halo.light_volumetric_fog_energy = 0.0  # 최적화
 			body.add_child(halo)
 			LightFX.practical(halo, 35.0, false)
 		if r < 0.15:
