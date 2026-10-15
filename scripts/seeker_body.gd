@@ -111,6 +111,11 @@ func build(seeker_type: String) -> void:
 	_root = Node3D.new()
 	_root.name = "Root"
 	add_child(_root)
+	if MODELS.has(type) and ResourceLoader.exists(MODELS[type]["path"]):
+		_build_model(MODELS[type])
+		_root.scale = Vector3.ONE * _S
+		_phase = randf() * TAU
+		return
 	match type:
 		"ghost": _build_ghost()
 		"butcher": _build_butcher()
@@ -2411,6 +2416,9 @@ static func _spring(x: float, v: float, target: float, w: float, z: float, dt: f
 
 
 func animate(delta: float, speed: float) -> void:
+	if _ap:
+		_animate_model(delta, speed)
+		return
 	if _hips == null:
 		return
 	if _jerk_fps > 0.0:
@@ -2696,6 +2704,8 @@ func set_rage() -> void:
 ## 봉인됐을 때 회색으로
 func set_tint(color: Color) -> void:
 	_tinted = true
+	for m in _model_mats:
+		m.albedo_color = Color(color.r * 1.6, color.g * 1.6, color.b * 1.6)
 	for m in _smats:
 		m.set_shader_parameter("tint_color", color)
 		m.set_shader_parameter("tint", 1.0)
@@ -2709,6 +2719,157 @@ func set_tint(color: Color) -> void:
 		h.visible = false
 	if _eye_light:
 		_eye_light.visible = false
+
+
+# ================================================================ 모델 기반 술래 (Meshy 고퀄 메시 + 스켈레톤 애니메이션)
+## path: glb, clips: idle/walk/run/attack 이름, walk_v/run_v: 클립 원래 속도(m/s),
+## atk: [올려든 시점, 내려찍는 시점, 끝] (초), eyes: 머리뼈 기준 눈 위치(모델 공간, +Z가 앞)
+const MODELS := {
+	"butcher": {"path": "res://models/seekers/butcher.glb", "scale": 1.05, "eye": Color(1.0, 0.42, 0.08),
+		"idle": "Combat_Stance", "walk": "Slow_Orc_Walk_inplace", "run": "Standard_Forward_Charge_inplace",
+		"attack": "Charged_Axe_Chop", "hit": "Hit_Reaction", "walk_v": 0.55, "run_v": 5.2,
+		"atk": [4.12, 4.45, 4.95], "eyes": [Vector3(-0.066, 2.55, 0.19), Vector3(0.066, 2.55, 0.19)],
+		"skin": Color(0.66, 0.55, 0.52), "weapon": ["RightHand", "_model_cleaver", Vector3(-0.82, 1.93, 0.12)]},
+}
+var _ap: AnimationPlayer
+var _skel3d: Skeleton3D
+var _model_mats: Array[StandardMaterial3D] = []
+var _cur_clip := ""
+var _mdef := {}
+var _atk_clip_t := -1.0
+
+
+func _build_model(d: Dictionary) -> void:
+	_mdef = d
+	_S = float(d.get("scale", 1.0))
+	_eye_color = d.get("eye", _eye_color)
+	_light_energy = 0.22
+	var inst := (load(d["path"]) as PackedScene).instantiate() as Node3D
+	inst.rotation.y = PI   # Meshy 모델은 +Z가 앞, 게임은 -Z가 앞
+	_root.add_child(inst)
+	_ap = inst.find_children("*", "AnimationPlayer", true, false)[0] as AnimationPlayer
+	_skel3d = inst.find_children("*", "Skeleton3D", true, false)[0] as Skeleton3D
+	for k in ["idle", "walk", "run"]:
+		var a := _ap.get_animation(d[k])
+		if a:
+			a.loop_mode = Animation.LOOP_LINEAR
+	# 재질: 거친 피부·가죽 (Forward+에서 반짝이지 않게)
+	for mi: MeshInstance3D in inst.find_children("*", "MeshInstance3D", true, false):
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+		for si in mi.mesh.get_surface_count():
+			var src := mi.get_active_material(si) as StandardMaterial3D
+			if src == null:
+				continue
+			var m := src.duplicate() as StandardMaterial3D
+			m.roughness = maxf(m.roughness, 0.75)
+			m.albedo_color = d.get("skin", Color.WHITE)
+			m.metallic_specular = 0.3
+			m.rim_enabled = true
+			m.rim = 0.12
+			m.rim_tint = 0.6
+			mi.set_surface_override_material(si, m)
+			_model_mats.append(m)
+	# 눈: 머리뼈를 따라다니는 빛나는 눈 + 빛 번짐
+	var holder := _bone_holder(inst, "Head")
+	if holder:
+		_head = holder.get_parent() as Node3D
+		var pts: Array = []
+		for e: Vector3 in d["eyes"]:
+			pts.append(e)
+		_eyes_at(holder, pts, 0.028, 0.55)
+		if _eye_light:
+			_eye_light.position = (pts[0] + pts[1]) * 0.5 + Vector3(0, -0.05, 0.3)
+	if d.has("weapon"):
+		var hh := _bone_holder(inst, d["weapon"][0])
+		if hh:
+			call(d["weapon"][1], hh, d["weapon"][2])
+	_play(d["idle"], 0.0)
+
+
+## 뼈를 따라다니는 노드. 반환된 노드 안에서는 모델 공간(T포즈) 좌표를 그대로 쓰면 됨
+func _bone_holder(inst: Node3D, bone: String) -> Node3D:
+	var bi := _skel3d.find_bone(bone)
+	if bi < 0:
+		return null
+	var att := BoneAttachment3D.new()
+	att.bone_name = bone
+	_skel3d.add_child(att)
+	var to_model := Transform3D.IDENTITY
+	var n: Node = _skel3d
+	while n != inst and n is Node3D:
+		to_model = (n as Node3D).transform * to_model
+		n = n.get_parent()
+	var holder := Node3D.new()
+	holder.transform = (to_model * _skel3d.get_bone_global_rest(bi)).affine_inverse()
+	att.add_child(holder)
+	return holder
+
+
+## 도살자의 거대한 고기칼 (T포즈 오른손 주먹 기준: 손잡이는 앞뒤(Z), 날은 앞으로 뻗고 날끝이 아래)
+func _model_cleaver(holder: Node3D, fist: Vector3) -> void:
+	var wood := StandardMaterial3D.new()
+	wood.albedo_color = Color(0.17, 0.1, 0.06)
+	wood.roughness = 0.85
+	var steel := StandardMaterial3D.new()
+	steel.albedo_color = Color(0.2, 0.19, 0.18)
+	steel.metallic = 0.8
+	steel.roughness = 0.5
+	var rust := StandardMaterial3D.new()
+	rust.albedo_color = Color(0.16, 0.025, 0.02)
+	rust.roughness = 0.6
+	axe_in_hand = Node3D.new()
+	holder.add_child(axe_in_hand)
+	var g := Geo.new()
+	_tube(g, _line(fist + Vector3(0, 0, -0.1), fist + Vector3(0, 0, 0.13), 4), PackedFloat32Array([0.034, 0.038, 0.038, 0.034]), {"sides": 8})
+	_mi(axe_in_hand, g, wood)
+	var xf := Transform3D(Basis(Vector3(0, 0, 1), Vector3(-1, 0, 0), Vector3(0, -1, 0)), fist)
+	g = Geo.new()
+	var blade := PackedVector2Array([Vector2(0.12, -0.36), Vector2(0.72, -0.4), Vector2(0.7, 0.045), Vector2(0.12, 0.045)])
+	_extrude(g, blade, PackedFloat32Array([0.004, 0.004, 0.018, 0.018]), xf)
+	_mi(axe_in_hand, g, steel)
+	g = Geo.new()  # 날에 말라붙은 피
+	var smear := PackedVector2Array([Vector2(0.3, -0.38), Vector2(0.71, -0.4), Vector2(0.7, -0.12), Vector2(0.45, -0.2)])
+	_extrude(g, smear, PackedFloat32Array([0.006, 0.006, 0.019, 0.019]), xf)
+	_mi(axe_in_hand, g, rust)
+	for mi: MeshInstance3D in axe_in_hand.find_children("*", "MeshInstance3D", true, false):
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+
+
+func _play(clip: String, blend: float, spd: float = 1.0) -> void:
+	if _cur_clip != clip:
+		_ap.play(clip, blend)
+		_cur_clip = clip
+	_ap.speed_scale = spd
+
+
+func _animate_model(delta: float, speed: float) -> void:
+	_time += delta
+	_spd_s = lerpf(_spd_s, speed, 1.0 - exp(-8.0 * delta))
+	if _attack_t > 0.0:
+		_attack_t -= delta
+		_atk_t += delta
+		var a: Array = _mdef["atk"]
+		var ct: float
+		if _atk_t < _atk_wind:
+			ct = lerpf(a[0], a[1], _atk_t / _atk_wind)   # 판정 순간에 정확히 내려찍음
+		else:
+			ct = minf(float(a[1]) + (_atk_t - _atk_wind) * 1.6, a[2])
+		if _cur_clip != _mdef["attack"]:
+			_ap.play(_mdef["attack"], 0.0)   # (속도 0으로 직접 시간을 넘기므로 블렌드는 진행이 안 됨)
+			_cur_clip = _mdef["attack"]
+		_ap.speed_scale = 0.0
+		_ap.seek(ct, true)
+		if _attack_t <= 0.0:
+			_cur_clip = ""
+	else:
+		var sp := _spd_s
+		if sp < 0.35:
+			_play(_mdef["idle"], 0.25)
+		elif sp < 3.0:
+			_play(_mdef["walk"], 0.25, clampf(sp / float(_mdef["walk_v"]), 0.8, 3.2))
+		else:
+			_play(_mdef["run"], 0.2, clampf(sp / float(_mdef["run_v"]), 0.6, 1.6))
+	_flicker_eyes(delta)
 
 
 func _rot(n: Node3D, off: Vector3) -> void:
