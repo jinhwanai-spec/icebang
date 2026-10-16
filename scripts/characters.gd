@@ -31,7 +31,7 @@ const DATA := {
 		"name": "카메라맨",
 		"color": Color(1.0, 0.75, 0.2),
 		"ability_1": "플래시 촬영",
-		"ability_1_desc": "정면의 술래를 찍으면 2초 동안 스턴! 움직이지도 보지도 못해요.",
+		"ability_1_desc": "정면의 술래를 찍으면 1.5초 동안 스턴! 움직이지도 보지도 못해요.",
 		"ability_1_cd": ["cameraman", "photo_cooldown", 15.0],
 		"ability_2": "카메라 설치",
 		"ability_2_desc": "바닥에 카메라를 설치(20초). 카메라 앞을 술래가 지나가면 모두에게 위치가 표시돼요. 최대 3개, 25초마다 1개 충전.",

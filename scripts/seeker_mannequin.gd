@@ -16,6 +16,11 @@ func _ready() -> void:
 	_ambush_cd = GameConfig.num("mannequin", "ambush_cooldown", 40.0) * 0.5
 
 
+## 잡는 거리: 기본 술래보다 50% 김 (balance.cfg [mannequin] catch_reach)
+func _catch_reach() -> float:
+	return GameConfig.num("mannequin", "catch_reach", 1.95)
+
+
 func _ability_update(delta: float) -> void:
 	watched = _is_watched()
 	_watched_for = _watched_for + delta if watched else 0.0
