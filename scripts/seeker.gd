@@ -101,7 +101,7 @@ func _ready() -> void:
 	NoiseBus.noise_made.connect(_on_noise_made)
 	body.build(seeker_type)
 	# 종류별 속도 (기본은 모두 1.0 = 같은 속도. 스테이지가 올라도 빨라지지 않음)
-	_speed_mult = GameConfig.num(seeker_type, "speed_multiplier", 1.0)
+	_speed_mult = GameConfig.num(seeker_type, "speed_multiplier", 1.0) * GameConfig.num("seeker", "move_speed", 1.1)
 	step_audio.max_distance = GameConfig.num("view", "seeker_step_hear_distance", 32.0)
 	# 술래 발소리 크기 (balance.cfg [view] seeker_step_volume_db / seeker_step_loudness)
 	step_audio.volume_db = GameConfig.num("view", "seeker_step_volume_db", 6.0)
