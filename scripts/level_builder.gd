@@ -949,9 +949,15 @@ func _park(r: Rect2) -> void:
 	for i in 8:
 		var p := _random_point_in(r.grow(-2.0), c, 6.0)
 		_tree(Vector3(p.x, CURB, p.y))
-	for i in 2:
+	# 벤치는 가운데(봉인석)를 바라보게 (나무 상자 대신 진짜 벤치)
+	for i in 3:
 		var p := _random_point_in(r.grow(-3.0), c, 3.5)
-		_box(Vector3(p.x, CURB + 0.25, p.y), Vector3(1.8, 0.5, 0.6), _mat["crate"], true, rng.randf() * PI)
+		_yard_bench(Vector3(p.x, CURB, p.y), atan2(p.x - c.x, p.y - c.y))
+	# 가운데 공터 둘레 보도블록 테두리 (흙바닥에 경계가 생기게)
+	var edge: Material = _mat["sidewalk"]
+	for e in [Vector2(1, 0), Vector2(-1, 0), Vector2(0, 1), Vector2(0, -1)]:
+		var ep: Vector2 = c + e * 3.2
+		_box(Vector3(ep.x, CURB + 0.03, ep.y), Vector3(0.3 if e.x != 0 else 6.7, 0.06, 6.7 if e.x != 0 else 0.3), edge, false)
 
 
 ## 공터(폐차장): 버려진 차, 버스, 상자. 가운데에 봉인석 자리
@@ -1002,8 +1008,8 @@ func _road_props() -> void:
 		var t := -HALF + 6.0
 		while t <= HALF - 6.0:
 			if _far_from_roads(t, 5.0):
-				_lamp(Vector3(c + ROAD_HALF - 0.6, 0, t))
-				_lamp(Vector3(t, 0, c - ROAD_HALF + 0.6))
+				_lamp(Vector3(c + ROAD_HALF - 0.6, 0, t), -PI / 2.0)  # 팔이 도로 쪽으로
+				_lamp(Vector3(t, 0, c - ROAD_HALF + 0.6), 0.0)
 			t += 17.0
 	# 도로 위 얼룩·금·종이, 비 온 뒤 물웅덩이 (밤 불빛이 반사됨)
 	var puddle := StandardMaterial3D.new()
@@ -1025,7 +1031,21 @@ func _road_props() -> void:
 		elif r < 0.9:
 			kit.decal(pos, Vector3.UP, rng.randf_range(1.0, 2.0), "blood")
 		else:
-			_box(pos + Vector3.UP * 0.002, Vector3(rng.randf_range(1.2, 3.0), 0.01, rng.randf_range(0.8, 2.2)), puddle, false, rng.randf() * PI)
+			# 물웅덩이: 납작한 원판 2~4개를 겹쳐 모양이 제멋대로 (네모난 검은 판이라 구멍처럼 보였음)
+			var disc := CylinderMesh.new()
+			disc.top_radius = 0.5
+			disc.bottom_radius = 0.5
+			disc.height = 0.01
+			disc.radial_segments = 14
+			disc.rings = 1
+			for k in rng.randi_range(2, 4):
+				var mi := MeshInstance3D.new()
+				mi.mesh = disc
+				mi.material_override = puddle
+				mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+				var sc := Vector3(rng.randf_range(0.6, 1.6), 1.0, rng.randf_range(0.5, 1.2))
+				mi.transform = Transform3D(Basis(Vector3.UP, rng.randf() * PI).scaled(sc), pos + Vector3(rng.randf_range(-0.5, 0.5), 0.002 + k * 0.0005, rng.randf_range(-0.4, 0.4)))
+				region.add_child(mi)
 	# 쓰레기 봉투 더미 (건물 앞 보도)
 	for i in 30:
 		var c: float = ROAD_CENTERS[rng.randi() % ROAD_CENTERS.size()]
@@ -1161,7 +1181,18 @@ func _bus(pos: Vector3, yaw: float) -> void:
 
 func _dumpster(pos: Vector3, yaw: float) -> void:
 	var body := _prop(pos, yaw, Vector3(1.9, 1.3, 1.1))
-	_part(body, Vector3(0, 0.65, 0), _box_mesh(Vector3(1.9, 1.3, 1.1)), _rust_mats[rng.randi() % _rust_mats.size()])
+	var rm: StandardMaterial3D = _rust_mats[rng.randi() % _rust_mats.size()]
+	_part(body, Vector3(0, 0.72, 0), _box_mesh(Vector3(1.9, 1.15, 1.1)), rm)
+	# 뚜껑 (가끔 반쯤 열림) + 위 테두리 + 양옆 손잡이 + 바퀴 (네모 상자 하나 같던 것)
+	var lid := _part(body, Vector3(0, 1.33, 0), _box_mesh(Vector3(1.96, 0.05, 1.16)), _car_mat("trim", Color(0.07, 0.07, 0.08), 0.6))
+	if rng.randf() < 0.4:
+		lid.position = Vector3(0, 1.55, -0.45)
+		lid.rotation.x = 0.9
+	_fade(_part(body, Vector3(0, 1.28, 0), _box_mesh(Vector3(1.98, 0.08, 1.14)), rm), 45.0)
+	for sx in [-1.0, 1.0]:
+		_fade(_part(body, Vector3(sx * 1.0, 0.95, 0), _box_mesh(Vector3(0.06, 0.06, 0.7)), _mat["metal"]), 45.0)
+		for sz in [-1.0, 1.0]:
+			_fade(_part(body, Vector3(sx * 0.8, 0.07, sz * 0.4), _box_mesh(Vector3(0.12, 0.14, 0.12)), _car_mat("tire", Color(0.04, 0.04, 0.045), 0.95)), 45.0)
 
 
 func _crates(pos: Vector3) -> void:
@@ -1181,16 +1212,41 @@ func _tree(pos: Vector3) -> void:
 	leaves.radius = rng.randf_range(1.6, 2.2)
 	leaves.height = leaves.radius * 1.7
 	_part(body, Vector3(0, 3.9, 0), leaves, _mat["leaves"])
+	# 잎 덩어리 2~3개를 더 겹쳐 울퉁불퉁하게 (막대 위 공 하나 같던 것)
+	for k in rng.randi_range(2, 3):
+		var a := rng.randf() * TAU
+		var sm := SphereMesh.new()
+		sm.radius = leaves.radius * rng.randf_range(0.5, 0.7)
+		sm.height = sm.radius * 1.6
+		sm.radial_segments = 12
+		sm.rings = 6
+		_part(body, Vector3(cos(a) * leaves.radius * 0.6, 3.5 + rng.randf_range(-0.2, 0.6), sin(a) * leaves.radius * 0.6), sm, _mat["leaves"])
+	var br := _part(body, Vector3(0.35, 2.7, 0), _box_mesh(Vector3(0.12, 0.9, 0.12)), _mat["trunk"])  # 굵은 가지
+	br.rotation.z = -0.6
 
 
-func _lamp(pos: Vector3) -> void:
-	var body := _prop(pos, 0.0, Vector3(0.25, 5.0, 0.25))
-	_part(body, Vector3(0, 2.5, 0), _box_mesh(Vector3(0.14, 5.0, 0.14)), _mat["metal"])
-	_part(body, Vector3(0, 5.0, 0), _box_mesh(Vector3(0.5, 0.15, 0.3)), _mat["metal"])
+var _lamp_pole: CylinderMesh = null
+
+
+func _lamp(pos: Vector3, yaw := 0.0) -> void:
+	var body := _prop(pos, yaw, Vector3(0.25, 5.0, 0.25))
+	# 받침 + 둥근 기둥(아래가 굵음) + 앞으로 뻗은 팔 + 등갓 (네모 막대 하나 같던 것)
+	_part(body, Vector3(0, 0.2, 0), _box_mesh(Vector3(0.36, 0.4, 0.36)), _mat["metal"])
+	if _lamp_pole == null:
+		_lamp_pole = CylinderMesh.new()
+		_lamp_pole.top_radius = 0.055
+		_lamp_pole.bottom_radius = 0.1
+		_lamp_pole.height = 4.8
+		_lamp_pole.radial_segments = 8
+	_part(body, Vector3(0, 2.6, 0), _lamp_pole, _mat["metal"])
+	_part(body, Vector3(0, 4.98, 0.3), _box_mesh(Vector3(0.07, 0.07, 0.7)), _mat["metal"])  # 팔
+	var brace := _part(body, Vector3(0, 4.75, 0.16), _box_mesh(Vector3(0.04, 0.04, 0.45)), _mat["metal"])
+	brace.rotation.x = 0.75
+	_part(body, Vector3(0, 5.0, 0.7), _box_mesh(Vector3(0.36, 0.14, 0.5)), _mat["metal"])  # 등갓
 	if rng.randf() < 0.55:
 		# 나트륨 가로등: 아래로 퍼지는 원뿔 빛 (안개 속에서 빛기둥) + 빛나는 등갓 + 은은한 주변광
 		var glow := LightFX.glow_mat(Color(1.0, 0.7, 0.4), 4.0)
-		_part(body, Vector3(0, 4.9, 0), _box_mesh(Vector3(0.36, 0.04, 0.2)), glow)
+		_part(body, Vector3(0, 4.92, 0.7), _box_mesh(Vector3(0.3, 0.03, 0.42)), glow)
 		var light := SpotLight3D.new()
 		light.light_color = Color(1.0, 0.66, 0.36)
 		light.spot_range = 12.0
@@ -1199,7 +1255,7 @@ func _lamp(pos: Vector3) -> void:
 		light.spot_angle_attenuation = 0.7
 		light.light_energy = 3.2
 		light.light_volumetric_fog_energy = 2.2
-		light.position = Vector3(0, 4.85, 0)
+		light.position = Vector3(0, 4.85, 0.7)
 		light.rotation.x = -PI / 2.0
 		body.add_child(light)
 		LightFX.practical(light, 45.0)  # 최적화: 먼 가로등 빛은 생략, 가까우면 그림자
@@ -1209,7 +1265,7 @@ func _lamp(pos: Vector3) -> void:
 			halo.light_color = Color(1.0, 0.66, 0.36)
 			halo.omni_range = 5.0
 			halo.light_energy = 0.35
-			halo.position = Vector3(0, 4.6, 0)
+			halo.position = Vector3(0, 4.6, 0.7)
 			halo.light_volumetric_fog_energy = 0.0  # 최적화
 			body.add_child(halo)
 			LightFX.practical(halo, 35.0, false)
@@ -1218,6 +1274,24 @@ func _lamp(pos: Vector3) -> void:
 		elif r < 0.3:
 			LightFX.flicker(light, "fluorescent", [glow])
 		elif r < 0.55:
-			LightFX.moths(body, Vector3(0, 4.6, 0))
+			LightFX.moths(body, Vector3(0, 4.6, 0.7))
 	else:
-		_part(body, Vector3(0, 4.9, 0), _box_mesh(Vector3(0.36, 0.04, 0.2)), _flat_mat(Color(0.12, 0.12, 0.11), 0.5))
+		_part(body, Vector3(0, 4.92, 0.7), _box_mesh(Vector3(0.3, 0.03, 0.42)), _flat_mat(Color(0.12, 0.12, 0.11), 0.5))
+
+
+## 운동장 벤치: 다리 2개 + 앉는 널 3장 + 등받이 널 2장 (예전엔 나무 상자 하나)
+var _bench_wood: StandardMaterial3D = null
+
+
+func _yard_bench(p: Vector3, yaw: float) -> void:
+	var body := _prop(p, yaw, Vector3(1.8, 0.9, 0.6))
+	if _bench_wood == null:
+		_bench_wood = _flat_mat(Color(0.5, 0.33, 0.18), 0.85)
+	var wood := _bench_wood
+	for sx in [-0.75, 0.75]:
+		_part(body, Vector3(sx, 0.22, 0), _box_mesh(Vector3(0.08, 0.44, 0.5)), _mat["metal"])
+		_part(body, Vector3(sx, 0.62, 0.22), _box_mesh(Vector3(0.06, 0.45, 0.06)), _mat["metal"])
+	for k in 3:
+		_part(body, Vector3(0, 0.46, -0.16 + k * 0.15), _box_mesh(Vector3(1.8, 0.04, 0.12)), wood)
+	for k in 2:
+		_part(body, Vector3(0, 0.62 + k * 0.18, 0.25), _box_mesh(Vector3(1.8, 0.12, 0.04)), wood)

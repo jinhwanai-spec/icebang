@@ -1274,33 +1274,97 @@ func _furnish_rich(room: Rect2, y: float, kind: String) -> void:
 				for j in rng.randi_range(2, 5):
 					part(bp + Vector3(rng.randf_range(-0.2, 0.2), 0.03 + j * 0.05, rng.randf_range(-0.2, 0.2)), Vector3(0.22, 0.04, 0.3), [Color(0.7, 0.2, 0.2), Color(0.2, 0.4, 0.7), Color(0.85, 0.75, 0.4)][rng.randi() % 3], "trim", false, rng.randf() * PI)
 		"music":
-			# 피아노, 반원으로 놓인 의자·보면대, 북, 벽에 악보
-			var pc := _wall_item(inner, sides[0] if not sides.is_empty() else 0, 0.3, 0.7)
-			var pp: Vector3 = pc[0]
-			pp.y = y
-			if not blocks_door(pp, Vector3(1.6, 1, 1)):
-				_yawbox(_local(pp, pc[1], Vector3(0, 0.6, 0)), Vector3(1.5, 1.2, 0.6), pc[1], Color(0.06, 0.05, 0.06))
-				_yawbox(_local(pp, pc[1], Vector3(0, 0.78, 0.36)), Vector3(1.4, 0.04, 0.15), pc[1], Color(0.95, 0.95, 0.92), false)
-				_chair(_local(pp, pc[1], Vector3(0, 0, 0.9)), pc[1] + PI, Color(0.1, 0.1, 0.1))
-			for i in 9:
-				var a := PI * (0.15 + i * 0.7 / 8.0)
-				var p := Vector3(c.x + cos(a) * 3.0, y, c.y + sin(a) * 2.6 - 1.0)
-				if not inner.has_point(Vector2(p.x, p.z)) or blocks_door(p, Vector3(0.6, 1, 0.6)):
-					continue
-				var face := atan2(c.x - p.x, c.y - 1.0 - p.z) + PI
-				_chair(p, face, Color(0.25, 0.3, 0.45), rng.randf() < 0.15)
-				if rng.randf() < 0.6:
-					var st := _local(p, face, Vector3(0, 0, -0.6))
-					part(st + Vector3.UP * 0.55, Vector3(0.03, 1.1, 0.03), Color(0.2, 0.2, 0.2), "metal")
-					part(st + Vector3.UP * 1.1, Vector3(0.45, 0.32, 0.02), Color(0.15, 0.15, 0.15), "metal", false, face)
-					# 보면대: 세 갈래 다리 + 악보 받침 턱 + 가끔 올려진 악보 (막대 하나만 서 있지 않게)
-					for k in 3:
-						var la := face + k * TAU / 3.0
-						part(st + Vector3(sin(la) * 0.13, 0.02, cos(la) * 0.13), Vector3(0.025, 0.025, 0.28), Color(0.2, 0.2, 0.2), "metal", false, la)
-					part(_local(st, face, Vector3(0, 0.95, 0.02)), Vector3(0.45, 0.02, 0.05), Color(0.2, 0.2, 0.2), "metal", false, face)
-					if rng.randf() < 0.6:
-						part(_local(st, face, Vector3(0, 1.1, 0.015)), Vector3(0.3, 0.24, 0.005), Color(0.92, 0.9, 0.84), "trim", false, face)
-			part(Vector3(inner.end.x - 0.6, y + 0.3, inner.end.y - 0.6), Vector3(0.7, 0.6, 0.7), Color(0.6, 0.15, 0.12), "trim", true)
+			# 합주실: 지휘대를 향해 반원 3줄(뒤 두 줄은 낮은 단 위) 의자·보면대, 그랜드 피아노, 드럼 세트, 악기장
+			# (예전엔 넓은 방에 의자 몇 개만 흩어져 텅 비어 보였음)
+			var fs: int = sides[0] if not sides.is_empty() else 0
+			var cd := _wall_item(inner, fs, 0.5, 1.4)
+			var cpos: Vector3 = cd[0]
+			cpos.y = y
+			var fwd := Basis(Vector3.UP, float(cd[1])) * Vector3(0, 0, 1)  # 지휘대에서 방 안쪽
+			if not blocks_door(cpos, Vector3(1.2, 1, 1.2)):
+				_obj_begin()
+				part(cpos + Vector3.UP * 0.1, Vector3(1.0, 0.2, 1.0), Color(0.35, 0.22, 0.14), "trim", true)
+				var ms := cpos + fwd * 0.3
+				part(ms + Vector3.UP * 0.75, Vector3(0.03, 1.1, 0.03), Color(0.2, 0.2, 0.2), "metal")
+				part(_local(ms + Vector3.UP * 1.25, cd[1], Vector3(0, 0, 0)), Vector3(0.5, 0.35, 0.02), Color(0.15, 0.15, 0.15), "metal", false, cd[1])
+				_obj_end()
+			var maxr := minf(inner.size.x, inner.size.y) - 2.0
+			for row in 3:
+				var rad := 2.4 + row * 1.25
+				if rad > maxr:
+					break
+				var rise := 0.0 if row == 0 else row * 0.18
+				var n := int(PI * rad / 0.9)
+				if row > 0:
+					# 낮은 단 (조각 판을 반원으로 이어 붙임)
+					for k in n + 1:
+						var ang := -PI * 0.5 + PI * k / n
+						var dpos := cpos + Basis(Vector3.UP, ang) * fwd * rad
+						if inner.has_point(Vector2(dpos.x, dpos.z)) and not blocks_door(dpos, Vector3(1, 1, 1)) and not _keep.has_point(Vector2(dpos.x, dpos.z)):
+							part(Vector3(dpos.x, y + rise * 0.5, dpos.z), Vector3(1.1, rise, 1.2), Color(0.42, 0.3, 0.2).darkened(0.05 * row), "trim", true, atan2(dpos.x - cpos.x, dpos.z - cpos.z))
+				for k in n:
+					var ang := -PI * 0.5 + PI * (k + 0.5) / n
+					var p := cpos + Basis(Vector3.UP, ang) * fwd * rad
+					if not inner.grow(-0.3).has_point(Vector2(p.x, p.z)) or blocks_door(p, Vector3(0.7, 1, 0.7)) or _keep.has_point(Vector2(p.x, p.z)):
+						continue
+					if rng.randf() < 0.12:
+						continue  # 빈 자리
+					var face := atan2(cpos.x - p.x, cpos.z - p.z) + PI  # 의자 앞(-z)이 지휘대를 봄
+					var base := Vector3(p.x, y + rise, p.z)
+					_chair(base, face, Color(0.25, 0.3, 0.45), rng.randf() < 0.1)
+					if rng.randf() < 0.65:
+						var st := _local(base, face, Vector3(0, 0, -0.6))
+						_obj_begin()
+						part(st + Vector3.UP * 0.55, Vector3(0.03, 1.1, 0.03), Color(0.2, 0.2, 0.2), "metal")
+						part(st + Vector3.UP * 1.1, Vector3(0.45, 0.32, 0.02), Color(0.15, 0.15, 0.15), "metal", false, face)
+						for t3 in 3:
+							var la := face + t3 * TAU / 3.0
+							part(st + Vector3(sin(la) * 0.13, 0.02, cos(la) * 0.13), Vector3(0.025, 0.025, 0.28), Color(0.2, 0.2, 0.2), "metal", false, la)
+						part(_local(st, face, Vector3(0, 0.95, 0.02)), Vector3(0.45, 0.02, 0.05), Color(0.2, 0.2, 0.2), "metal", false, face)
+						if rng.randf() < 0.6:
+							part(_local(st, face, Vector3(0, 1.1, 0.015)), Vector3(0.3, 0.24, 0.005), Color(0.92, 0.9, 0.84), "trim", false, face)
+						_obj_end()
+			# 그랜드 피아노 (지휘대 옆): 몸통 + 열린 뚜껑 + 건반 + 다리 3개 + 의자
+			var gp := cpos + Basis(Vector3.UP, float(cd[1])) * Vector3(2.4, 0, 0.3)
+			if inner.grow(-0.8).has_point(Vector2(gp.x, gp.z)) and not blocks_door(gp, Vector3(1.8, 1, 2.0)) and not _keep.has_point(Vector2(gp.x, gp.z)):
+				_obj_begin()
+				var py: float = float(cd[1]) + PI * 0.5
+				var blk := Color(0.04, 0.035, 0.04)
+				_yawbox(_local(gp, py, Vector3(0, 0.82, 0)), Vector3(1.45, 0.3, 1.8), py, blk, true)
+				_yawbox(_local(gp, py, Vector3(0.35, 0.82, 0.55)), Vector3(0.75, 0.3, 0.7), py, blk, false)  # 꼬리 쪽 둥글게
+				var lid_c := _local(gp, py, Vector3(0.2, 1.35, 0.1))
+				part(lid_c, Vector3(1.0, 0.03, 1.6), blk.lightened(0.05), "trim", false, py)
+				_yawbox(_local(gp, py, Vector3(-0.3, 1.15, 0.1)), Vector3(0.02, 0.6, 0.02), py, Color(0.1, 0.1, 0.1), false, "metal")  # 받침대
+				_yawbox(_local(gp, py, Vector3(0, 0.88, -0.98)), Vector3(1.3, 0.05, 0.18), py, Color(0.95, 0.95, 0.92), false)  # 건반
+				for kx in 9:
+					_yawbox(_local(gp, py, Vector3(-0.55 + kx * 0.14, 0.915, -0.94)), Vector3(0.05, 0.03, 0.1), py, Color(0.05, 0.05, 0.05), false)
+				for lp in [Vector3(-0.6, 0, -0.75), Vector3(0.6, 0, -0.75), Vector3(0.3, 0, 0.8)]:
+					_yawbox(_local(gp, py, lp + Vector3(0, 0.34, 0)), Vector3(0.1, 0.68, 0.1), py, blk, false)
+				_yawbox(_local(gp, py, Vector3(0, 0.25, -1.55)), Vector3(0.8, 0.06, 0.35), py, blk, false)  # 피아노 의자
+				for sx in [-1.0, 1.0]:
+					_yawbox(_local(gp, py, Vector3(0.35 * sx, 0.12, -1.55)), Vector3(0.05, 0.24, 0.3), py, blk, false)
+				_obj_end()
+			# 드럼 세트 (반대쪽 구석)
+			var dk := Vector3(inner.end.x - 1.2, y, inner.end.y - 1.2)
+			if fs == 1 or fs == 3:
+				dk = Vector3(inner.position.x + 1.2, y, inner.position.y + 1.2)
+			if not blocks_door(dk, Vector3(2, 1, 2)) and not _keep.has_point(Vector2(dk.x, dk.z)):
+				_obj_begin()
+				lb._pipe(dk + Vector3(0, 0.3, 0), 0.3, 0.5, Color(0.6, 0.12, 0.1))  # 베이스 드럼 (세워진 원통)
+				lb._pipe(dk + Vector3(0.55, 0.62, 0.3), 0.18, 0.15, Color(0.85, 0.85, 0.85))  # 스네어
+				lb._pipe(dk + Vector3(-0.5, 0.75, 0.25), 0.15, 0.18, Color(0.6, 0.12, 0.1))  # 탐
+				for cy in [Vector3(0.8, 0, -0.3), Vector3(-0.8, 0, -0.4)]:
+					part(dk + cy + Vector3.UP * 0.55, Vector3(0.025, 1.1, 0.025), Color(0.6, 0.6, 0.62), "metal")
+					lb._pipe(dk + cy + Vector3.UP * 1.1, 0.25, 0.01, Color(0.8, 0.65, 0.25))  # 심벌
+				part(dk + Vector3(0.55, 0.3, 0.3), Vector3(0.025, 0.6, 0.025), Color(0.6, 0.6, 0.62), "metal")
+				_obj_end()
+			# 악기장 (남은 옆벽): 칸마다 기타·바이올린 모양 케이스
+			if sides.size() > 1:
+				_along_wall(inner, sides[1], 0.45, 1.6, y, func(p, yw):
+					_yawbox(_local(p, yw, Vector3(0, 0.9, 0)), Vector3(1.5, 1.8, 0.45), yw, Color(0.45, 0.32, 0.2), true)
+					for kk in 3:
+						var cc: Color = [Color(0.15, 0.12, 0.1), Color(0.55, 0.3, 0.12), Color(0.1, 0.12, 0.2)][rng.randi() % 3]
+						_yawbox(_local(p, yw, Vector3(-0.45 + kk * 0.45, 0.85, 0.24)), Vector3(0.3, 1.0 + rng.randf_range(-0.2, 0.2), 0.04), yw, cc, false))
 		"lab":
 			# 실험대(싱크·수도꼭지·비커), 벽에 약품장·원소 주기율표, 해골 모형
 			var along_x := inner.size.x >= inner.size.y

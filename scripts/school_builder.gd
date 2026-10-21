@@ -593,7 +593,7 @@ func _yard_props() -> void:
 		var p := Vector3(rng.randf_range(-half + 8, half - 8), 0, rng.randf_range(-20, half - 10))
 		if _in_building(p, 4.0) or Rect2(-46, -26, 80, 70).has_point(Vector2(p.x, p.z)):
 			continue
-		_box(p + Vector3(0, 0.25, 0), Vector3(1.8, 0.5, 0.5), _mat["crate"], true, rng.randf() * PI)
+		_yard_bench(p, rng.randf() * TAU)
 	for p in [Vector3(-10, 0, -32), Vector3(10, 0, -32), Vector3(-30, 0, 50), Vector3(30, 0, 50), Vector3(0, 0, 55), Vector3(45, 0, -30), Vector3(-55, 0, 10), Vector3(40, 0, 30)]:
 		_lamp(p)
 	# 창고 (들어갈 수 있는 작은 건물)
@@ -603,3 +603,44 @@ func _yard_props() -> void:
 	# 화단 풀숲
 	for p in [Vector3(-22, 0, -35), Vector3(22, 0, -35), Vector3(-36, 0, -35), Vector3(36, 0, -35)]:
 		_grass(p, Vector2(6, 2.5))
+	# 정문에서 운동장까지 보도블록 길 + 양옆 가로수·벤치 (넓은 잔디가 텅 비어 보이지 않게)
+	var walk := _noise_mat(Color(0.55, 0.52, 0.48), 0.25, 0.9, 3.0)
+	_box(Vector3(0, 0.03, 58.5), Vector3(4.0, 0.06, 29.0), walk, false)
+	for e in [-1.0, 1.0]:
+		_box(Vector3(e * 2.05, 0.08, 58.5), Vector3(0.12, 0.16, 29.0), _mat["concrete"], false)  # 연석
+	for k in 5:
+		var z := 47.0 + k * 5.5
+		for e in [-1.0, 1.0]:
+			var tp := Vector3(e * 4.2, 0, z)
+			if tp.distance_to(Vector3(e * 2.0, 0, 65.5)) < 3.0 or tp.distance_to(Vector3(5, 0, 62)) < 2.8:
+				continue  # 시작 지점 바로 옆은 비움
+			_tree(tp)
+			_box(tp + Vector3(0, 0.12, 0), Vector3(1.4, 0.24, 1.4), _mat["concrete"], false)  # 나무 둘레 화단 턱
+		if k % 2 == 1:
+			_yard_bench(Vector3(-3.0, 0, z + 2.6), PI / 2.0)
+	# 서쪽 잔디: 생울타리 줄 + 나무 무리 + 바위
+	var hedge := _noise_mat(Color(0.16, 0.3, 0.14), 0.35, 1.0, 2.0)
+	for k in 4:
+		var hz := -10.0 + k * 12.0
+		# 생울타리: 부딪힘 상자 + 둥근 잎 덩어리를 겹쳐서 울퉁불퉁하게 (매끈한 초록 판 같던 것)
+		var hb := _prop(Vector3(-58.0, 0, hz), 0.0, Vector3(1.0, 1.2, 7.0))
+		_part(hb, Vector3(0, 0.45, 0), _box_mesh(Vector3(0.8, 0.9, 6.8)), hedge)
+		var hedge2 := _noise_mat(Color(0.2, 0.36, 0.16), 0.4, 1.0, 1.5)
+		for bk in 22:
+			var bm := SphereMesh.new()
+			bm.radius = rng.randf_range(0.3, 0.55)
+			bm.height = bm.radius * rng.randf_range(1.5, 2.0)
+			bm.radial_segments = 8
+			bm.rings = 4
+			var bz := rng.randf_range(-3.1, 3.1)
+			_part(hb, Vector3(rng.randf_range(-0.3, 0.3), rng.randf_range(0.55, 1.05), bz), bm, hedge if rng.randf() < 0.6 else hedge2)
+	for k in 7:
+		var tp := Vector3(rng.randf_range(-70, -50), 0, rng.randf_range(-30, 35))
+		if _in_building(tp, 4.0) or Rect2(-67, 39, 11, 10).has_point(Vector2(tp.x, tp.z)) or Vector2(tp.x, tp.z).distance_to(Vector2(-62, -20)) < 6.0:
+			continue
+		_tree(tp)
+	for k in 4:
+		var bp := Vector3(rng.randf_range(-68, -50), 0, rng.randf_range(-25, 30))
+		if not _in_building(bp, 3.0):
+			_box(bp + Vector3(0, 0.35, 0), Vector3(1.4, 0.7, 1.0), _mat["concrete"], true, rng.randf() * PI)
+

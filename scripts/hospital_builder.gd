@@ -178,6 +178,10 @@ func _hospital() -> void:
 	_bx("trim", Vector3(r.end.x + 3.0, Y0 + 3.6, corr_z), Vector3.BACK, Vector3.RIGHT, Vector3(5.0, 0.25, 6.0), Color(0.7, 0.72, 0.72))
 	for dz in [-2.6, 2.6]:
 		kit.part(Vector3(r.end.x + 5.3, Y0 + 1.8, corr_z + dz), Vector3(0.25, 3.6, 0.25), Color(0.7, 0.7, 0.72), "trim", true)
+		kit.part(Vector3(r.end.x + 5.3, Y0 + 0.2, corr_z + dz), Vector3(0.5, 0.4, 0.5), Color(0.5, 0.5, 0.5), "trim")  # 기둥 받침
+		kit.part(Vector3(r.end.x + 5.3, Y0 + 0.9, corr_z + dz), Vector3(0.27, 0.15, 0.27), Color(0.85, 0.75, 0.15), "trim")  # 노란 충돌 띠
+	# 차양 앞 가장자리 빨간 띠 (얇은 판 하나처럼 보이지 않게)
+	kit.part(Vector3(r.end.x + 5.5, Y0 + 3.55, corr_z), Vector3(0.12, 0.4, 6.0), Color(0.75, 0.1, 0.08), "trim")
 	var el := OmniLight3D.new()
 	el.light_color = Color(1.0, 0.2, 0.15)
 	el.light_energy = 1.2
@@ -471,6 +475,22 @@ func _parking_lot() -> void:
 	generator_spots.append(Vector3(-25, 0.05, 19))
 	generator_spots.append(Vector3(25, 0.05, 33))
 	generator_spots.append(Vector3(0, 0.05, -48))
+	# 건물 양옆 잔디: 산책로 + 벤치 + 나무 무리 + 버려진 휠체어 (넓은 잔디가 텅 비어 보이지 않게)
+	var walk := _noise_mat(Color(0.5, 0.48, 0.45), 0.25, 0.9, 3.0)
+	for sx in [-1.0, 1.0]:
+		var wx: float = sx * (BLD.end.x + 8.0)
+		if absf(wx) > half - 6.0:
+			continue
+		_box(Vector3(wx, 0.03, -21.0), Vector3(2.6, 0.06, 30.0), walk, false)
+		for k in 4:
+			var bz := -32.0 + k * 7.5
+			if k % 2 == 0:
+				_yard_bench(Vector3(wx + sx * 2.0, 0, bz), sx * PI / 2.0)
+			var tp := Vector3(wx - sx * 3.5 + rng.randf_range(-1, 1), 0, bz + 3.5)
+			if not BLD.grow(3.0).has_point(Vector2(tp.x, tp.z)):
+				_tree(tp)
+		if rng.randf() < 0.7:
+			_wheelchair(Vector3(wx + sx * 0.6, 0, -14.0))
 	# 건물 뒤 공터: 폐기물 컨테이너, 산소 탱크
 	for i in 4:
 		_dumpster(Vector3(-20 + i * 12, 0, -40), 0.0)
@@ -506,10 +526,26 @@ func _ambulance(pos: Vector3, yaw: float) -> void:
 	lightbar.emission = Color(1, 0.1, 0.1)
 	lightbar.emission_energy_multiplier = 0.8 if rng.randf() < 0.5 else 0.0
 	_part(body, Vector3(0, 2.5, 0.9), _box_mesh(Vector3(1.4, 0.15, 0.3)), lightbar)
+	# 옆·뒤 빨간 십자, 운전석 옆창, 뒷문 두 짝(틈·창·손잡이), 범퍼·전조등·후미등 (흰 상자 같던 것)
+	var dark := _flat_mat(Color(0.07, 0.07, 0.08), 0.6)
+	for sx in [-1.0, 1.0]:
+		_part(body, Vector3(sx * 1.112, 1.65, -0.6), _box_mesh(Vector3(0.01, 0.7, 0.22)), red)
+		_part(body, Vector3(sx * 1.112, 1.65, -0.6), _box_mesh(Vector3(0.01, 0.22, 0.7)), red)
+		_part(body, Vector3(sx * 1.06, 1.35, 1.95), _box_mesh(Vector3(0.02, 0.5, 0.9)), _mat["glass"])  # 운전석 창
+		_part(body, Vector3(sx * 0.95, 1.0, 2.71), _box_mesh(Vector3(0.3, 0.14, 0.03)), _flat_mat(Color(0.9, 0.9, 0.8), 0.3))  # 전조등
+		_part(body, Vector3(sx * 0.9, 1.4, -2.41), _box_mesh(Vector3(0.18, 0.3, 0.03)), red)  # 후미등
+		_part(body, Vector3(sx * 0.48, 1.6, -2.41), _box_mesh(Vector3(0.6, 0.45, 0.02)), _mat["glass"])  # 뒷문 창
+		_part(body, Vector3(sx * 0.12, 1.1, -2.42), _box_mesh(Vector3(0.05, 0.18, 0.04)), _mat["metal"])  # 손잡이
+	_part(body, Vector3(0, 1.3, -2.41), _box_mesh(Vector3(0.02, 2.0, 0.02)), dark)  # 뒷문 틈
+	_part(body, Vector3(0, 0.45, 2.72), _box_mesh(Vector3(2.15, 0.25, 0.12)), dark)
+	_part(body, Vector3(0, 0.45, -2.45), _box_mesh(Vector3(2.15, 0.2, 0.12)), dark)
+	_part(body, Vector3(0, 1.85, -2.42), _box_mesh(Vector3(0.22, 0.6, 0.01)), red)
+	_part(body, Vector3(0, 1.85, -2.42), _box_mesh(Vector3(0.6, 0.22, 0.01)), red)
 	for wx in [-1.0, 1.0]:
 		for wz in [-1.8, 1.6]:
 			var wheel := CylinderMesh.new()
 			wheel.top_radius = 0.38
 			wheel.bottom_radius = 0.38
 			wheel.height = 0.28
-			_part(body, Vector3(wx, 0.38, wz), wheel, _mat["metal"]).rotation.z = PI / 2.0
+			_part(body, Vector3(wx, 0.38, wz), wheel, _flat_mat(Color(0.05, 0.05, 0.055), 0.95)).rotation.z = PI / 2.0
+			_part(body, Vector3(wx * 1.15, 0.38, wz), _box_mesh(Vector3(0.03, 0.3, 0.3)), _mat["metal"])  # 휠
