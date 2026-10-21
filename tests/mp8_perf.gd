@@ -11,7 +11,10 @@ func _ready() -> void:
 		OUT = ProjectSettings.globalize_path("res://").path_join("../pc_shots/mp8/")
 	DirAccess.make_dir_recursive_absolute(OUT)
 	get_window().size = Vector2i(1600, 900)
-	var args := OS.get_cmdline_user_args()
+	var args := Array(OS.get_cmdline_user_args())
+	var af := ProjectSettings.globalize_path("res://").path_join("../pc_shots/mp8_args.txt")
+	if args.is_empty() and FileAccess.file_exists(af):
+		args = Array(FileAccess.get_file_as_string(af).strip_edges().split(" ", false))
 	var turn := args.has("turn")
 	var maps: Array = args.filter(func(a): return a in ["city", "forest", "school", "hospital"])
 	if maps.is_empty():
@@ -55,7 +58,16 @@ func _ready() -> void:
 		var f := FileAccess.open(OUT + "log.txt", FileAccess.WRITE)
 		f.store_string(log)
 		f.close()
+		if turn:
+			var cnt := {}
+			for c in get_tree().current_scene.get_children():
+				var k: String = c.get_class() + ("/" + str(c.get_script().resource_path.get_file()) if c.get_script() else "")
+				cnt[k] = int(cnt.get(k, 0)) + 1
+			log += "scene children: " + str(cnt) + "\n"
 		await _snap(map + ("_turn2" if turn else "_8p2"))
+		var f2 := FileAccess.open(OUT + "log.txt", FileAccess.WRITE)
+		f2.store_string(log)
+		f2.close()
 		Net.leave()
 		get_tree().paused = false
 		get_tree().change_scene_to_file("res://scenes/menu.tscn")
