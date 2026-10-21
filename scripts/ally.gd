@@ -252,6 +252,14 @@ func _flee_point(from: Vector3) -> Vector3:
 		var path := NavigationServer3D.map_get_path(map, global_position, cand, true)
 		if path.size() < 2 or path[path.size() - 1].distance_to(cand) > 1.0:
 			continue
+		# 차 지붕·낮은 소품 위처럼 올라갈 수 없는 곳으로 가는 길은 뺌 (거기 막혀 제자리걸음하던 문제)
+		var too_high := false
+		for pt in path:
+			if pt.y > global_position.y + 0.35:
+				too_high = true
+				break
+		if too_high:
+			continue
 		var plen := 0.0
 		for k in path.size() - 1:
 			plen += path[k].distance_to(path[k + 1])
