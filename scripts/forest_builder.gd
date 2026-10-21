@@ -534,7 +534,13 @@ func _cabin(spot: Vector3) -> void:
 	var ddir: Vector3 = [Vector3(0, 0, -1), Vector3(1, 0, 0), Vector3(0, 0, 1), Vector3(-1, 0, 0)][door_side]
 	var dpos := Vector3(spot.x, 0, spot.z) + Vector3(ddir.x * w * 0.5, 0, ddir.z * d * 0.5)
 	kit.door_clear = Rect2(dpos.x - 1.4, dpos.z - 2.8, 2.8, 5.6) if door_side % 2 == 0 else Rect2(dpos.x - 2.8, dpos.z - 1.4, 5.6, 2.8)
+	# 벽난로 자리는 비워 두고(가구 겹침 방지) 옛날식 살림으로
+	var fire_z := inner.position.y + 0.4 if door_side != 0 else inner.end.y - 0.4
+	kit.reserved = [Rect2(inner.get_center().x - 1.2, fire_z - 0.9, 2.4, 1.8)]
+	kit.rustic = true
 	kit.furnish(inner, 0.06, "apartment", true)
+	kit.rustic = false
+	kit.reserved = []
 	debug_rooms.append([{"rect": r.grow(-0.3), "kind": "cabin", "name": "cabin", "door_at": dpos, "door_along_x": door_side % 2 == 0}, 0.06])
 	kit._along_wall(inner, (door_side + 1) % 4, 0.45, 1.9, 0.06, func(p, yw): if kit.rng.randf() < 0.6: kit._rack(p, yw))
 	kit._maybe_locker(inner, 0.06, 1.0)

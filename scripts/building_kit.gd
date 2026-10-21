@@ -729,13 +729,13 @@ func _furnish_inner(room: Rect2, y: float, kind: String, keep_center := false) -
 	match kind:
 		"apartment":
 			# 벽 가구끼리 겹치지 않게 자리를 기록하며 놓음 (침대와 소파가 한 자리에 박혀 있던 것)
-			var used: Array = []
+			var used: Array = reserved.duplicate()
 			var bed_spot := _against_free(inner, 2.0, 1.4, used)
 			_bed(bed_spot, y)
 			_nightstand(bed_spot, y)
 			if rng.randf() < 0.7:
 				_sofa(_against_free(inner, 1.9, 0.8, used), y)
-			if rng.randf() < 0.5:
+			if rng.randf() < 0.5 and not rustic:
 				_tv(_against_free(inner, 1.2, 0.45, used), y)
 			if inner.get_area() > 50.0:
 				# 넓은 집: 부엌 싱크대 줄 + 냉장고 + 식탁 세트 (넓은 바닥이 텅 비어 보이지 않게)
@@ -975,6 +975,12 @@ func _against(r: Rect2, side: int, length: float, depth: float) -> Array:
 		if not _in_doorway(p, sz, 0.0, true):
 			return spot
 	return first
+
+
+## 숲 오두막처럼 옛날식 방 (현대식 냉장고·TV 대신 나무 찬장·무쇠 난로)
+var rustic := false
+## 가구를 놓으면 안 되는 자리 (벽난로 등). furnish 전에 채우고 끝나면 비움
+var reserved: Array = []
 
 
 ## 벽에 붙일 자리: 이미 놓인 가구(used)와 겹치지 않는 곳을 찾음. 고른 자리는 used에 추가
@@ -1984,6 +1990,20 @@ func _kitchenette(spot: Array, y: float) -> void:
 	if blocks_door(p, Vector3(3.2, 1, 0.8)):
 		return
 	_obj_begin()
+	if rustic:
+		# 오두막 부엌: 나무 조리대 + 양동이 개수대 + 무쇠 난로(연통) + 벽 선반의 그릇
+		var wd := Color(0.42, 0.28, 0.16)
+		_yawbox(_local(p, yaw, Vector3(-0.4, 0.43, 0)), Vector3(2.2, 0.86, 0.6), yaw, wd, true)
+		_yawbox(_local(p, yaw, Vector3(-0.4, 0.88, 0.01)), Vector3(2.26, 0.05, 0.64), yaw, wd.darkened(0.2), false)
+		lb._pipe(_local(p, yaw, Vector3(-1.0, 1.0, 0.0)), 0.2, 0.22, Color(0.5, 0.5, 0.48))  # 양동이
+		_yawbox(_local(p, yaw, Vector3(1.15, 0.4, -0.02)), Vector3(0.7, 0.8, 0.6), yaw, Color(0.08, 0.08, 0.08), true, "metal")  # 무쇠 난로
+		_yawbox(_local(p, yaw, Vector3(1.15, 0.4, 0.31)), Vector3(0.35, 0.3, 0.02), yaw, Color(0.9, 0.4, 0.1) if rng.randf() < 0.4 else Color(0.03, 0.03, 0.03), false, "lit")
+		lb._pipe(_local(p, yaw, Vector3(1.15, 1.6, -0.1)), 0.07, 1.6, Color(0.12, 0.12, 0.12))  # 연통
+		_yawbox(_local(p, yaw, Vector3(-0.4, 1.6, -0.15)), Vector3(2.0, 0.04, 0.3), yaw, wd, false)  # 벽 선반
+		for k in 5:
+			_yawbox(_local(p, yaw, Vector3(-1.2 + k * 0.4, 1.7, -0.15)), Vector3(0.18, 0.16, 0.18), yaw, [Color(0.75, 0.7, 0.6), Color(0.5, 0.3, 0.2), Color(0.3, 0.35, 0.45)][rng.randi() % 3], false)
+		_obj_end()
+		return
 	var cab := Color(0.82, 0.8, 0.74).darkened(rng.randf() * 0.15)
 	_yawbox(_local(p, yaw, Vector3(-0.35, 0.43, 0)), Vector3(2.4, 0.86, 0.6), yaw, cab, true)
 	_yawbox(_local(p, yaw, Vector3(-0.35, 0.885, 0.01)), Vector3(2.44, 0.04, 0.63), yaw, Color(0.3, 0.3, 0.32), false, "metal")
