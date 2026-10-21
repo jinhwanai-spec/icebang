@@ -236,7 +236,7 @@ func final_door_pass() -> void:
 			_drop_object(parts)
 		elif debug_record:
 			for e in parts:
-				if not (e[3] as Array).is_empty():
+				if e.size() > 3 and not (e[3] as Array).is_empty():
 					lb.set_meta("dbg_furn", lb.get_meta("dbg_furn", []) + [e[3]])
 	_objects = []
 
@@ -2335,6 +2335,12 @@ func _beam_seats(p: Vector3, yaw: float, n: int, col: Color) -> void:
 	var m := Color(0.55, 0.56, 0.58)
 	var w := 0.56
 	var L := n * w
+	# 부딪힘은 줄 전체를 덮는 상자 하나 (얇은 의자판만 있으면 길찾기가 의자 위로 길을 내서 봇이 걸림)
+	var nb := body.get_child_count()
+	solid(_local(p, yaw, Vector3(0, 0.5, 0.05)), Vector3(L, 1.0, 0.6), Basis(Vector3.UP, yaw))
+	if body.get_child_count() > nb and _obj_depth > 0:
+		# 의자 줄을 빼면 부딪힘도 같이 뺌 (그림 없음: 크기 0이라 문 검사에는 안 걸림)
+		_obj_parts.append(["", 0, body.get_child(body.get_child_count() - 1), [], Vector3.ZERO, Vector3.ZERO, 0.0])
 	_yawbox(_local(p, yaw, Vector3(0, 0.36, 0.05)), Vector3(L, 0.05, 0.08), yaw, m, false, "metal")
 	for sx in [-1.0, 1.0]:
 		var lx: float = (L * 0.5 - 0.2) * sx
@@ -2344,7 +2350,7 @@ func _beam_seats(p: Vector3, yaw: float, n: int, col: Color) -> void:
 		var x: float = -L * 0.5 + (i + 0.5) * w
 		if rng.randf() < 0.06:
 			continue  # 하나쯤 떨어져 나간 자리
-		_yawbox(_local(p, yaw, Vector3(x, 0.43, 0.0)), Vector3(w - 0.06, 0.06, 0.44), yaw, col, true)
+		_yawbox(_local(p, yaw, Vector3(x, 0.43, 0.0)), Vector3(w - 0.06, 0.06, 0.44), yaw, col, false)
 		_yawbox(_local(p, yaw, Vector3(x, 0.72, 0.22)), Vector3(w - 0.06, 0.46, 0.05), yaw, col.darkened(0.08), false)
 		_yawbox(_local(p, yaw, Vector3(x, 0.39, 0.05)), Vector3(0.06, 0.04, 0.3), yaw, m, false, "metal")
 		_yawbox(_local(p, yaw, Vector3(x, 0.55, 0.2)), Vector3(0.04, 0.3, 0.04), yaw, m, false, "metal")
