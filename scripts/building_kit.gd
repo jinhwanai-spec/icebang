@@ -1225,6 +1225,26 @@ func _furnish_rich(room: Rect2, y: float, kind: String) -> void:
 			_maybe_locker(inner, y, 0.7)
 			if rng.randf() < 0.6:
 				_plant(Vector3(inner.end.x - 0.4, y, inner.end.y - 0.4))
+			if inner.get_area() > 90.0:
+				# 넓은 사무실: 회의 탁자(의자 6개) + 복사기 + 구석 화분 (가운데 책상 섬만 있어 휑하던 것)
+				var mtp := Vector3(lerpf(inner.position.x, inner.end.x, 0.2), y, lerpf(inner.position.y, inner.end.y, 0.5))
+				if not _keep.intersects(Rect2(mtp.x - 1.6, mtp.z - 1.2, 3.2, 2.4)) and not blocks_door(mtp, Vector3(3.2, 1, 2.4)):
+					_table(mtp, Vector2(2.2, 1.0))
+					for k in 3:
+						for sd2 in [-1.0, 1.0]:
+							_chair(mtp + Vector3(-0.7 + k * 0.7, 0, 0.8 * sd2), 0.0 if sd2 > 0 else PI, Color(0.2, 0.22, 0.28), rng.randf() < 0.1)
+				var cp3 := _against(inner, sides[1] if sides.size() > 1 else 1, 0.9, 0.7)
+				var cpp: Vector3 = cp3[0]
+				cpp.y = y
+				if not blocks_door(cpp, Vector3(1, 1, 1)):
+					_obj_begin()
+					_yawbox(_local(cpp, cp3[1], Vector3(0, 0.5, 0)), Vector3(0.8, 1.0, 0.6), cp3[1], Color(0.85, 0.85, 0.83), true)
+					_yawbox(_local(cpp, cp3[1], Vector3(0, 1.05, 0.05)), Vector3(0.7, 0.1, 0.5), cp3[1], Color(0.3, 0.3, 0.32), false, "metal")
+					_yawbox(_local(cpp, cp3[1], Vector3(0.25, 1.12, 0.2)), Vector3(0.15, 0.04, 0.1), cp3[1], Color(0.2, 0.8, 0.4), false, "lit")
+					for k in 3:
+						_yawbox(_local(cpp, cp3[1], Vector3(0, 0.25 + k * 0.25, 0.305)), Vector3(0.7, 0.01, 0.01), cp3[1], Color(0.5, 0.5, 0.5), false)
+					_obj_end()
+				_plant(Vector3(inner.position.x + 0.4, y, inner.position.y + 0.4))
 		"nurse":
 			# 커튼 친 침대 2~3개, 약장, 체중계, 시력표
 			var bs: int = sides[0] if not sides.is_empty() else 0
@@ -1441,6 +1461,30 @@ func _furnish_rich(room: Rect2, y: float, kind: String) -> void:
 				part(cp + Vector3(rng.randf_range(-1.6, 1.6), 1.17, 1.3 + rng.randf_range(-0.2, 0.2)), Vector3(0.25, 0.04, 0.32), Color(0.9, 0.85, 0.6).darkened(rng.randf() * 0.3), "trim", false, rng.randf() * PI)
 			for sd in sides:
 				_along_wall(inner, sd, 0.5, 1.0, y, func(p, yw): if rng.randf() < 0.6: _cabinet([p, yw], y))
+			if inner.get_area() > 80.0:
+				# 넓은 간호사실: 카운터 앞 대기 의자, 약품 카트, 링거대, 게시판 (카운터만 있어 휑하던 것)
+				var bsp := cp + Vector3(0, 0, -2.6)
+				if not _keep.has_point(Vector2(bsp.x, bsp.z)) and not blocks_door(bsp, Vector3(3, 1, 1)):
+					_beam_seats(bsp, PI, 4, Color(0.35, 0.5, 0.55))
+				for k in 2:
+					var ip := cp + Vector3(-2.8 + k * 5.6, 0, -1.2)
+					if inner.has_point(Vector2(ip.x, ip.z)) and not blocks_door(ip, Vector3(0.7, 1, 0.7)) and not _keep.has_point(Vector2(ip.x, ip.z)):
+						_iv_stand(ip, y)
+				var mc := cp + Vector3(2.6, 0, 0.6)
+				if inner.has_point(Vector2(mc.x, mc.z)) and not blocks_door(mc, Vector3(1, 1, 1)) and not _keep.has_point(Vector2(mc.x, mc.z)):
+					_obj_begin()
+					part(mc + Vector3.UP * 0.5, Vector3(0.6, 0.9, 0.45), Color(0.75, 0.78, 0.8), "metal", true)
+					for k in 4:
+						part(mc + Vector3(0, 0.2 + k * 0.2, 0.23), Vector3(0.55, 0.15, 0.01), [Color(0.8, 0.3, 0.3), Color(0.3, 0.5, 0.8), Color(0.9, 0.8, 0.3), Color(0.4, 0.7, 0.4)][k], "trim")
+					for sx in [-0.25, 0.25]:
+						for sz in [-0.18, 0.18]:
+							part(mc + Vector3(sx, 0.03, sz), Vector3(0.06, 0.06, 0.06), Color(0.1, 0.1, 0.1), "metal")
+					_obj_end()
+				var bb2 := _wall_item(inner, sides[0] if not sides.is_empty() else 0, 0.75, 0.03)
+				var bbp: Vector3 = bb2[0]
+				_yawbox(Vector3(bbp.x, y + 1.6, bbp.z), Vector3(1.4, 0.9, 0.03), bb2[1], Color(0.55, 0.4, 0.25), false)
+				for k in 4:
+					_yawbox(_local(Vector3(bbp.x, y + 1.6, bbp.z), bb2[1], Vector3(-0.45 + k * 0.3, rng.randf_range(-0.2, 0.2), 0.02)), Vector3(0.22, 0.3, 0.005), bb2[1], Color(0.95, 0.95, 0.9), false)
 		"pharmacy":
 			# 약 진열장 (벽 따라) + 가운데 진열대 + 조제실 창구
 			for sd in sides:

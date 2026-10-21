@@ -382,9 +382,19 @@ func _scatter_floor() -> void:
 	twig.rings = 1
 	for i in (900 if high else 300):
 		var p := Vector3(rng.randf_range(-HALF + 2, HALF - 2), 0.03, rng.randf_range(-HALF + 2, HALF - 2))
-		var b := Basis(Vector3.UP, rng.randf() * TAU) * Basis(Vector3.FORWARD, PI / 2.0 + rng.randf_range(-0.1, 0.1))
-		var len := rng.randf_range(0.4, 1.4)
-		_batch("twig", twig, _tint_mat(0.95), Transform3D(b * Basis.from_scale(Vector3(0.025, len, 0.025)), p), Color(0.2, 0.15, 0.1).darkened(rng.randf() * 0.4), false)
+		var yaw := rng.randf() * TAU
+		var b := Basis(Vector3.UP, yaw) * Basis(Vector3.FORWARD, PI / 2.0 + rng.randf_range(-0.1, 0.1))
+		var len := rng.randf_range(0.25, 0.75)  # 짧게 (긴 막대가 바닥에 떨어진 것처럼 보이지 않게)
+		var tc := Color(0.24, 0.18, 0.12).darkened(rng.randf() * 0.35)
+		_batch("twig", twig, _tint_mat(0.95), Transform3D(b * Basis.from_scale(Vector3(0.02, len, 0.02)), p), tc, false)
+		if rng.randf() < 0.6:
+			# 옆으로 갈라진 잔가지 하나
+			var along := Basis(Vector3.UP, yaw) * Vector3(rng.randf_range(-0.2, 0.2) * len, 0, 0)
+			var y2 := yaw + rng.randf_range(0.5, 1.0) * (1.0 if rng.randf() < 0.5 else -1.0)
+			var b2 := Basis(Vector3.UP, y2) * Basis(Vector3.FORWARD, PI / 2.0)
+			var dir2 := Basis(Vector3.UP, y2) * Vector3(-1, 0, 0)
+			# 갈라진 가지는 한쪽 끝이 원가지에 붙음 (X자로 겹치지 않게)
+			_batch("twig", twig, _tint_mat(0.95), Transform3D(b2 * Basis.from_scale(Vector3(0.012, len * 0.45, 0.012)), p + along + dir2 * len * 0.225), tc, false)
 
 
 ## 길가의 랜턴 기둥 (일부만 켜져 있음)
