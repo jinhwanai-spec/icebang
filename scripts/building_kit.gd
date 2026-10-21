@@ -633,6 +633,66 @@ func _split(r: Rect2, mn: float, mx: float, rooms: Array, walls: Array, depth: i
 		_split(Rect2(Vector2(r.position.x, cut), Vector2(r.size.x, r.end.y - cut)), mn, mx, rooms, walls, depth + 1, nd, keep_out)
 
 
+## 계단실 복도와 방 사이 벽: 복도에 닿은 방마다 문 하나 (계단 바로 옆은 피함). 문 앞 공간 목록을 돌려줌
+func _hall_wall(hall: Rect2, along_x: bool, rooms: Array, stair: Rect2, y: float, h: float, mat: Material) -> Array:
+	var a := Vector3(hall.position.x, 0, hall.end.y) if along_x else Vector3(hall.end.x, 0, hall.position.y)
+	var b := Vector3(hall.end.x, 0, hall.end.y) if along_x else Vector3(hall.end.x, 0, hall.end.y)
+	var L := (hall.size.x if along_x else hall.size.y)
+	var dir := (b - a).normalized()
+	var ops := []
+	var clears := []
+	for room in rooms:
+		var rr: Rect2 = room
+		# 복도에 닿은 방만
+		if along_x and absf(rr.position.y - hall.end.y) > 0.05:
+			continue
+		if not along_x and absf(rr.position.x - hall.end.x) > 0.05:
+			continue
+		var lo := (rr.position.x if along_x else rr.position.y) - (hall.position.x if along_x else hall.position.y) + 0.75
+		var hi := (rr.end.x if along_x else rr.end.y) - (hall.position.x if along_x else hall.position.y) - 0.75
+		if hi < lo:
+			continue
+		# 계단 옆 걷는 길에서 들어가도 되지만, 계단 끝(오르내리는 곳) 바로 앞은 피함
+		var s0 := (stair.position.x if along_x else stair.position.y) - (hall.position.x if along_x else hall.position.y)
+		var s1 := (stair.end.x if along_x else stair.end.y) - (hall.position.x if along_x else hall.position.y)
+		var mid := (lo + hi) * 0.5
+		var best := mid
+		var best_d := INF
+		for t in 11:
+			var u := lerpf(lo, hi, t / 10.0)
+			if absf(u - s0) < 1.3 or absf(u - s1) < 1.3:
+				continue
+			if absf(u - mid) < best_d:
+				best_d = absf(u - mid)
+				best = u
+		ops.append([best - DOOR_W * 0.5, best + DOOR_W * 0.5, 0.0, DOOR_H])
+		var dc := a + dir * best
+		dc.y = y
+		_door_frame(dc, dir, Color(0.3, 0.22, 0.15))
+		if rng.randf() < 0.3:
+			lb.props.append(["door", dc, atan2(dir.z, -dir.x) + PI, DOOR_W - 0.1, door_style])
+		clears.append(Rect2(dc.x - 1.2, dc.z - 2.6, 2.4, 5.2) if along_x else Rect2(dc.x - 2.6, dc.z - 1.2, 5.2, 2.4))
+	wall(a, b, y, h, mat, "w_inner", ops, 0.18)
+	return clears
+
+
+## 외벽 위 점 p 가 계단 바로 앞인지 (margin 만큼 여유)
+func _on_stair(p: Vector3, stair: Rect2, margin: float) -> bool:
+	return stair.size != Vector2.ZERO and stair.grow(margin + WALL_T).has_point(Vector2(p.x, p.z))
+
+
+## 출입문 위치 u 가 계단 앞이면 계단 옆으로 비킴
+func _off_stair(u: float, a: Vector3, dir: Vector3, stair: Rect2, L: float) -> float:
+	if not _on_stair(a + dir * u, stair, DOOR_W * 0.5 + 0.3):
+		return u
+	for step in range(1, 40):
+		for sgn in [1.0, -1.0]:
+			var v: float = u + sgn * step * 0.3
+			if v > 1.2 and v < L - 1.2 and not _on_stair(a + dir * v, stair, DOOR_W * 0.5 + 0.3):
+				return v
+	return u
+
+
 ## 계단 주변 비워 둘 영역: 계단 + 아래쪽 진입 공간 + 위쪽 도착 공간
 func stair_zone(strip: Rect2, along_x: bool) -> Rect2:
 	if along_x:
@@ -2588,7 +2648,9 @@ func room_sign(at: Vector3, text: String, normal: Vector3) -> void:
 ## kind: "apartment" / "office" / "shop"
 func city_building(r: Rect2, y0: float, total_h: float, wall_mat: Material, trim: Color, kind: String) -> Array:
 	var fh := 3.5
-	var floors := 1 if total_h < 7.8 or minf(r.size.x, r.size.y) < 6.0 else 2
+	# 2층: 계단 + 아래·위 여유가 긴 벽 안에 들어갈 때만 (전엔 6m 계단이 짧은 건물 벽을 뚫고 나가 방을 막았음)
+	var inner_long := maxf(r.size.x, r.size.y) - WALL_T * 2.0
+	var floors := 1 if total_h < 7.8 or minf(r.size.x, r.size.y) < 6.0 or inner_long < 6.0 else 2
 	# 실내 마감: 종류마다 벽지·아래 판넬·바닥재가 다름
 	var in_wall: Material = lb._mat["in_paint"] if kind != "office" else lb._mat["in_paint_b"]
 	wainscot_mat = lb._mat["in_wains_tile"] if kind == "shop" else lb._mat["in_wains_wood"]
@@ -2604,13 +2666,23 @@ func city_building(r: Rect2, y0: float, total_h: float, wall_mat: Material, trim
 	var stair := Rect2()
 	var stair_along_x := r.size.x >= r.size.y
 	if floors == 2:
-		var run := 6.0
-		var w := 1.8
-		# 아래쪽 끝(벽 쪽)에 1.3m 여유를 둬서 계단에 오르기 쉽게, 위쪽 끝은 방 안쪽으로 내림
+		# 계단 길이는 건물에 맞춤 (짧은 건물은 조금 가파르게, 최대 약 37°)
+		var run := clampf(inner_long - 1.6, 4.4, 6.0)
+		var gap := clampf((inner_long - run) * 0.5, 0.8, 1.3)
+		var w := 1.5
+		# 아래쪽 끝(벽 쪽)에 여유를 둬서 오르기 쉽게, 위쪽 끝에도 도착할 자리
 		if stair_along_x:
-			stair = Rect2(inner.end.x - run - 1.3, inner.position.y + 0.1, run, w)
+			stair = Rect2(inner.end.x - run - gap, inner.position.y + 0.1, run, w)
 		else:
-			stair = Rect2(inner.position.x + 0.1, inner.end.y - run - 1.3, w, run)
+			stair = Rect2(inner.position.x + 0.1, inner.end.y - run - gap, w, run)
+	# 계단실 복도: 계단이 붙은 긴 벽을 따라 건물 끝에서 끝까지 (계단 옆으로 1.4m 걷는 길)
+	# 방들은 이 복도 바깥에서만 나누고, 복도 쪽 벽에 방마다 문을 냄 → 계단이 방을 가로지르거나 문을 막지 않음
+	var hall := Rect2()
+	var stair_side := -1
+	if floors == 2:
+		var hw := 0.1 + 1.5 + 1.3
+		hall = Rect2(inner.position, Vector2(inner.size.x, hw)) if stair_along_x else Rect2(inner.position, Vector2(hw, inner.size.y))
+		stair_side = 0 if stair_along_x else 3
 	# 외벽 (층마다)
 	var sides := [
 		[Vector3(r.position.x, 0, r.position.y), Vector3(r.end.x, 0, r.position.y), Vector3(0, 0, -1)],
@@ -2637,6 +2709,8 @@ func city_building(r: Rect2, y0: float, total_h: float, wall_mat: Material, trim
 			var entrance_u := -100.0
 			if k == 0 and entrance_sides.has(si):
 				entrance_u = clampf(L * rng.randf_range(0.3, 0.7), 1.2, L - 1.2)
+				if si == stair_side:
+					entrance_u = _off_stair(entrance_u, a, dir, stair, L)
 				ops.append([entrance_u - DOOR_W * 0.5, entrance_u + DOOR_W * 0.5, 0.0, DOOR_H])
 				var dc := a + dir * entrance_u
 				dc.y = y
@@ -2651,7 +2725,8 @@ func city_building(r: Rect2, y0: float, total_h: float, wall_mat: Material, trim
 					continue
 				var wc := a + dir * u
 				wc.y = y + (WIN_SILL + WIN_TOP) * 0.5
-				if k == 0 and si == vault_side and not vault_done and i == count / 2:
+				if k == 0 and si == vault_side and not vault_done and i == count / 2 \
+						and not (si == stair_side and _on_stair(a + dir * u, stair, 1.0)):
 					# 넘을 수 있는 깨진 창문 (바닥까지 뚫림, 창턱은 충돌 없음)
 					vault_done = true
 					ops.append([u - 0.8, u + 0.8, 0.0, WIN_TOP])
@@ -2688,12 +2763,20 @@ func city_building(r: Rect2, y0: float, total_h: float, wall_mat: Material, trim
 	ceiling(inner, y0 + interior_h - (0.0 if total_h > interior_h + 0.1 else 0.0) - 0.02, lb._mat["in_ceil"])
 	# 방 나누기 + 가구 (층마다)
 	var zone := stair_zone(stair, stair_along_x) if floors == 2 else Rect2()
+	# 복도 바깥쪽 (방이 들어갈 곳). 너무 얕으면 방을 안 나누고 한 공간으로
+	var rest := inner
+	if floors == 2:
+		rest = Rect2(inner.position.x, hall.end.y, inner.size.x, inner.end.y - hall.end.y) if stair_along_x \
+				else Rect2(hall.end.x, inner.position.y, inner.end.x - hall.end.x, inner.size.y)
+	var open_plan := floors == 2 and minf(rest.size.x, rest.size.y) < 3.0
 	for k in floors:
 		var y := y0 + k * fh
-		var layout := split_rooms(inner, 4.6, 9.0 if kind != "shop" or k > 0 else 30.0)
+		var layout := split_rooms(rest, 4.6, 9.0 if kind != "shop" or k > 0 else 30.0) if not open_plan else {"rooms": [inner], "walls": []}
 		var floor_doors := []  # 이 층의 모든 문 앞 공간 (가구가 막지 않게)
+		if floors == 2 and not open_plan:
+			floor_doors.append_array(_hall_wall(hall, stair_along_x, layout["rooms"], stair, y, fh - FLOOR_T, in_wall))
 		for w in layout["walls"]:
-			partition(w, y, fh - FLOOR_T, in_wall, "w_inner", [zone] if floors == 2 else [])
+			partition(w, y, fh - FLOOR_T, in_wall, "w_inner", [])
 			var wa: Vector3 = w[0]
 			var wb: Vector3 = w[1]
 			var dc: Vector3 = wa + (wb - wa).normalized() * float(w[2])
@@ -2705,6 +2788,12 @@ func city_building(r: Rect2, y0: float, total_h: float, wall_mat: Material, trim
 				floor_doors.append(Rect2(ep.x - 1.2, ep.z - 2.6, 2.4, 5.2) if absf(en.z) > 0.5 else Rect2(ep.x - 2.6, ep.z - 1.2, 5.2, 2.4))
 		if floors == 2:
 			floor_doors.append(zone.grow(0.6))
+		if floors == 2 and not open_plan:
+			# 계단실 복도: 가구 없이 바닥·조명·때만
+			floor_overlay(hall, y + (0.06 if k == 0 else 0.0), lb._mat["in_lino"])
+			grime(hall, y + (0.07 if k == 0 else 0.01), fh, 0.6, 0.1)
+			var hc := hall.get_center()
+			ceiling_light(Vector3(hc.x, y + fh - FLOOR_T - 0.05, hc.y))
 		for room in layout["rooms"]:
 			var rr: Rect2 = room
 			var rk := kind
@@ -2712,8 +2801,8 @@ func city_building(r: Rect2, y0: float, total_h: float, wall_mat: Material, trim
 				rk = "shop" if k == 0 else ("storage" if rng.randf() < 0.5 else "office")
 			if rr.get_area() < 9.0:
 				rk = "storage"
-			if floors == 2 and rr.intersects(zone):
-				rk = "empty"  # 계단 방은 비워 둠 (계단을 막지 않게)
+			if floors == 2 and rr.intersects(zone) and not open_plan:
+				rk = "empty"  # 계단과 같은 공간은 비워 둠 (계단을 막지 않게)
 			var candidate: bool = (rk == "apartment" or rk == "office") and rr.size.x > 3.8 and rr.size.y > 3.8 and not (floors == 2 and rr.intersects(zone))
 			var fm: Material = lb._mat["in_wood"] if rk == "apartment" else (lb._mat["in_terrazzo"] if rk == "shop" else lb._mat["in_lino"])
 			floor_overlay(rr, y + (0.06 if k == 0 else 0.0), fm)

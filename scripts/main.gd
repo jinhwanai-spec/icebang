@@ -402,8 +402,9 @@ func reachable(p: Vector3) -> bool:
 
 
 ## p 에서 가장 가까운 걸을 수 있는 바닥
+## p 와 같은 층의 가장 가까운 바닥 (전에는 높이를 0으로 눌러서 위층에서 쓰면 1층으로 갔음)
 func closest_floor_point(p: Vector3) -> Vector3:
-	return NavigationServer3D.map_get_closest_point(get_world_3d().navigation_map, Vector3(p.x, 0.0, p.z))
+	return NavigationServer3D.map_get_closest_point(get_world_3d().navigation_map, p + Vector3.UP * 0.3)
 
 
 ## 카멜레온 맵 물들이기: duration 초 동안 맵 전체를 color 하나로
