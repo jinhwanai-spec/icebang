@@ -695,7 +695,9 @@ func _update_roster(delta: float, p) -> void:
 			st = "[color=#ffb070]사슬[/color]"
 		elif s.is_frozen:
 			st = "[color=#7fd6ff]얼음%s[/color]" % (" %d초" % ceili(s.ice_left) if s.ice_left > 0.0 else "")
-		var me := " [color=#7fd6ff](나)[/color]" if s == p else ""
+		var me := " [color=#7fd6ff](나)[/color]" if s == p and nm != "나" else ""
+		if s == p and nm == "나" and not s.is_dead:
+			name_col = "7fd6ff"
 		lines.append("[color=#%s]●[/color] [color=#%s]%s[/color]%s  %s" % [col.to_html(false), name_col, nm, me, st])
 	_roster.text = "\n".join(lines)
 var _status_base_bottom := 0.0
@@ -755,7 +757,7 @@ func _update_heartbeat(delta: float, p) -> void:
 		k = maxf(k, float(_feel_bound.get("chase_vol")) * 0.3)
 	var str_v := k * 0.55 + pulse * k * 0.35
 	if hunter:
-		str_v = 0.16 + k * 0.3 + pulse * k * 0.25  # 술래 시야: 늘 은은하게 붉음
+		str_v = minf(0.3, 0.08 + k * 0.16 + pulse * k * 0.1)  # 술래 시야: 늘 은은하게 붉음 (너무 빨갛지 않게)
 	_danger.material.set_shader_parameter("strength", str_v)
 
 

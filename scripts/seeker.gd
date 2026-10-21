@@ -715,34 +715,76 @@ func possess(s: Survivor) -> void:
 	_turn_burst(s.global_position)
 
 
-## 변신하는 순간: 검붉은 연기가 확 퍼짐 (보기만 하는 효과)
+## 변신하는 순간: 검붉은 연기가 바닥을 따라 확 퍼지고 붉은 빛이 번쩍 (보기만 하는 효과)
+## 부드러운 연기 덩어리(가장자리가 흐린 판)라서 카메라 가까이 와도 화면을 가리지 않음
 func _turn_burst(at: Vector3) -> void:
+	var root := get_tree().current_scene
 	var pt := CPUParticles3D.new()
 	pt.one_shot = true
-	pt.emitting = true
-	pt.amount = 60
-	pt.lifetime = 1.4
-	pt.explosiveness = 0.9
-	pt.direction = Vector3.UP
+	pt.amount = 36
+	pt.lifetime = 1.6
+	pt.explosiveness = 0.85
+	pt.emission_shape = CPUParticles3D.EMISSION_SHAPE_SPHERE
+	pt.emission_sphere_radius = 0.6
+	pt.direction = Vector3(0, 0.25, 0)
 	pt.spread = 180.0
-	pt.initial_velocity_min = 1.5
-	pt.initial_velocity_max = 4.0
-	pt.gravity = Vector3(0, 0.6, 0)
-	pt.scale_amount_min = 0.3
-	pt.scale_amount_max = 0.8
-	var sm := SphereMesh.new()
-	sm.radius = 0.25
-	sm.height = 0.5
+	pt.flatness = 0.7  # 옆으로 퍼짐
+	pt.initial_velocity_min = 1.8
+	pt.initial_velocity_max = 3.6
+	pt.damping_min = 2.0
+	pt.damping_max = 3.0
+	pt.gravity = Vector3(0, 0.5, 0)
+	pt.scale_amount_min = 0.7
+	pt.scale_amount_max = 1.3
+	var grow := Curve.new()
+	grow.add_point(Vector2(0, 0.4))
+	grow.add_point(Vector2(1, 1.6))
+	pt.scale_amount_curve = grow
+	var ramp := Gradient.new()
+	ramp.set_color(0, Color(0.35, 0.02, 0.03, 0.55))
+	ramp.set_color(1, Color(0.06, 0.01, 0.01, 0.0))
+	pt.color_ramp = ramp
+	var q := QuadMesh.new()
+	q.size = Vector2(1.2, 1.2)
 	var mat := StandardMaterial3D.new()
-	mat.albedo_color = Color(0.12, 0.02, 0.03, 0.8)
 	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	mat.emission_enabled = true
-	mat.emission = Color(0.5, 0.02, 0.02)
-	sm.material = mat
-	pt.mesh = sm
-	get_tree().current_scene.add_child(pt)
-	pt.global_position = at + Vector3.UP
-	get_tree().create_timer(2.0).timeout.connect(pt.queue_free)
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+	mat.vertex_color_use_as_albedo = true
+	mat.proximity_fade_enabled = true  # 카메라·바닥 가까이선 흐려짐
+	mat.proximity_fade_distance = 0.8
+	var g := Gradient.new()
+	g.set_color(0, Color(1, 1, 1, 1))
+	g.set_color(1, Color(1, 1, 1, 0))
+	var tex := GradientTexture2D.new()
+	tex.gradient = g
+	tex.fill = GradientTexture2D.FILL_RADIAL
+	tex.fill_from = Vector2(0.5, 0.5)
+	tex.fill_to = Vector2(1.0, 0.5)
+	tex.width = 64
+	tex.height = 64
+	mat.albedo_texture = tex
+	q.material = mat
+	pt.mesh = q
+	root.add_child(pt)
+	pt.global_position = at + Vector3.UP * 0.6
+	pt.emitting = true
+	pt.finished.connect(pt.queue_free)
+	get_tree().create_timer(2.5).timeout.connect(func() -> void:
+		if is_instance_valid(pt):
+			pt.queue_free())
+	_roar_ring(at)
+	# 붉은 빛이 번쩍했다가 사라짐
+	var light := OmniLight3D.new()
+	light.light_color = Color(1.0, 0.15, 0.1)
+	light.omni_range = 7.0
+	light.light_energy = 0.0
+	root.add_child(light)
+	light.global_position = at + Vector3.UP * 1.2
+	var tw := light.create_tween()
+	tw.tween_property(light, "light_energy", 4.0, 0.08)
+	tw.tween_property(light, "light_energy", 0.0, 0.9).set_ease(Tween.EASE_IN)
+	tw.tween_callback(light.queue_free)
 
 
 func _follow_possessor(_delta: float) -> void:
@@ -868,7 +910,7 @@ func poss_use(n: int, aim: Vector3) -> String:
 
 
 ## 종류별 능력 (방장). 성공 = 쿨타임(초) / 실패 = 이유 글자
-func _poss_do(n: int, aim: Vector3):
+func _poss_do(n: int, _aim: Vector3):
 	if n == 0:
 		_poss_call("poss_sense", [25.0, 4.0])
 		_poss_roar_sound(1.4)
@@ -881,13 +923,11 @@ func _poss_roar(radius: float, slow_amt: float, secs: float, cd: float):
 	_poss_roar_sound(0.75)
 	_lock_left = maxf(_lock_left, 0.6)
 	body.attack(0.25)
-	var n := 0
 	for node in get_tree().get_nodes_in_group("survivor"):
 		var s := node as Survivor
 		if s and not s.is_dead and not s.is_frozen and global_position.distance_to(s.global_position) <= radius:
 			s.apply_slow(slow_amt, secs)
 			_notify(s, "술래의 포효에 다리가 얼어붙었어요!")
-			n += 1
 	_roar_ring(global_position)
 	_fx("roar", global_position)
 	return cd
