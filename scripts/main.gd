@@ -177,6 +177,7 @@ func _process(delta: float) -> void:
 		return
 	round_time += delta
 	if Net.is_client():
+		_net_extras_follow(delta)
 		return  # 판정·폭주·탈출은 방장 컴퓨터가 계산해서 알려 줌
 	if not raged and round_time >= GameConfig.num("seeker", "rage_time", 600.0):
 		_enrage_all("%d분이 지났어요... 술래들이 폭주합니다!" % roundi(GameConfig.num("seeker", "rage_time", 600.0) / 60.0))
@@ -863,7 +864,7 @@ func _end_round(win: bool, reason: String) -> void:
 ## 멀티: 자리(slot)대로 생존자 만들기. 내 자리 = 내가 조종, 나머지는 받은 위치를 따라가는 꼭두각시
 ## 방장 컴퓨터의 봇만 진짜 AI로 움직임
 func _net_spawn_characters() -> void:
-	var spawns := _builder.survivor_spawns
+	var spawns := _spawn_points(_builder.survivor_spawns, (Net.match_config["slots"] as Array).size())
 	var slots: Array = Net.match_config["slots"]
 	var me := Net.my_slot()
 	var host := Net.is_host()
@@ -891,7 +892,12 @@ func _net_spawn_characters() -> void:
 	player.connect("flashed", hud.flash)
 
 	var stage := int(Net.match_config.get("stage", 1))
-	var types: Array = [SEEKER_ORDER[clampi(stage, 1, SEEKER_ORDER.size()) - 1]]
+	var si := clampi(stage, 1, SEEKER_ORDER.size()) - 1
+	var types: Array = [SEEKER_ORDER[si]]
+	# 6명 이상 판(기본 방식)은 다른 종류 술래가 1마리 더 (8명이 술래 1마리를 쉽게 포위하지 않게)
+	if slots.size() >= 6 and str(Net.match_config.get("mode", "classic")) != "turncoat":
+		var extra: Array = ["rat", "ghost", "butcher", "puppeteer", "hound", "spider", "mannequin", "witch"].filter(func(t): return t != types[0])
+		types.append(extra[int(Net.match_config.get("seed", 0)) % extra.size()])
 	for i in types.size():
 		var seeker_type: String = types[i]
 		var node := SeekerScene.instantiate()
@@ -912,6 +918,23 @@ func _net_spawn_characters() -> void:
 			sk.make_dormant()
 		if host:
 			_turn_left = 25.0 + _true_random(0, 45000) / 1000.0
+
+
+## 시작 자리가 모자라면(8인 멀티) 원래 자리 사이사이에 자리를 더 만듦: 짝끼리의 가운데 → 그래도 모자라면 살짝 옆
+func _spawn_points(base: Array, n: int) -> Array:
+	var pts: Array = base.duplicate()
+	var k := base.size()
+	var pairs := [[0, 1], [2, 3], [0, 2], [1, 3], [0, 3], [1, 2]]
+	for pr in pairs:
+		if pts.size() >= n:
+			break
+		if pr[0] < k and pr[1] < k:
+			pts.append(((base[pr[0]] as Vector3) + (base[pr[1]] as Vector3)) * 0.5)
+	var i := 0
+	while pts.size() < n:
+		pts.append((base[i % k] as Vector3) + Vector3(0.9 * (1 if i % 2 == 0 else -1), 0, 0.9))
+		i += 1
+	return pts
 
 
 ## 술래 변신까지 남은 시간 (방장만 셈. 0 이하 = 이미 변했거나 기본 모드)
@@ -955,11 +978,23 @@ func net_turn_seeker(slot: int) -> void:
 	if slot < 0 or slot >= survivors.size() or seekers.is_empty():
 		return
 	var s := survivors[slot]
-	s.become_seeker(seekers[0])
+	var sk := seekers[0]
+	s.become_seeker(sk)
+	var nm: String = Seeker.TYPE_NAMES.get(sk.seeker_type, "술래")
+	var sfx := AudioStreamPlayer.new()
+	sfx.stream = preload("res://audio/feel_stinger.wav")
+	sfx.volume_db = -2.0
+	add_child(sfx)
+	sfx.play()
+	sfx.finished.connect(sfx.queue_free)
 	if s == player:
-		hud.show_message("당신이 술래로 변했어요!  생존자에게 닿으면 잡아요  (Shift 달리기)", 5.0)
+		var sk_names: Array = sk.poss_skills()
+		hud.show_message("당신이 [%s](으)로 변했어요!  닿으면 잡아요\n[R] %s   [T] %s" % [nm, sk_names[0][0], sk_names[1][0]], 6.0)
+		player.call("_shake", 0.7)
 	else:
-		hud.show_message("누군가 술래로 변했어요...!  도망쳐요!", 4.0)
+		hud.show_message("누군가 [%s](으)로 변했어요...!  도망쳐요!" % nm, 4.0)
+		if player and player.global_position.distance_to(s.global_position) < 20.0:
+			player.call("_shake", 0.35)
 
 
 # ---------------------------------------------------------------- 창문 파쿠르
@@ -1077,11 +1112,12 @@ func _net_send_snapshot() -> void:
 		surv.append([s.global_position, s.body.rotation.y, Vector2(s.velocity.x, s.velocity.z).length(), s.net_flags(), s.thaw_progress])
 	var sks: Array = []
 	for sk in seekers:
-		sks.append([sk.global_position, sk.rotation.y, sk.velocity, int(sk.state), sk.body.visible, sk.enraged, sk.attack_seq])
+		sks.append([sk.global_position, sk.rotation.y, sk.velocity, int(sk.state), sk.body.visible, sk.enraged, sk.attack_seq,
+				sk.poss_pack() if sk.possessed_by else []])
 	var gens: Array = []
 	for g in generators:
 		gens.append(g.progress if is_instance_valid(g) else 1.0)
-	Net.world_snapshot.rpc([surv, sks, gens, missions_done, escape_phase, escape_left, raged])
+	Net.world_snapshot.rpc([surv, sks, gens, missions_done, escape_phase, escape_left, raged, _net_extras_pack()])
 
 
 ## (다른 사람 컴퓨터) 방장이 보낸 세계 상태 적용
@@ -1098,7 +1134,7 @@ func net_apply_snapshot(data: Array) -> void:
 	var sks: Array = data[1]
 	for i in mini(sks.size(), seekers.size()):
 		var d: Array = sks[i]
-		seekers[i].net_target(d[0], d[1], d[2], d[3], d[4], d[5], d[6])
+		seekers[i].net_target(d[0], d[1], d[2], d[3], d[4], d[5], d[6], d[7] if d.size() > 7 else [])
 	var gens: Array = data[2]
 	for i in mini(gens.size(), generators.size()):
 		var g := generators[i]
@@ -1113,6 +1149,170 @@ func net_apply_snapshot(data: Array) -> void:
 	escape_phase = bool(data[4])
 	escape_left = float(data[5])
 	raged = bool(data[6])
+	if data.size() > 7:
+		_net_extras_apply(data[7])
+
+
+# ---------------------------------------------------------------- 술래가 만든 것 (쥐·새끼 거미·거미 알·사냥개 분신)
+## 진짜는 방장 컴퓨터에만 있고, 다른 사람 화면에는 같은 모양의 '보이기용'을 만들어 위치만 따라가게 함
+## 손님이 E로 잡으면 방장에게 알려서 진짜를 없앰
+
+const EXTRA_SCRIPTS := {
+	"rat": preload("res://scripts/rat_minion.gd"),
+	"spl": preload("res://scripts/spiderling.gd"),
+	"egg": preload("res://scripts/spider_egg.gd"),
+}
+var _extra_next_id := 1
+## 손님: 번호 → 보이기용 노드
+var _extra_nodes := {}
+## 손님: 이미 잡은 번호 (방장 답이 오기 전 다시 생기지 않게)
+var _extra_dead := {}
+
+
+func _extra_code(n: Node) -> String:
+	var sc: Script = n.get_script()
+	if sc == EXTRA_SCRIPTS["rat"]:
+		return "rat"
+	if sc == EXTRA_SCRIPTS["spl"]:
+		return "spl"
+	if sc == EXTRA_SCRIPTS["egg"]:
+		return "egg"
+	if n is Seeker and bool(n.get("is_clone")):
+		return "hnd"
+	return ""
+
+
+## (방장) [번호, 종류, 위치, 방향] 목록
+func _net_extras_pack() -> Array:
+	var out: Array = []
+	var nodes: Array = get_tree().get_nodes_in_group("rat_minion")
+	for sk in get_tree().get_nodes_in_group("seeker"):
+		if not seekers.has(sk):
+			nodes.append(sk)
+	for n in nodes:
+		var nd := n as Node3D
+		if nd == null or not is_instance_valid(nd) or nd.is_queued_for_deletion():
+			continue
+		var code := _extra_code(nd)
+		if code == "":
+			continue
+		if not nd.has_meta("nid"):
+			nd.set_meta("nid", _extra_next_id)
+			_extra_next_id += 1
+		out.append([int(nd.get_meta("nid")), code, nd.global_position, nd.rotation.y])
+	return out
+
+
+## (손님) 받은 목록대로 보이기용 노드를 만들고·옮기고·지움
+func _net_extras_apply(list: Array) -> void:
+	var seen := {}
+	for e in list:
+		var id: int = e[0]
+		if _extra_dead.has(id):
+			continue
+		seen[id] = true
+		var n: Node3D = _extra_nodes.get(id)
+		if n == null or not is_instance_valid(n):
+			n = _make_extra(str(e[1]))
+			if n == null:
+				continue
+			n.set_meta("nid", id)
+			n.global_position = e[2]
+			_extra_nodes[id] = n
+		if n is Seeker:
+			(n as Seeker).net_target(e[2], e[3], Vector3.ZERO, int(Seeker.State.CHASE), true, false, (n as Seeker).attack_seq)
+		else:
+			n.set_meta("net_to", e[2])
+			n.rotation.y = e[3]
+	for id in _extra_nodes.keys():
+		if not seen.has(id):
+			var n: Node = _extra_nodes[id]
+			if is_instance_valid(n):
+				n.queue_free()
+			_extra_nodes.erase(id)
+
+
+func _make_extra(code: String) -> Node3D:
+	if code == "hnd":
+		var c := SeekerScene.instantiate()
+		c.set_script(SEEKER_TYPES["hound"])
+		c.set("is_clone", true)
+		var sk := c as Seeker
+		sk.seeker_type = "hound"
+		sk.net_puppet = true
+		add_child(sk)
+		return sk
+	if not EXTRA_SCRIPTS.has(code):
+		return null
+	var n: Node3D
+	if code == "egg":
+		n = Node3D.new()
+	else:
+		n = CharacterBody3D.new()
+	n.set_script(EXTRA_SCRIPTS[code])
+	add_child(n)
+	n.call("setup", null)
+	n.set_physics_process(false)
+	n.set_process(false)
+	return n
+
+
+## (손님) 보이기용 쥐·거미를 받은 위치로 부드럽게 + 걷는 모양
+func _net_extras_follow(delta: float) -> void:
+	for id in _extra_nodes:
+		var n: Node3D = _extra_nodes[id]
+		if not is_instance_valid(n) or n is Seeker or not n.has_meta("net_to"):
+			continue
+		var to: Vector3 = n.get_meta("net_to")
+		var prev := n.global_position
+		n.global_position = prev.lerp(to, clampf(14.0 * delta, 0.0, 1.0))
+		if n is CharacterBody3D:
+			(n as CharacterBody3D).velocity = (n.global_position - prev) / maxf(delta, 0.001)
+		if n.has_method("_animate"):
+			n.call("_animate", delta)
+
+
+## (손님) 내가 E로 잡음 → 방장에게 알림
+func net_extra_killed_local(n: Node) -> void:
+	if not n.has_meta("nid"):
+		return
+	var id := int(n.get_meta("nid"))
+	_extra_dead[id] = true
+	_extra_nodes.erase(id)
+	Net.extra_kill.rpc_id(1, id, player.net_slot if player else -1)
+
+
+## (방장) 손님이 잡은 쥐·거미를 진짜로 없앰
+func net_extra_kill(nid: int, slot: int) -> void:
+	var by: Node = survivors[slot] if slot >= 0 and slot < survivors.size() else null
+	for n in get_tree().get_nodes_in_group("rat_minion"):
+		if n.has_meta("nid") and int(n.get_meta("nid")) == nid:
+			n.call("kill", by)
+			return
+
+
+# ---------------------------------------------------------------- 술래로 변한 사람의 능력
+
+## (방장) 손님이 술래 능력 키를 누름
+func net_seeker_skill(sender: int, index: int, n: int, aim: Vector3) -> void:
+	if index < 0 or index >= seekers.size():
+		return
+	var sk := seekers[index]
+	var p := sk.possessed_by
+	if p == null or not is_instance_valid(p) or p.net_owner != sender:
+		return
+	var r := sk.poss_use(n, aim)
+	if r != "":
+		Net.apply_to_me.rpc_id(sender, "net_notice", [r])
+
+
+## (손님) 방장이 보낸 술래 효과
+func net_seeker_fx(index: int, kind: String, a: Vector3, b: Vector3, extra) -> void:
+	if not ready_to_play or index < 0 or index >= seekers.size():
+		return
+	var sk := seekers[index]
+	if is_instance_valid(sk):
+		sk.fx_mirror(kind, a, b, extra)
 
 
 ## (방장 컴퓨터) 다른 사람이 보낸 자기 캐릭터 상태

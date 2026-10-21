@@ -23,6 +23,17 @@ signal killed(sk: Seeker)
 
 enum State { PATROL, INVESTIGATE, SEARCH, CHASE, CAMP, KNOCKBACK, DISABLED }
 
+## 술래 이름 (화면 표시용)
+const TYPE_NAMES := {"rat": "역병의 쥐", "ghost": "유령", "butcher": "도살자", "puppeteer": "인형사", "hound": "케르베로스",
+		"spider": "거미 여왕", "diet": "하마", "psycho": "사이코", "executioner": "처형인", "mannequin": "마네킹", "witch": "안개 마녀"}
+## 사람이 조종할 때 알려 주는 패시브
+const TYPE_PASSIVES := {"ghost": "벽 속에 있으면 안 보여요", "mannequin": "누가 쳐다보면 굳어서 못 움직이고 못 잡아요",
+		"psycho": "잡으면 쇠사슬에 묶어 끌고 다녀요 · 피 흘리는 생존자가 있으면 광란",
+		"executioner": "도끼: 잡는 거리가 길고 무적·갑옷도 무시", "diet": "잡은 생존자의 능력을 빼앗아요",
+		"witch": "안개 중엔 내 발소리가 웃음소리로 들려요", "hound": "분신도 생존자를 잡을 수 있어요",
+		"rat": "쥐에게 물린 생존자는 피를 흘려 위치가 드러나요", "spider": "새끼 거미가 묶으면 위치가 보여요",
+		"butcher": "", "puppeteer": "저주 인형이 비명을 지르면 위치가 보여요"}
+
 const STEP_SOUNDS := [
 	preload("res://audio/step_heavy_1.wav"),
 	preload("res://audio/step_heavy_2.wav"),
@@ -628,6 +639,7 @@ func _catchable(s: Survivor) -> bool:
 
 func _kill_survivor(s: Survivor) -> void:
 	s.die()
+	_poss_caught(s)
 	if s.is_dead and s == chase_target:
 		chase_target = null
 		_since_contact = 99.0  # 바로 다음 생존자를 찾아 압박
@@ -635,7 +647,8 @@ func _kill_survivor(s: Survivor) -> void:
 
 
 ## 멀티: 방장이 보낸 술래 상태
-func net_target(pos: Vector3, rot: float, vel: Vector3, st: int, vis: bool, rage: bool, atk: int) -> void:
+func net_target(pos: Vector3, rot: float, vel: Vector3, st: int, vis: bool, rage: bool, atk: int, poss: Array = []) -> void:
+	poss_net = poss
 	if _smooth.push(pos, rot, vel) or not _net_has:
 		global_position = pos
 	_net_pos = pos
@@ -759,7 +772,11 @@ func _possessed_update(delta: float) -> void:
 	if state != State.DISABLED:
 		state = State.CHASE
 	_follow_possessor(delta)
+	for i in 2:
+		_pcd[i] = maxf(0.0, _pcd[i] - delta)
 	if state != State.DISABLED and _stun_left <= 0.0 and _float_left <= 0.0:
+		_ability_update(delta)  # 계속되는 능력·패시브만 (자동으로 쓰는 부분은 종류 스크립트가 possessed_by 면 건너뜀)
+		_possessed_skill_tick(delta)
 		_update_attack(delta)
 		_catch_nearby_survivors()
 	_float_left = max(0.0, _float_left - delta)
@@ -767,9 +784,14 @@ func _possessed_update(delta: float) -> void:
 	_update_label()
 
 
-## 변신한 사람이 지금 못 움직이는 상태 (기절·날아가는 중·무중력·봉인)
+## 변신한 사람이 지금 못 움직이는 상태 (기절·날아가는 중·무중력·봉인·능력 쓰는 중)
 func possessed_frozen() -> bool:
-	return state == State.DISABLED or state == State.KNOCKBACK or _stun_left > 0.0 or _float_left > 0.0
+	return state == State.DISABLED or state == State.KNOCKBACK or _stun_left > 0.0 or _float_left > 0.0 or poss_lock() > 0.05
+
+
+## 변신한 사람의 최고 속도 (변신한 마녀는 생존자처럼 걸어야 함). 기본은 제한 없음
+func possessed_max_speed() -> float:
+	return INF
 
 
 ## 변신한 사람의 이동 속도 배율 (술래 종류 속도·결계·무중력 구슬 감속)
@@ -778,6 +800,231 @@ func possessed_speed_mult() -> float:
 	if _slow_left > 0.0:
 		m *= 1.0 - _slow_factor
 	return m
+
+
+# ---------------------------------------------------------------- 사람이 조종하는 술래의 능력 ([R] / [T])
+## 방장 컴퓨터가 술래를 움직이므로 능력도 방장이 씀 (손님은 Net.seeker_skill 로 부탁)
+## 종류 스크립트가 poss_skills() / _poss_do() 를 바꿔서 자기 능력을 넣음
+
+## 남은 쿨타임 [R, T] (방장이 셈)
+var _pcd := [0.0, 0.0]
+## 다른 컴퓨터: 방장이 보내 준 [R 쿨, T 쿨, 멈춤 시간, R 덧붙임 글자, T 덧붙임 글자]
+var poss_net: Array = []
+
+
+## [이름, 설명] × 2 (기본: 사냥 본능 / 포효)
+func poss_skills() -> Array:
+	return [["사냥 본능", "25m 안 생존자가 4초 동안 벽 너머로 보여요"],
+			["포효", "8m 안 생존자가 겁에 질려 2.5초 동안 40% 느려져요"]]
+
+
+## 능력 이름 옆에 붙는 글자 (충전 개수·켜짐 등)
+func poss_note(_n: int) -> String:
+	return ""
+
+
+## 남은 쿨타임 (손님 컴퓨터는 방장이 보내 준 값)
+func poss_cd(n: int) -> float:
+	if not poss_net.is_empty():
+		return float(poss_net[n])
+	return _pcd[n]
+
+
+func poss_note_any(n: int) -> String:
+	if not poss_net.is_empty():
+		return str(poss_net[3 + n])
+	return poss_note(n)
+
+
+## 능력을 쓰느라(던지기·블랙홀·처형 등) 또는 기절해서 못 움직이는 남은 시간
+func poss_lock() -> float:
+	if not poss_net.is_empty():
+		return float(poss_net[2])
+	return maxf(maxf(_lock_left - 0.2, _stun_left), _float_left)
+
+
+## 방장 → 스냅샷에 실어 보낼 값
+func poss_pack() -> Array:
+	return [snappedf(_pcd[0], 0.1), snappedf(_pcd[1], 0.1), snappedf(poss_lock(), 0.05), poss_note(0), poss_note(1)]
+
+
+## (방장) 능력 사용. aim = 조종하는 사람의 카메라 방향. 성공하면 "" / 못 쓰면 이유
+func poss_use(n: int, aim: Vector3) -> String:
+	if n < 0 or n > 1 or possessed_by == null:
+		return ""
+	if state == State.DISABLED:
+		return "봉인되어 능력을 쓸 수 없어요"
+	if _stun_left > 0.0 or _float_left > 0.0 or state == State.KNOCKBACK:
+		return "기절해서 능력을 쓸 수 없어요"
+	if _pcd[n] > 0.0:
+		return "%s 준비 중... %d초" % [poss_skills()[n][0], ceili(_pcd[n])]
+	aim.y = 0.0
+	aim = aim.normalized() if aim.length() > 0.01 else -global_basis.z
+	var r = _poss_do(n, aim)
+	if r is String:
+		return r
+	_pcd[n] = float(r)
+	return ""
+
+
+## 종류별 능력 (방장). 성공 = 쿨타임(초) / 실패 = 이유 글자
+func _poss_do(n: int, aim: Vector3):
+	if n == 0:
+		_poss_call("poss_sense", [25.0, 4.0])
+		_poss_roar_sound(1.4)
+		return 25.0
+	return _poss_roar(8.0, 0.4, 2.5, 30.0)
+
+
+## 포효: 가까운 생존자 감속 + 화면 흔들림·소리
+func _poss_roar(radius: float, slow_amt: float, secs: float, cd: float):
+	_poss_roar_sound(0.75)
+	_lock_left = maxf(_lock_left, 0.6)
+	body.attack(0.25)
+	var n := 0
+	for node in get_tree().get_nodes_in_group("survivor"):
+		var s := node as Survivor
+		if s and not s.is_dead and not s.is_frozen and global_position.distance_to(s.global_position) <= radius:
+			s.apply_slow(slow_amt, secs)
+			_notify(s, "술래의 포효에 다리가 얼어붙었어요!")
+			n += 1
+	_roar_ring(global_position)
+	_fx("roar", global_position)
+	return cd
+
+
+func _poss_roar_sound(pitch: float) -> void:
+	if _attack_audio and _attack_audio.stream:
+		_attack_audio.pitch_scale = pitch
+		_attack_audio.play()
+	_fx("snd", Vector3.ZERO, Vector3.ZERO, pitch)
+
+
+## 조종하는 사람에게 "잡았다" 알림
+func _poss_caught(s: Survivor, verb := "잡았어요") -> void:
+	if possessed_by and is_instance_valid(possessed_by):
+		_poss_call("net_notice", ["%s 을(를) %s!" % [s.display_name, verb]])
+		_poss_call("_shake", [0.35])
+
+
+## 계속되는 능력 처리 (조종 중, 방장). 종류 스크립트가 필요하면 바꿈
+func _possessed_skill_tick(_delta: float) -> void:
+	pass
+
+
+## 조준 방향에 가장 가까운(각도) 노릴 수 있는 생존자. 벽에 가리면 제외
+func _aim_target(aim: Vector3, max_d: float, cone_deg := 30.0) -> Survivor:
+	var best: Survivor = null
+	var best_a := deg_to_rad(cone_deg)
+	for node in get_tree().get_nodes_in_group("survivor"):
+		var s := node as Survivor
+		if not _is_targetable(s):
+			continue
+		var to := s.global_position - global_position
+		to.y = 0.0
+		if to.length() > max_d or to.length() < 0.1:
+			continue
+		var a := aim.angle_to(to.normalized())
+		if a < best_a and _clear_line(s):
+			best = s
+			best_a = a
+	return best
+
+
+func _face_aim(aim: Vector3) -> void:
+	rotation.y = atan2(-aim.x, -aim.z)
+
+
+## 조종하는 사람 캐릭터에 일 시키기 (손님이면 그 사람 컴퓨터로 보냄)
+func _poss_call(method: String, args: Array) -> void:
+	var p := possessed_by
+	if p == null or not is_instance_valid(p):
+		return
+	if p.net_puppet and p.net_owner != 0 and Net.is_host():
+		Net.apply_to_me.rpc_id(p.net_owner, method, args)
+	elif p.has_method(method):
+		p.callv(method, args)
+
+
+## 생존자 화면에 알림 (방장 컴퓨터의 꼭두각시면 그 사람에게 보냄)
+func _notify(s: Survivor, text: String) -> void:
+	if Net.is_client():
+		return  # 손님 화면 알림은 방장이 보내 줌 (두 번 뜨지 않게)
+	if s.net_puppet and s.net_owner != 0 and Net.is_host():
+		Net.apply_to_me.rpc_id(s.net_owner, "net_notice", [text])
+	elif s.has_signal("notice"):
+		s.emit_signal("notice", text)
+
+
+## 던질 것 (쇠사슬·도끼·거미줄·사슬낫). 다른 사람 화면에도 보이게 같이 보냄
+func _launch(kind: String, thrower: Node3D, from: Vector3, dir: Vector3, spd: float, rng: float, radius: float) -> Node3D:
+	var p := Node3D.new()
+	p.set_script(preload("res://scripts/projectile.gd"))
+	get_tree().current_scene.add_child(p)
+	p.call("setup", thrower, from, dir, spd, rng, radius, kind)
+	_fx("proj", from, dir, [kind, spd, rng, radius])
+	return p
+
+
+## (방장) 술래 효과를 다른 사람 화면에도 (보이기만 함)
+func _fx(kind: String, a := Vector3.ZERO, b := Vector3.ZERO, extra = null) -> void:
+	if not Net.is_host():
+		return
+	var game := get_tree().get_first_node_in_group("game")
+	if game == null:
+		return
+	var idx: int = (game.get("seekers") as Array).find(self)
+	if idx >= 0:
+		Net.seeker_fx.rpc(idx, kind, a, b, extra)
+
+
+## (손님 컴퓨터) 방장이 보낸 효과를 보여 줌. 종류 스크립트가 자기 효과를 더함
+func fx_mirror(kind: String, a: Vector3, b: Vector3, extra) -> void:
+	match kind:
+		"proj":
+			var e: Array = extra
+			var p := Node3D.new()
+			p.set_script(preload("res://scripts/projectile.gd"))
+			p.set("visual_only", true)
+			get_tree().current_scene.add_child(p)
+			p.call("setup", self, a, b, float(e[1]), float(e[2]), float(e[3]), str(e[0]))
+		"eff":
+			var e := Node3D.new()
+			e.set_script(preload("res://scripts/ability_effect.gd"))
+			get_tree().current_scene.add_child(e)
+			e.call("setup", str(extra), a, b, self)
+		"snd":
+			if _attack_audio and _attack_audio.stream:
+				_attack_audio.pitch_scale = float(extra)
+				_attack_audio.play()
+		"roar":
+			_roar_ring(a)
+			body.attack(0.25)
+			var game := get_tree().get_first_node_in_group("game")
+			var me = game.get("player") if game else null
+			if me and is_instance_valid(me) and me.turned_seeker == null and me.global_position.distance_to(a) < 9.0 and me.has_method("_shake"):
+				me.call("_shake", 0.35)
+
+
+## 포효: 바닥을 따라 퍼지는 붉은 고리
+func _roar_ring(at: Vector3) -> void:
+	var m := MeshInstance3D.new()
+	var t := TorusMesh.new()
+	t.inner_radius = 0.9
+	t.outer_radius = 1.0
+	m.mesh = t
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.albedo_color = Color(0.9, 0.08, 0.05, 0.7)
+	mat.no_depth_test = false
+	m.material_override = mat
+	get_tree().current_scene.add_child(m)
+	m.global_position = at + Vector3.UP * 0.15
+	var tw := m.create_tween().set_parallel(true)
+	tw.tween_property(m, "scale", Vector3(8, 1, 8), 0.7).set_ease(Tween.EASE_OUT)
+	tw.tween_property(mat, "albedo_color:a", 0.0, 0.7)
+	tw.chain().tween_callback(m.queue_free)
 
 
 ## 잡는 거리 (처형인은 도끼라서 더 김)
@@ -1061,6 +1308,7 @@ func _spawn_effect(kind: String, pos: Vector3) -> Node3D:
 	e.set_script(preload("res://scripts/ability_effect.gd"))
 	get_tree().current_scene.add_child(e)
 	e.call("setup", kind, _floor_point(pos), -global_basis.z, self)
+	_fx("eff", e.global_position, -global_basis.z, kind)
 	return e
 
 
@@ -1100,6 +1348,9 @@ func _best_target_in_view(max_dist: float) -> Survivor:
 ## 머리 위 표시: ? = 소리 확인 중 / ! = 추격 중 / ... = 얼음 근처 대기
 ## 가까이 있을 때만 보임 (멀리서 술래 위치가 드러나지 않도록)
 func _update_label() -> void:
+	if possessed_by and is_instance_valid(possessed_by) and not possessed_by.net_puppet and possessed_by.get("camera") != null:
+		state_label.visible = false  # 내가 조종하는 술래: 내 머리 위 표시는 안 보여 줌
+		return
 	var cam := get_viewport().get_camera_3d()
 	state_label.visible = body.visible and cam != null \
 			and cam.global_position.distance_to(global_position) < LABEL_VISIBLE_DISTANCE

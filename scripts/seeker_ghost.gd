@@ -131,7 +131,7 @@ func _ability_update(delta: float) -> void:
 			_dash_cd = GameConfig.num("ghost", "dash_cooldown", 30.0)
 		return
 
-	if _dash_cd > 0.0 or _dash_left > 0.0:
+	if _dash_cd > 0.0 or _dash_left > 0.0 or possessed_by:
 		return
 	var target := _best_target_in_view(GameConfig.num("ghost", "dash_max_range", 11.0))
 	if target and global_position.distance_to(target.global_position) >= GameConfig.num("ghost", "dash_min_range", 4.0):
@@ -148,3 +148,47 @@ func _on_stunned() -> void:
 
 func _on_knocked_back() -> void:
 	_on_stunned()
+
+
+# ---------------------------------------------------------------- 사람이 조종할 때 ([R] 돌진 / [T] 벽 통과)
+
+var _pdash_wait := 0.0
+var _pdash_dir := Vector3.ZERO
+var _pdash_catch := 0.0
+
+
+func poss_skills() -> Array:
+	return [["돌진", "0.4초 노려본 뒤 조준한 쪽으로 12m 돌진. 닿으면 바로 잡아요"],
+			["벽 통과", "4초 동안 벽과 장애물을 그냥 지나가요 (벽 속에선 안 보임)"]]
+
+
+func _poss_do(n: int, aim: Vector3):
+	if n == 0:
+		var t := _aim_target(aim, 13.0, 12.0)
+		var dir := (t.global_position - global_position) if t else aim
+		dir.y = 0.0
+		_pdash_dir = dir.normalized()
+		_face_aim(_pdash_dir)
+		_pdash_wait = 0.4
+		_lock_left = 0.6
+		body.attack(0.4)
+		return GameConfig.num("ghost", "dash_cooldown", 30.0) * 0.6
+	_poss_call("poss_phase", [4.0])
+	return 20.0
+
+
+func _possessed_skill_tick(delta: float) -> void:
+	if _pdash_wait > 0.0:
+		_pdash_wait -= delta
+		if _pdash_wait <= 0.0:
+			var spd := GameConfig.num("ghost", "dash_speed", 22.0)
+			var t := GameConfig.num("ghost", "dash_distance", 12.0) / spd
+			_poss_call("poss_dash", [_pdash_dir, spd, t])
+			_pdash_catch = t + 0.15
+			_lock_left = 0.0
+	if _pdash_catch > 0.0:
+		_pdash_catch -= delta
+		_catch_nearby_survivors(GameConfig.num("seeker", "catch_distance", 1.3) + 0.3)
+	# 벽 속에 있으면 안 보임 (패시브 그대로)
+	if state != State.DISABLED:
+		body.visible = not _inside_wall()

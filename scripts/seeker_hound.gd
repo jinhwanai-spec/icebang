@@ -40,7 +40,7 @@ func _ability_update(delta: float) -> void:
 			_merge()
 	else:
 		_split_cd = max(0.0, _split_cd - delta)
-	if _lock_left > 0.0:
+	if _lock_left > 0.0 or possessed_by:
 		return
 
 	# 발견(추격) 또는 소리 확인(조사) 시작하면 무조건 분열
@@ -52,9 +52,11 @@ func _ability_update(delta: float) -> void:
 		_howl()
 
 
-func _split() -> void:
+func _split(goal_override := Vector3.INF) -> void:
 	_split_left = GameConfig.num("hound", "split_time", 30.0)
 	var goal: Vector3 = chase_target.global_position if chase_target else agent.target_position
+	if goal_override != Vector3.INF:
+		goal = goal_override
 	for i in 2:
 		var side := -1.0 if i == 0 else 1.0
 		var c := (load(SeekerSceneRef) as PackedScene).instantiate()
@@ -93,6 +95,7 @@ func _merge() -> void:
 
 ## 나뉘거나 합칠 때 검은 연기
 func _puff(pos: Vector3) -> void:
+	_fx("puff", pos)
 	var m := MeshInstance3D.new()
 	var s := SphereMesh.new()
 	s.radius = 0.9
@@ -116,13 +119,16 @@ func _howl() -> void:
 	_lock_left = 0.9
 	_howl_audio.pitch_scale = 1.0
 	_howl_audio.play()
+	_fx("howl", global_position)
+	body.attack(0.5)
+	_roar_ring(global_position)
 	var r := GameConfig.num("hound", "howl_radius", 25.0)
 	for node in get_tree().get_nodes_in_group("survivor"):
 		var s := node as Survivor
 		if s and not s.is_dead and global_position.distance_to(s.global_position) <= r:
 			s.apply_slow(GameConfig.num("hound", "howl_slow", 0.3), GameConfig.num("hound", "howl_slow_time", 4.0))
-			if s.has_signal("notice"):
-				s.emit_signal("notice", "울부짖음에 다리가 굳었어요! (느려짐)")
+			if s is Survivor:
+				_notify(s as Survivor, "울부짖음에 다리가 굳었어요! (느려짐)")
 
 
 func disable() -> void:
@@ -137,3 +143,41 @@ func kill() -> void:
 	if not is_clone:
 		_merge()
 	super.kill()
+
+
+func fx_mirror(kind: String, a: Vector3, b: Vector3, extra) -> void:
+	match kind:
+		"puff":
+			_puff(a)
+		"howl":
+			if _howl_audio:
+				_howl_audio.pitch_scale = 1.0
+				_howl_audio.play()
+			body.attack(0.5)
+			_roar_ring(a)
+		_:
+			super.fx_mirror(kind, a, b, extra)
+
+
+# ---------------------------------------------------------------- 사람이 조종할 때 ([R] 울부짖음 / [T] 분열)
+
+func poss_skills() -> Array:
+	return [["울부짖음", "25m 안 생존자가 4초 동안 30% 느려져요"],
+			["분열", "분신 2마리가 조준한 쪽 양옆으로 퍼져 생존자를 몰아요 (%d초)" % int(GameConfig.num("hound", "split_time", 30.0))]]
+
+
+func poss_note(n: int) -> String:
+	if n == 1 and _split_left > 0.0:
+		return "분열 중 %d초" % ceili(_split_left)
+	return ""
+
+
+func _poss_do(n: int, aim: Vector3):
+	if n == 0:
+		_howl()
+		return GameConfig.num("hound", "howl_cooldown", 35.0) * 0.6
+	if _split_left > 0.0:
+		return "이미 나뉘어 있어요 (%d초 남음)" % ceili(_split_left)
+	_face_aim(aim)
+	_split(global_position + aim * 14.0)
+	return _split_left + GameConfig.num("hound", "split_cooldown", 30.0) * 0.5

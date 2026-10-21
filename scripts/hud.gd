@@ -229,9 +229,32 @@ func _ready() -> void:
 	root.add_child(_flash)
 
 	_top_label = _make_label(root, 20, Control.PRESET_TOP_LEFT)
+	# 동료 목록 (위쪽 왼쪽, 진행 상황 아래): 색 점 · 이름 · 상태
+	_roster = RichTextLabel.new()
+	_roster.bbcode_enabled = true
+	_roster.fit_content = true
+	_roster.scroll_active = false
+	_roster.autowrap_mode = TextServer.AUTOWRAP_OFF
+	_roster.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_roster.add_theme_font_size_override("normal_font_size", 14)
+	_roster.add_theme_constant_override("outline_size", 4)
+	_roster.add_theme_color_override("font_outline_color", Color.BLACK)
+	_roster.add_theme_constant_override("line_separation", 2)
+	var rsb := StyleBoxFlat.new()
+	rsb.bg_color = Color(0.03, 0.035, 0.05, 0.42)
+	rsb.set_corner_radius_all(8)
+	rsb.content_margin_left = 10
+	rsb.content_margin_right = 12
+	rsb.content_margin_top = 5
+	rsb.content_margin_bottom = 6
+	_roster.add_theme_stylebox_override("normal", rsb)
+	root.add_child(_roster)
+	_roster.position = Vector2(20, 110)
+	_roster.custom_minimum_size = Vector2(200, 0)
 	_status_label = _make_label(root, 21, Control.PRESET_CENTER_BOTTOM)
 	_status_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_status_label.position.y -= 90
+	_status_base_bottom = _status_label.offset_bottom
 	# 스태미나 막대 (화면 아래 가운데)
 	_stamina_bg = ColorRect.new()
 	_stamina_bg.color = Color(0, 0, 0, 0.55)
@@ -266,6 +289,7 @@ func _ready() -> void:
 	help.text = "WASD 이동 · Shift 달리기(소리 큼) · Ctrl 살금살금 · Space 구르기\nE 봉인석·문·판자·사물함·쥐·거미줄 · Q 얼음 · R/T 고유 능력\n얼음 동료 옆에 10초 붙어 있으면 땡 · Esc 일시정지\n헤드셋을 쓰면 발소리로 위치를 알 수 있어요"
 	help.text = help.text.replace("10초", "%d초" % int(GameConfig.num("player", "thaw_time", 10.0))) + "\nF1 도움말 켜기/끄기"
 	help.modulate = Color(1, 1, 1, 0.6)
+	_help_survivor = help.text
 	_help_hint = _make_label(root, 13, Control.PRESET_TOP_RIGHT)
 	_help_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	_help_hint.text = "F1 도움말"
@@ -388,6 +412,8 @@ func _process(delta: float) -> void:
 	if p.speed_multiplier() < 0.99:
 		_top_label.text += "\n느려짐 (%d%%)" % int(p.speed_multiplier() * 100.0)
 
+	_update_roster(delta, p)
+
 	# --- 레트로 필터: 창 크기에 맞춰 거칠기를 일정하게 (큰 화면·전체화면에서도 같은 느낌)
 	if _retro_mat:
 		var vs := get_viewport().get_visible_rect().size
@@ -423,8 +449,7 @@ func _process(delta: float) -> void:
 
 	# --- 아래쪽 가운데: 내 상태
 	if p.turned_seeker:
-		var sk = p.turned_seeker
-		_status_label.text = "당신은 술래!  생존자에게 닿으면 잡아요  ·  Shift 추격" if not sk.possessed_frozen() else "술래가 기절했어요... 잠시 못 움직여요"
+		_status_label.text = _seeker_status(p)
 	elif p.is_dead or p.escaped:
 		_status_label.text = ("탈락! " if p.is_dead else "탈출 성공! ") + _spectate_text(p)
 	elif p.fall_slow_left > 0.0 and not p.is_frozen:
@@ -542,6 +567,17 @@ func _process(delta: float) -> void:
 			state += "  (화살 %d발)" % arrows
 		ability_lines.append("[%s] %s: %s" % [key, info["ability_%d" % slot], state])
 	_ability_label.text = "\n".join(ability_lines)
+	var turned: bool = p.turned_seeker != null and is_instance_valid(p.turned_seeker)
+	if turned:
+		_ability_label.text = _seeker_skill_text(p.turned_seeker, SaveData.show_help or main.round_time < 30.0 or _turned_t < 12.0)
+		_turned_t += get_process_delta_time()
+	_shared_label.visible = not turned
+	# 술래 능력 칸이 높아지면 가운데 아래 안내를 그 위로 올림 (겹치지 않게)
+	var shift := maxf(0.0, _ability_label.size.y - 70.0) if turned else 0.0
+	var ob := lerpf(_status_label.offset_bottom, _status_base_bottom - shift, 0.25)
+	if absf(ob - _status_label.offset_bottom) > 0.1 or shift > 0.0:
+		_status_label.offset_bottom = ob
+		_status_label.offset_top = ob - _status_label.get_combined_minimum_size().y
 	if _ready_flash > 0.0:
 		_ready_flash = maxf(0.0, _ready_flash - get_process_delta_time())
 		var k := _ready_flash / 0.6
@@ -549,6 +585,9 @@ func _process(delta: float) -> void:
 	else:
 		_ability_label.modulate = Color(1, 1, 1)
 	var help_on: bool = SaveData.show_help or (main != null and main.round_time < 30.0)
+	if turned:
+		help_on = SaveData.show_help or _turned_t < 12.0
+	_help.text = HELP_SEEKER if turned else _help_survivor
 	_help.visible = help_on
 	_help_hint.visible = not help_on
 
@@ -597,6 +636,97 @@ func _emote_slots_text() -> String:
 	return _emote_text_cache
 
 
+## 술래로 변한 사람: 아래쪽 가운데 안내 (기척·멈춤 이유)
+func _seeker_status(p) -> String:
+	var sk = p.turned_seeker
+	if sk.state == Seeker.State.DISABLED:
+		return "봉인석이 모두 가동되어 술래가 봉인됐어요..."
+	if sk.state == Seeker.State.KNOCKBACK or sk._stun_left > 0.0:
+		return "술래가 기절했어요... 잠시 못 움직여요"
+	if sk.seeker_type == "mannequin" and sk.poss_note_any(0) != "":
+		return "누가 쳐다보고 있어요! 굳어서 못 움직여요  —  [R] 기습으로 빠져나가요"
+	if sk.possessed_frozen():
+		return "능력을 쓰는 중..."
+	var near := INF
+	for s in main.survivors:
+		if s != p and not s.is_dead and not s.escaped and s.turned_seeker == null and not s.is_frozen:
+			near = minf(near, s.global_position.distance_to(p.global_position))
+	var sense := ""
+	if near < 7.0:
+		sense = "  ·  기척: 바로 근처!"
+	elif near < 16.0:
+		sense = "  ·  기척: 가까움"
+	return "당신은 술래 [%s]  닿으면 잡아요  ·  Shift 추격  ·  [R] [T] 능력%s" % [Seeker.TYPE_NAMES.get(sk.seeker_type, "술래"), sense]
+
+
+var _sk_ready_prev := [true, true]
+var _roster: RichTextLabel
+var _roster_t := 0.0
+
+
+## 동료 목록 갱신 (0.25초마다): ● 이름  상태
+func _update_roster(delta: float, p) -> void:
+	_roster.position.y = _top_label.position.y + _top_label.size.y + 8.0
+	_roster_t -= delta
+	if _roster_t > 0.0:
+		return
+	_roster_t = 0.25
+	var lines: Array = []
+	for s in main.survivors:
+		if not is_instance_valid(s):
+			continue
+		var col: Color = CharacterDB.get_info(s.character_id)["color"]
+		var nm: String = s.display_name
+		if nm.length() > 12:
+			nm = nm.left(11) + "…"
+		var st := ""
+		var name_col := "e8ecf2"
+		if s.turned_seeker != null:
+			st = "[color=#ff5a4a]술래[/color]"
+			name_col = "ff9a8a"
+		elif s.is_dead:
+			st = "[color=#8a93a3]탈락[/color]"
+			name_col = "6a7383"
+		elif s.escaped:
+			st = "[color=#7dffb0]탈출[/color]"
+		elif s.has_meta("executing"):
+			st = "[color=#ff5a4a]처형 중![/color]"
+		elif s.chained_by:
+			st = "[color=#ffb070]사슬[/color]"
+		elif s.is_frozen:
+			st = "[color=#7fd6ff]얼음%s[/color]" % (" %d초" % ceili(s.ice_left) if s.ice_left > 0.0 else "")
+		var me := " [color=#7fd6ff](나)[/color]" if s == p else ""
+		lines.append("[color=#%s]●[/color] [color=#%s]%s[/color]%s  %s" % [col.to_html(false), name_col, nm, me, st])
+	_roster.text = "\n".join(lines)
+var _status_base_bottom := 0.0
+## 술래로 변한 뒤 지난 시간 (처음 12초는 능력 설명을 자세히)
+var _turned_t := 0.0
+var _help_survivor := ""
+const HELP_SEEKER := "술래 조작\nWASD 이동 · Shift 추격 속도 · 마우스 시점\n생존자에게 닿으면 공격 → 맞으면 잡힘 (얼음 상태는 무적)\n[R] [T] 술래 능력 · 붉은 화면이 짙어지면 생존자가 가까워요\nF1 도움말 켜기/끄기"
+
+## 술래로 변한 사람: 아래쪽 왼쪽 능력 칸 (술래 종류별 [R] [T] + 패시브)
+func _seeker_skill_text(sk, detail := true) -> String:
+	var lines: Array = ["술래 · %s" % Seeker.TYPE_NAMES.get(sk.seeker_type, "")]
+	var skills: Array = sk.poss_skills()
+	for n in 2:
+		var cd: float = sk.poss_cd(n)
+		var st := "준비됨" if cd <= 0.0 else "%d초" % ceili(cd)
+		var note: String = sk.poss_note_any(n)
+		if note != "":
+			st += "  (%s)" % note
+		if cd <= 0.0 and not _sk_ready_prev[n]:
+			_ready_sfx.play()
+			_ready_flash = 0.6
+		_sk_ready_prev[n] = cd <= 0.0
+		lines.append("[%s] %s: %s" % [["R", "T"][n], skills[n][0], st])
+		if detail:
+			lines.append("     %s" % skills[n][1])
+	var pas: String = Seeker.TYPE_PASSIVES.get(sk.seeker_type, "")
+	if pas != "":
+		lines.append("패시브: " + pas)
+	return "\n".join(lines)
+
+
 ## 술래가 heartbeat_distance(6m) 안에 오면 두근두근. 가까울수록 빠르고 크게, 화면이 붉게 조여옴
 func _update_heartbeat(delta: float, p) -> void:
 	var near := INF
@@ -605,6 +735,13 @@ func _update_heartbeat(delta: float, p) -> void:
 			if sk.is_active() and not sk.is_disguised():  # 변신한 마녀는 심장이 안 뜀 (속이기)
 				near = minf(near, p.global_position.distance_to(sk.global_position))
 	var hear := GameConfig.num("horror", "heartbeat_distance", 6.0)
+	var hunter: bool = not p.is_dead and p.turned_seeker != null
+	if hunter:
+		# 술래로 변한 사람: 먹잇감(움직이는 생존자)이 가까우면 사냥감의 심장 소리가 들림
+		for s in main.survivors:
+			if s != p and not s.is_dead and not s.escaped and s.turned_seeker == null and not s.is_frozen:
+				near = minf(near, p.global_position.distance_to(s.global_position))
+		hear = 9.0
 	var k := clampf(1.0 - near / hear, 0.0, 1.0) if near < hear else 0.0
 	_heart_timer -= delta
 	if near < hear and _heart_timer <= 0.0:
@@ -616,7 +753,10 @@ func _update_heartbeat(delta: float, p) -> void:
 	# [손맛] 나를 쫓는 중이면 멀리 있어도 붉은 테두리가 은근히 남음 (추격 레이어와 같이)
 	if _feel_bound and is_instance_valid(_feel_bound):
 		k = maxf(k, float(_feel_bound.get("chase_vol")) * 0.3)
-	_danger.material.set_shader_parameter("strength", k * 0.55 + pulse * k * 0.35)
+	var str_v := k * 0.55 + pulse * k * 0.35
+	if hunter:
+		str_v = 0.16 + k * 0.3 + pulse * k * 0.25  # 술래 시야: 늘 은은하게 붉음
+	_danger.material.set_shader_parameter("strength", str_v)
 
 
 # ---------------------------------------------------------------- [손맛] 화면 피드백
@@ -731,7 +871,7 @@ func _update_stamina_bar(delta: float, p) -> void:
 	_stamina_idle = _stamina_idle + delta if ratio >= 0.999 else 0.0
 	var want_a := 0.35 if _stamina_idle > 1.5 else 1.0
 	_stamina_bg.modulate.a = move_toward(_stamina_bg.modulate.a, want_a, delta * 2.5)
-	_stamina_bg.visible = not p.is_dead and not p.escaped
+	_stamina_bg.visible = not p.is_dead and not p.escaped and p.turned_seeker == null
 
 
 var _settings: Node = null
@@ -815,7 +955,8 @@ func show_result(win: bool, title: String, details: String, rows: Array = [], co
 		var ctl := c as Control
 		ctl.modulate.a = 0.0
 		var row_i := i / _stats_grid.columns
-		create_tween().tween_property(ctl, "modulate:a", 1.0, 0.25).set_delay(0.35 + row_i * 0.18)
+		var step := 0.18 if _stats_grid.get_child_count() <= 6 * 6 else 0.1  # 8명이면 더 빠르게
+		create_tween().tween_property(ctl, "modulate:a", 1.0, 0.25).set_delay(0.35 + row_i * step)
 		i += 1
 	_result_retry.text = "다음 스테이지" if win else "다시 하기"
 	if Net.in_match():

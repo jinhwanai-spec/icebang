@@ -24,7 +24,7 @@ func _ability_update(delta: float) -> void:
 	_egg_cd = max(0.0, _egg_cd - delta)
 	eggs = eggs.filter(func(e): return is_instance_valid(e))
 	babies = babies.filter(func(b): return is_instance_valid(b))
-	if _lock_left > 0.0:
+	if _lock_left > 0.0 or possessed_by:
 		return
 
 	# 거미줄 발사
@@ -62,10 +62,7 @@ func _shoot_web(target: Survivor) -> void:
 
 ## 여왕과 새끼가 같이 쓰는 거미줄 발사
 func shoot_web_from(thrower: Node3D, from: Vector3, dir: Vector3, max_range: float) -> void:
-	var p := Node3D.new()
-	p.set_script(ProjectileScript)
-	get_tree().current_scene.add_child(p)
-	p.call("setup", thrower, from, dir, GameConfig.num("spider", "web_speed", 28.0), max_range, 0.6, "web")
+	_launch("web", thrower, from, dir, GameConfig.num("spider", "web_speed", 28.0), max_range, 0.6)
 
 
 ## 거미줄에 맞음 (새끼가 묶으면 by_baby = true → 여왕이 위치를 알게 됨)
@@ -73,11 +70,13 @@ func web_hit(s: Survivor, by_baby: bool) -> void:
 	if not is_active() or s.is_frozen:
 		return
 	s.root(GameConfig.num("spider", "web_root", 1.5))
-	if s.has_signal("notice"):
-		s.emit_signal("notice", "거미줄에 묶였어요! (얼음만 쓸 수 있어요)")
+	_notify(s, "거미줄에 묶였어요! (얼음만 쓸 수 있어요)")
 	if by_baby:
-		alert_to(s.global_position)
-	elif state != State.CHASE:
+		if possessed_by:
+			_poss_call("poss_sense_at", [s.global_position, 3.0])
+		else:
+			alert_to(s.global_position)
+	elif state != State.CHASE and not possessed_by:
 		_start_chase(s)
 
 
@@ -91,3 +90,40 @@ func disable() -> void:
 	for n in eggs + babies:
 		if is_instance_valid(n):
 			n.queue_free()
+
+
+# ---------------------------------------------------------------- 사람이 조종할 때 ([R] 거미줄 / [T] 알 낳기)
+
+func poss_skills() -> Array:
+	return [["거미줄 발사", "빠른 거미줄(14m). 맞으면 1.5초 동안 묶여요"],
+			["알 낳기", "발밑에 알 (최대 %d개). 새끼가 생존자를 묶으면 위치가 보여요" % int(GameConfig.num("spider", "egg_max", 3))]]
+
+
+func poss_note(n: int) -> String:
+	if n == 1:
+		eggs = eggs.filter(func(e): return is_instance_valid(e))
+		babies = babies.filter(func(b): return is_instance_valid(b))
+		return "알 %d · 새끼 %d" % [eggs.size(), babies.size()]
+	return ""
+
+
+func _poss_do(n: int, aim: Vector3):
+	if n == 0:
+		var t := _aim_target(aim, 14.5, 10.0)
+		var dir := (t.global_position - global_position) if t else aim
+		dir.y = 0.0
+		_face_aim(dir.normalized())
+		shoot_web_from(self, global_position + Vector3.UP * 1.1 + dir.normalized() * 0.9, dir, GameConfig.num("spider", "web_range", 14.0))
+		_lock_left = 0.4
+		return GameConfig.num("spider", "web_cooldown", 25.0) * 0.6
+	eggs = eggs.filter(func(e): return is_instance_valid(e))
+	if eggs.size() >= int(GameConfig.num("spider", "egg_max", 3)):
+		return "알은 최대 %d개까지 낳을 수 있어요" % int(GameConfig.num("spider", "egg_max", 3))
+	var egg := Node3D.new()
+	egg.set_script(EggScript)
+	get_tree().current_scene.add_child(egg)
+	egg.global_position = _floor_point(global_position + global_basis.z * 1.0)
+	egg.call("setup", self)
+	eggs.append(egg)
+	_lock_left = 0.8
+	return 10.0

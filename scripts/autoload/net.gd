@@ -1,5 +1,5 @@
 extends Node
-## [자동 로드] 멀티플레이 담당 (1단계: IP 주소로 접속, 최대 4명)
+## [자동 로드] 멀티플레이 담당 (1단계: IP 주소로 접속, 최대 8명)
 ## - 방장(호스트)이 술래 AI·봉인석·판정을 모두 계산하고, 결과를 다른 사람들에게 보냄
 ## - 각자 자기 캐릭터는 자기 컴퓨터에서 움직이고, 위치를 방장에게 보냄 (반응이 빠르게)
 ## - 빈 자리는 방장 컴퓨터의 봇이 채움
@@ -9,7 +9,10 @@ signal lobby_changed
 signal status_changed(text: String)
 
 const PORT := 7777
-const MAX_PLAYERS := 4
+const MAX_PLAYERS := 8
+## 방장이 고르는 판 인원 (사람 + 봇). 사람이 더 많으면 사람 수만큼
+const FILL_CHOICES := [4, 6, 8]
+var bot_fill := 8
 
 ## 멀티 로비 또는 멀티 판 진행 중
 var active := false
@@ -150,6 +153,7 @@ func register(player_name: String, cos := {}) -> void:
 	players[id] = {"name": player_name, "character": "", "ready": false, "in_game": false, "cos": cos}
 	sync_players.rpc(players)
 	sync_mode.rpc(match_mode)
+	sync_fill.rpc(bot_fill)
 
 
 ## 방장: 게임 방식 바꾸기 (모두에게 알림)
@@ -157,6 +161,20 @@ func toggle_mode() -> void:
 	if not multiplayer.is_server():
 		return
 	sync_mode.rpc("turncoat" if match_mode == "classic" else "classic")
+
+
+## 방장: 판 인원 바꾸기 (4 → 6 → 8 → 4)
+func cycle_fill() -> void:
+	if not multiplayer.is_server():
+		return
+	var i := FILL_CHOICES.find(bot_fill)
+	sync_fill.rpc(FILL_CHOICES[(i + 1) % FILL_CHOICES.size()])
+
+
+@rpc("authority", "reliable", "call_local")
+func sync_fill(n: int) -> void:
+	bot_fill = clampi(n, 2, MAX_PLAYERS)
+	lobby_changed.emit()
 
 
 @rpc("authority", "reliable", "call_local")
@@ -283,7 +301,7 @@ func start_match() -> void:
 	var free: Array = CharacterDB.ORDER.filter(func(c): return not used.has(c) and not CharacterDB.is_hidden(c))
 	free.shuffle()
 	var bot_n := 1
-	while slots.size() < MAX_PLAYERS and not free.is_empty():
+	while slots.size() < mini(bot_fill, MAX_PLAYERS) and not free.is_empty():
 		var c: String = free.pop_front()
 		slots.append({"peer": 0, "character": c, "name": "봇%d (%s)" % [bot_n, CharacterDB.get_info(c)["name"]]})
 		bot_n += 1
@@ -439,6 +457,30 @@ func ability_effect(kind: String, pos: Vector3, dir: Vector3, slot: int, target_
 	var m := _main()
 	if m and multiplayer.is_server():
 		m.call("net_ability_effect", multiplayer.get_remote_sender_id(), kind, pos, dir, slot, target_index)
+
+
+## 술래로 변한 손님 → 방장: 술래 능력 쓰기 (n = 0:[R] / 1:[T], aim = 카메라 방향)
+@rpc("any_peer", "reliable")
+func seeker_skill(index: int, n: int, aim: Vector3) -> void:
+	var m := _main()
+	if m and multiplayer.is_server():
+		m.call("net_seeker_skill", multiplayer.get_remote_sender_id(), index, n, aim)
+
+
+## 방장 → 모두: 술래 능력 효과 (던진 것·안개·변신·포효 등을 화면에 보여 주기만)
+@rpc("authority", "reliable")
+func seeker_fx(index: int, kind: String, a: Vector3, b: Vector3, extra) -> void:
+	var m := _main()
+	if m:
+		m.call("net_seeker_fx", index, kind, a, b, extra)
+
+
+## 손님 → 방장: 쥐·새끼 거미·거미 알을 E로 잡음 (진짜는 방장 컴퓨터에 있음)
+@rpc("any_peer", "reliable")
+func extra_kill(nid: int, slot: int) -> void:
+	var m := _main()
+	if m and multiplayer.is_server():
+		m.call("net_extra_kill", nid, slot)
 
 
 ## 각자 → 방장: 게스트가 낸 소리(소리 내기 F 등)를 방장의 술래가 듣게

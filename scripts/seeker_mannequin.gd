@@ -27,6 +27,8 @@ func _ability_update(delta: float) -> void:
 	_ambush_cd = max(0.0, _ambush_cd - delta)
 	# 쳐다보는 중: 잠깐(watched_escape_time) 버틴 뒤 기습으로 시선 밖(생존자 등 뒤)으로 빠져나감
 	var escape := watched and _watched_for >= GameConfig.num("mannequin", "watched_escape_time", 1.0)
+	if possessed_by:
+		return
 	if (watched and not escape) or _lock_left > 0.0 or _ambush_cd > 0.0 or (state == State.CHASE and not escape):
 		return
 	var s := _nearest_targetable(GameConfig.num("mannequin", "ambush_range", 30.0))
@@ -105,3 +107,43 @@ func _ray_clear(from: Vector3, to: Vector3, viewer: Survivor) -> bool:
 
 func _on_stunned() -> void:
 	_lock_left = 0.0
+
+
+# ---------------------------------------------------------------- 사람이 조종할 때 ([R] 기습 / [T] 사냥 본능)
+## 패시브 그대로: 누가 쳐다보면 굳어서 못 움직이고 못 잡음 → 기습으로 시선 밖으로 빠져나감
+
+func poss_skills() -> Array:
+	return [["기습", "30m 안 생존자 등 뒤로 순간이동 (쳐다보는 중에도 쓸 수 있음)"],
+			["사냥 본능", "25m 안 생존자가 4초 동안 벽 너머로 보여요"]]
+
+
+func poss_note(n: int) -> String:
+	if n == 0 and watched:
+		return "누가 쳐다보는 중! 굳었어요"
+	return ""
+
+
+func poss_lock() -> float:
+	var l := super.poss_lock()
+	if poss_net.is_empty() and watched:
+		l = maxf(l, 0.25)
+	return l
+
+
+func _poss_do(n: int, aim: Vector3):
+	if n == 1:
+		return super._poss_do(0, aim)
+	var r := GameConfig.num("mannequin", "ambush_range", 30.0)
+	var s := _aim_target(aim, r, 50.0)
+	if s == null:
+		s = _nearest_targetable(r)
+	if s == null:
+		return "30m 안에 노릴 생존자가 없어요"
+	var behind := _floor_point(s.global_position - _forward_of(s) * 2.6)
+	_teleport_to(behind)
+	rotation.y = atan2(-(s.global_position.x - behind.x), -(s.global_position.z - behind.z))
+	_poss_call("poss_teleport", [behind])
+	_watched_for = 0.0
+	_lock_left = GameConfig.num("mannequin", "ambush_freeze", 0.5) + 0.2
+	_notify(s, "등 뒤에서 뚝... 뚝... 소리가 났어요")
+	return maxf(GameConfig.num("mannequin", "ambush_cooldown", 40.0), 15.0)  # 사람이 쓰면 연타 못 하게 최소 15초

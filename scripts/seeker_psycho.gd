@@ -63,7 +63,7 @@ func _ability_update(delta: float) -> void:
 				_chain(_melt_target)
 				_melt_target = null
 			return
-	if _lock_left > 0.0:
+	if _lock_left > 0.0 or possessed_by:
 		return
 
 	# 얼음 상태 생존자가 가까우면 녹여서 묶음
@@ -81,16 +81,16 @@ func _ability_update(delta: float) -> void:
 	# 사슬낫 던지기
 	var target := _best_target_in_view(GameConfig.num("psycho", "sickle_range", 10.0))
 	if target and _sickle_cd <= 0.0 and global_position.distance_to(target.global_position) >= 3.0:
-		var dir := target.global_position - global_position
-		dir.y = 0.0
-		rotation.y = atan2(-dir.x, -dir.z)
-		var p := Node3D.new()
-		p.set_script(ProjectileScript)
-		get_tree().current_scene.add_child(p)
-		p.call("setup", self, global_position + Vector3.UP * 1.4 + dir.normalized() * 0.8, dir,
-				GameConfig.num("psycho", "sickle_speed", 30.0), GameConfig.num("psycho", "sickle_range", 10.0), 0.5, "sickle")
+		_throw_sickle(target.global_position - global_position)
 		_sickle_cd = GameConfig.num("psycho", "sickle_cooldown", 15.0)
-		_lock_left = 0.35
+
+
+func _throw_sickle(dir: Vector3) -> void:
+	dir.y = 0.0
+	rotation.y = atan2(-dir.x, -dir.z)
+	_launch("sickle", self, global_position + Vector3.UP * 1.4 + dir.normalized() * 0.8, dir,
+			GameConfig.num("psycho", "sickle_speed", 30.0), GameConfig.num("psycho", "sickle_range", 10.0), 0.5)
+	_lock_left = 0.35
 
 
 ## 얼음 생존자에게 닿았는지. 길이 그 앞에서 끝나면(차·벽 옆) 조금 멀어도 닿은 것으로 침.
@@ -163,6 +163,7 @@ func _kill_survivor(s: Survivor) -> void:
 func _chain(s: Survivor) -> void:
 	if s.try_chain(self):
 		chained.append(s)
+		_poss_caught(s, "쇠사슬에 묶었어요")
 		if s == chase_target:
 			chase_target = null
 			_enter_search()
@@ -186,8 +187,8 @@ func _on_projectile_hit(kind: String, s: Survivor) -> void:
 	if kind != "sickle" or not is_active() or s.is_frozen:
 		return
 	s.start_bleeding(GameConfig.num("psycho", "sickle_bleed", 35.0))
-	if s.has_signal("notice"):
-		s.emit_signal("notice", "사슬낫에 베였어요! %d초 동안 피를 흘려요" % int(GameConfig.num("psycho", "sickle_bleed", 35.0)))
+	if s is Survivor:
+		_notify(s as Survivor, "사슬낫에 베였어요! %d초 동안 피를 흘려요" % int(GameConfig.num("psycho", "sickle_bleed", 35.0)))
 	if state != State.CHASE:
 		_start_chase(s)
 
@@ -233,3 +234,39 @@ func _update_lines() -> void:
 		if a.distance_to(c) > 0.05:
 			line.look_at(c, Vector3.UP)
 		line.scale = Vector3(1, 1, a.distance_to(c))
+
+
+# ---------------------------------------------------------------- 사람이 조종할 때 ([R] 사슬낫 / [T] 얼음 녹여 묶기)
+
+func poss_skills() -> Array:
+	return [["사슬낫 던지기", "빠른 사슬낫(10m). 맞으면 35초 출혈 → 광란 (빨라짐)"],
+			["얼음 녹여 묶기", "3m 안 얼음 생존자를 1.5초 동안 녹여서 쇠사슬에 묶어요"]]
+
+
+func poss_note(n: int) -> String:
+	if n == 0 and _frenzy:
+		return "광란! 쿨 절반"
+	if n == 1:
+		return "묶음 %d명" % chained.size()
+	return ""
+
+
+func _possessed_skill_tick(delta: float) -> void:
+	# 광란 중에는 쿨타임이 2배 빨리 (기본 감소 + 한 번 더)
+	if _frenzy:
+		_pcd[0] = maxf(0.0, _pcd[0] - delta)
+
+
+func _poss_do(n: int, aim: Vector3):
+	if n == 0:
+		var t := _aim_target(aim, 10.5, 10.0)
+		_throw_sickle((t.global_position - global_position) if t else aim)
+		return GameConfig.num("psycho", "sickle_cooldown", 15.0)
+	var f := _nearest_frozen(3.2)
+	if f == null:
+		return "가까이(3m)에 얼음 상태 생존자가 없어요"
+	_melt_target = f
+	_melt_left = GameConfig.num("psycho", "melt_time", 1.5)
+	_lock_left = _melt_left
+	_notify(f, "사이코가 얼음을 녹이고 있어요! 쇠사슬에 묶여요!")
+	return 4.0

@@ -1024,6 +1024,15 @@ var reach := 2.2
 var _external_pull := Vector3.ZERO
 
 
+## 인형사의 실에 조종당함 (멀티: 그 사람 컴퓨터로도 보냄)
+func set_controlled(seconds: float, by: Node3D) -> void:
+	_net_fwd("set_controlled", [seconds, by])
+	if is_frozen or is_dead:
+		return
+	controlled_left = seconds
+	controller = by
+
+
 func root(seconds: float) -> void:
 	_net_fwd("root", [seconds])
 	if is_frozen or is_dead:

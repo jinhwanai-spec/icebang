@@ -59,8 +59,8 @@ func _kill_survivor(s: Survivor) -> void:
 			set_meta("break_mult", 0.5)
 		var info := CharacterDB.get_info(s.character_id)
 		for node in get_tree().get_nodes_in_group("survivor"):
-			if node.has_signal("notice"):
-				node.emit_signal("notice", "하마가 %s의 '%s' 능력을 삼켰어요!" % [info["name"], info["ability_1"]])
+			if node is Survivor:
+				_notify(node as Survivor, "하마가 %s의 '%s' 능력을 삼켰어요!" % [info["name"], info["ability_1"]])
 
 
 func _ability_update(delta: float) -> void:
@@ -75,7 +75,7 @@ func _ability_update(delta: float) -> void:
 	if _hole_left > 0.0:
 		_update_blackhole(delta)
 		return
-	if _lock_left > 0.0:
+	if _lock_left > 0.0 or possessed_by:
 		return
 	if _hole_cd <= 0.0 and not _targets_in_cone().is_empty():
 		_start_blackhole()
@@ -112,6 +112,23 @@ func _start_blackhole() -> void:
 	_hole_left = GameConfig.num("diet", "blackhole_time", 5.0)
 	_hole_cd = GameConfig.num("diet", "blackhole_cooldown", 30.0)
 	_lock_left = _hole_left
+	_hole_visual(true)
+	_fx("hole", Vector3.ZERO, Vector3.ZERO, true)
+	for node in get_tree().get_nodes_in_group("survivor"):
+		if node is Survivor and global_position.distance_to((node as Node3D).global_position) < 25.0:
+			_notify(node as Survivor, "하마가 입을 벌렸어요! 달려서 버텨요!")
+
+
+## 블랙홀 모양·소리 (손님 화면에서도 같은 모양)
+func _hole_visual(on: bool) -> void:
+	if not on:
+		body.set_mouth_open(0.0)
+		_hole_audio.stop()
+		if _swirl:
+			_swirl.queue_free()
+			_swirl = null
+		return
+	body.set_mouth_open(1.0)
 	if _hole_audio.stream:
 		_hole_audio.play()
 	_swirl = CPUParticles3D.new()
@@ -138,9 +155,6 @@ func _start_blackhole() -> void:
 	m.material = mat
 	_swirl.mesh = m
 	_swirl.emitting = true
-	for node in get_tree().get_nodes_in_group("survivor"):
-		if node.has_signal("notice") and global_position.distance_to((node as Node3D).global_position) < 25.0:
-			node.emit_signal("notice", "하마가 입을 벌렸어요! 달려서 버텨요!")
 
 
 func _update_blackhole(delta: float) -> void:
@@ -161,12 +175,11 @@ func _update_blackhole(delta: float) -> void:
 
 
 func _end_blackhole() -> void:
+	var was := _hole_left > 0.0 or _swirl != null
 	_hole_left = 0.0
-	body.set_mouth_open(0.0)
-	_hole_audio.stop()
-	if _swirl:
-		_swirl.queue_free()
-		_swirl = null
+	_hole_visual(false)
+	if was:
+		_fx("hole", Vector3.ZERO, Vector3.ZERO, false)
 
 
 func _on_stunned() -> void:
@@ -259,3 +272,103 @@ func disable() -> void:
 	_end_blackhole()
 	body.visible = true
 	super.disable()
+
+
+func fx_mirror(kind: String, a: Vector3, b: Vector3, extra) -> void:
+	if kind == "hole":
+		_hole_visual(bool(extra))
+		return
+	super.fx_mirror(kind, a, b, extra)
+
+
+# ---------------------------------------------------------------- 사람이 조종할 때 ([R] 블랙홀 / [T] 삼킨 능력)
+
+const STOLEN_NAMES := {"chameleon": "투명 6초", "space": "생존자 근처로 순간이동", "cameraman": "앞쪽 플래시",
+		"medic": "붕대로 끌어오기", "gravity": "무중력 띄우기", "hunter": "덫 놓기", "bard": "비명 탐지",
+		"keeper": "가장 가까운 생존자 탐지"}
+
+
+func poss_skills() -> Array:
+	return [["블랙홀", "앞쪽 12m 부채꼴을 5초 동안 빨아들여요. 입까지 오면 잡혀요 (그동안 못 움직임)"],
+			["삼킨 능력", "잡은 생존자에게서 빼앗은 능력을 써요"]]
+
+
+func _usable_stolen() -> Array:
+	return stolen.filter(func(id): return STOLEN_NAMES.has(id))
+
+
+func poss_note(n: int) -> String:
+	if n == 0 and _hole_left > 0.0:
+		return "빨아들이는 중 %.1f초" % _hole_left
+	if n == 1:
+		var u := _usable_stolen()
+		if u.is_empty():
+			return "아직 없음 (생존자를 잡으면 빼앗아요)"
+		return STOLEN_NAMES[u[_stolen_pick % u.size()]]
+	return ""
+
+
+var _stolen_pick := 0
+
+
+func _poss_do(n: int, aim: Vector3):
+	if n == 0:
+		_face_aim(aim)
+		_start_blackhole()
+		return GameConfig.num("diet", "blackhole_cooldown", 30.0) * 0.7
+	var u := _usable_stolen()
+	if u.is_empty():
+		return "아직 삼킨 능력이 없어요. 생존자를 잡으면 그 능력을 빼앗아요"
+	var id: String = u[_stolen_pick % u.size()]
+	_face_aim(aim)
+	if not _poss_stolen(id, aim):
+		return "%s: 지금은 쓸 대상이 없어요" % STOLEN_NAMES[id]
+	_stolen_pick += 1  # 여러 개면 번갈아 씀
+	return GameConfig.num("diet", "stolen_cooldown", 30.0) * 0.6
+
+
+func _poss_stolen(id: String, aim: Vector3) -> bool:
+	match id:
+		"chameleon":
+			_invisible_left = 6.0
+			body.visible = false
+			return true
+		"space":
+			var s := _nearest_targetable(80.0)
+			if s == null:
+				return false
+			var a := randf() * TAU
+			var p := _floor_point(s.global_position + Vector3(cos(a), 0, sin(a)) * 8.0)
+			_teleport_to(p)
+			_poss_call("poss_teleport", [p])
+			return true
+		"cameraman", "gravity", "medic":
+			var t := _aim_target(aim, 12.0, 35.0)
+			if t == null:
+				return false
+			if id == "cameraman":
+				for node in get_tree().get_nodes_in_group("survivor"):
+					var s := node as Survivor
+					if _is_targetable(s) and global_position.distance_to(s.global_position) < 12.0 \
+							and aim.angle_to(Vector3(s.global_position.x - global_position.x, 0, s.global_position.z - global_position.z).normalized()) < deg_to_rad(40.0):
+						s.apply_slow(0.5, 2.0)
+						if s.net_puppet and s.net_owner != 0:
+							Net.apply_to_me.rpc_id(s.net_owner, "emit_signal", ["flashed"])
+						elif s.has_signal("flashed"):
+							s.emit_signal("flashed")
+			elif id == "gravity":
+				t.root(GameConfig.num("diet", "stolen_float_time", 2.0))
+				_notify(t, "하마의 무중력에 떠올랐어요!")
+			else:
+				var to := global_position - t.global_position
+				to.y = 0.0
+				var pull := minf(GameConfig.num("diet", "stolen_bandage_pull", 2.0) * 2.0, maxf(0.0, to.length() - 1.2))
+				t.pull_to(t.global_position + to.normalized() * pull, 0.35)
+			return true
+		"hunter":
+			_spawn_effect("web_trap", global_position)
+			return true
+		"bard", "keeper":
+			_poss_call("poss_sense", [35.0 if id == "bard" else 200.0, 4.0])
+			return true
+	return false

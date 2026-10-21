@@ -46,12 +46,13 @@ var _mp_ip: LineEdit
 var _mp_status: Label
 var _mp_ip_box: Control
 var _mp_ip_label: Label
-var _mp_slots: HBoxContainer
+var _mp_slots: GridContainer
 var _mp_chars: GridContainer
 var _mp_start: Button
 var _mp_wait: Label
 var _mp_ready: Button
 var _mp_mode: Button
+var _mp_fill: Button
 
 
 func _ready() -> void:
@@ -360,7 +361,7 @@ func _build_multi_page() -> Control:
 	col.custom_minimum_size.x = 820
 	col.add_theme_constant_override("separation", 18)
 	_center(page).add_child(col)
-	col.add_child(_header("멀티플레이", "친구와 최대 4명 · 빈 자리는 봇이 채워요"))
+	col.add_child(_header("멀티플레이", "친구와 최대 8명 · 빈 자리는 봇이 채워요"))
 
 	# --- 1) 접속 전: 이름 + 방 만들기 / 참가하기
 	_mp_connect = VBoxContainer.new()
@@ -424,9 +425,23 @@ func _build_multi_page() -> Control:
 	var copy := _text_button("복사", func() -> void: DisplayServer.clipboard_set(_mp_ip_label.text.split("   ")[0]))
 	ipv.add_child(copy)
 
-	_mp_slots = HBoxContainer.new()
-	_mp_slots.add_theme_constant_override("separation", 12)
+	_mp_slots = GridContainer.new()
+	_mp_slots.columns = 4
+	_mp_slots.add_theme_constant_override("h_separation", 10)
+	_mp_slots.add_theme_constant_override("v_separation", 10)
 	_mp_lobby.add_child(_mp_slots)
+	# 방장 설정: 게임 방식 + 판 인원
+	var opt := HBoxContainer.new()
+	opt.add_theme_constant_override("separation", 10)
+	_mp_lobby.add_child(opt)
+	_mp_mode = _button("", func() -> void: Net.toggle_mode())
+	_mp_mode.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_mp_mode.tooltip_text = "술래 변신: AI 술래 없이 시작하고, 판 중간에 무작위 플레이어 한 명이 갑자기 술래로 변해요.\n술래가 된 사람은 그 술래의 능력을 [R] [T] 키로 써요"
+	opt.add_child(_mp_mode)
+	_mp_fill = _button("", func() -> void: Net.cycle_fill())
+	_mp_fill.custom_minimum_size.x = 250
+	_mp_fill.tooltip_text = "판 인원 (사람 + 봇). 6명 이상이면 AI 술래가 2마리 나와요 (기본 방식)"
+	opt.add_child(_mp_fill)
 	_mp_lobby.add_child(_test_pickers())  # 방장이 고른 스테이지·맵으로 시작
 
 	_mp_lobby.add_child(_label("내 캐릭터 고르기", 16, C_DIM))
@@ -447,10 +462,6 @@ func _build_multi_page() -> Control:
 	var back := _button("방 나가기", _leave_multi)
 	back.custom_minimum_size.x = 180
 	row.add_child(back)
-	_mp_mode = _button("", func() -> void: Net.toggle_mode())
-	_mp_mode.custom_minimum_size.x = 330
-	_mp_mode.tooltip_text = "술래 변신: AI 술래 없이 시작하고, 판 중간에 무작위 플레이어 한 명이 갑자기 술래로 변해요"
-	row.add_child(_mp_mode)
 	_mp_start = _button("게임 시작", func() -> void: Net.start_match(), true)
 	_mp_start.custom_minimum_size.x = 280
 	row.add_child(_mp_start)
@@ -518,6 +529,9 @@ func _refresh_multi() -> void:
 	_mp_mode.visible = in_lobby
 	_mp_mode.disabled = not Net.is_host()
 	_mp_mode.text = "방식: %s" % Net.MODE_NAMES.get(Net.match_mode, "")
+	_mp_fill.visible = in_lobby
+	_mp_fill.disabled = not Net.is_host()
+	_mp_fill.text = "인원: %d명 (빈 자리 봇)" % maxi(Net.bot_fill, Net.players.size())
 	# 방장은 언제든 시작 가능 (빈 자리는 봇, 캐릭터 안 고른 사람은 자동 선택)
 	_mp_start.disabled = false
 	var n_ready := 0
@@ -535,7 +549,7 @@ func _refresh_multi() -> void:
 	var ips := Net.local_ips()
 	_mp_ip_label.text = "   ".join(ips) if not ips.is_empty() else "(IP를 찾지 못했어요)"
 
-	# 참가자 칸 4개
+	# 참가자 칸 8개 (4칸 × 2줄)
 	for c in _mp_slots.get_children():
 		c.queue_free()
 	var ids: Array = Net.players.keys()
@@ -543,44 +557,73 @@ func _refresh_multi() -> void:
 	var taken := {}
 	for i in Net.MAX_PLAYERS:
 		var card := _card()
-		card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		card.custom_minimum_size.y = 92
+		card.custom_minimum_size = Vector2(196, 74)
 		_mp_slots.add_child(card)
 		var v := VBoxContainer.new()
-		v.add_theme_constant_override("separation", 6)
+		v.add_theme_constant_override("separation", 4)
 		card.add_child(v)
+		var head := HBoxContainer.new()
+		head.add_theme_constant_override("separation", 6)
+		v.add_child(head)
+		var num := _label("%dP" % (i + 1), 11, C_DIM)
+		num.custom_minimum_size.x = 22
+		head.add_child(num)
 		if i < ids.size():
 			var pid: int = ids[i]
 			var p: Dictionary = Net.players[pid]
 			var cid: String = p["character"]
+			var col: Color = CharacterDB.get_info(cid)["color"] if cid != "" else C_LINE.lightened(0.2)
 			if cid != "":
 				taken[cid] = pid
-			var head := HBoxContainer.new()
-			v.add_child(head)
-			var nm := _label(str(p["name"]), 18, C_TEXT)
+			var nm := _label(str(p["name"]), 17, C_TEXT)
 			nm.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			nm.clip_text = true
+			nm.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 			head.add_child(nm)
 			if pid == 1:
-				head.add_child(_label("방장", 12, C_ICE))
+				head.add_child(_pill("방장", C_ICE))
 			elif Net.is_ready(pid):
-				head.add_child(_label("준비 완료", 12, Color(0.45, 1.0, 0.6)))
+				head.add_child(_pill("준비", Color(0.45, 1.0, 0.6)))
 			else:
-				head.add_child(_label("준비 중", 12, C_DIM))
+				head.add_child(_pill("대기", C_DIM))
 			var crow := HBoxContainer.new()
+			crow.add_theme_constant_override("separation", 6)
 			v.add_child(crow)
+			crow.add_child(_gap_h(22))
 			if cid != "":
-				crow.add_child(_dot(CharacterDB.get_info(cid)["color"], 12))
-				crow.add_child(_gap_h(6))
-				crow.add_child(_label(CharacterDB.get_info(cid)["name"], 14, C_TEXT))
+				crow.add_child(_dot(col, 10))
+				crow.add_child(_label(CharacterDB.get_info(cid)["name"], 14, col.lightened(0.45)))
 			else:
-				crow.add_child(_label("캐릭터 고르는 중...", 14, C_DIM))
-			if pid == Net.my_id():
-				v.add_child(_label("나", 12, C_ICE))
-				_box_override(card, _box(C_PANEL_HI, C_ICE, 2, 12))
+				crow.add_child(_label("캐릭터 고르는 중...", 13, C_DIM))
+			var me := pid == Net.my_id()
+			if me:
+				crow.add_child(_label("· 나", 12, C_ICE))
+			# 왼쪽 굵은 띠 = 캐릭터 색 (내 칸은 테두리도 밝게)
+			var sb := _box(C_PANEL_HI if me else C_PANEL, C_ICE if me else C_LINE, 2 if me else 1, 12)
+			sb.border_width_left = 5
+			sb.border_color = col if not me else C_ICE
+			_box_override(card, sb)
+		elif i < Net.bot_fill:
+			var t := _label("빈 자리", 16, C_DIM)
+			t.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			head.add_child(t)
+			head.add_child(_pill("BOT", C_LINE.lightened(0.45)))
+			var r2 := HBoxContainer.new()
+			v.add_child(r2)
+			r2.add_child(_gap_h(28))
+			r2.add_child(_label("시작하면 봇이 채워요", 12, C_LINE.lightened(0.35)))
+			var sb2 := _box(C_BG, C_LINE, 1, 12)
+			sb2.border_width_left = 5
+			_box_override(card, sb2)
 		else:
-			v.add_child(_label("빈 자리", 18, C_DIM))
-			v.add_child(_label("봇이 채워요", 13, C_LINE.lightened(0.3)))
+			card.modulate = Color(1, 1, 1, 0.38)
+			var t2 := _label("닫힌 자리", 16, C_DIM)
+			head.add_child(t2)
+			var r3 := HBoxContainer.new()
+			v.add_child(r3)
+			r3.add_child(_gap_h(28))
+			r3.add_child(_label("인원을 늘리면 열려요", 12, C_DIM))
+			_box_override(card, _box(C_BG, C_BG, 1, 12))
 
 	# 캐릭터 고르기 칩 (다른 사람이 고른 건 못 고름)
 	for c in _mp_chars.get_children():
@@ -593,14 +636,20 @@ func _refresh_multi() -> void:
 		var other: bool = taken.has(id) and not mine
 		var b := Button.new()
 		b.text = info["name"]
+		if other:
+			var who := str(Net.players.get(taken[id], {}).get("name", ""))
+			b.text = "%s · %s" % [info["name"], who.left(4) + ("…" if who.length() > 4 else "")]
+			b.tooltip_text = "%s 님이 골랐어요" % who
 		b.custom_minimum_size = Vector2(156, 44)
+		b.clip_text = true
 		b.disabled = other
 		b.add_theme_font_size_override("font_size", 15)
 		b.icon = _dot_texture(info["color"])
 		var border: Color = info["color"] if mine else C_LINE
 		b.add_theme_stylebox_override("normal", _box(C_PANEL_HI if mine else C_PANEL, border, 2 if mine else 1, 10))
 		b.add_theme_stylebox_override("hover", _box(C_PANEL_HI, info["color"], 1, 10))
-		b.add_theme_stylebox_override("disabled", _box(C_BG, C_BG, 1, 10))
+		b.add_theme_stylebox_override("disabled", _box(C_BG, C_LINE.darkened(0.3), 1, 10))
+		b.add_theme_color_override("font_disabled_color", Color(C_DIM, 0.55))
 		b.pressed.connect(func() -> void: Net.pick_character(id))
 		_mp_chars.add_child(b)
 
@@ -1229,6 +1278,18 @@ func _make_theme() -> Theme:
 	# 카드 (PanelContainer)
 	t.set_stylebox("panel", "PanelContainer", _box(C_PANEL, C_LINE, 1, 12, 18))
 	return t
+
+
+## 작은 글자 딱지 (방장·준비·BOT 등)
+func _pill(text: String, col: Color) -> Control:
+	var pc := PanelContainer.new()
+	var sb := _box(Color(col, 0.12), Color(col, 0.55), 1, 8, 6)
+	sb.content_margin_top = 1
+	sb.content_margin_bottom = 1
+	pc.add_theme_stylebox_override("panel", sb)
+	pc.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	pc.add_child(_label(text, 11, col))
+	return pc
 
 
 func _box(bg: Color, border: Color, border_w: int, radius: int, pad := 14) -> StyleBoxFlat:

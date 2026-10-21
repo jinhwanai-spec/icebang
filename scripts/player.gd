@@ -175,7 +175,12 @@ func _unhandled_input(event: InputEvent) -> void:
 				deg_to_rad(-55.0), deg_to_rad(40.0))
 
 	if turned_seeker:
-		return  # 술래로 변함: 움직이기·시점만 (닿으면 잡음)
+		# 술래로 변함: 움직이기·시점 + 그 술래의 능력 [R] [T] (닿으면 잡음)
+		if event.is_action_pressed("ability_1"):
+			_seeker_skill(0)
+		elif event.is_action_pressed("ability_2"):
+			_seeker_skill(1)
+		return
 	if is_dead or escaped:
 		# 관전 중: 좌클릭 다음 / 우클릭 이전 / V 자유 시점
 		if event is InputEventMouseButton and event.pressed:
@@ -470,14 +475,161 @@ func _seeker_move(delta: float) -> void:
 	var dir := pivot.global_basis * Vector3(input.x, 0.0, input.y)
 	dir.y = 0.0
 	dir = dir.normalized() * min(input.length(), 1.0)
+	_update_phase(delta)
+	# 술래 몸집이 커서 카메라를 조금 뒤·위로
+	spring_arm.spring_length = move_toward(spring_arm.spring_length, GameConfig.num("view", "camera_distance", 2.6) + 1.6, delta * 3.0)
+	pivot.position.y = move_toward(pivot.position.y, _pivot_base_y + 0.5, delta * 1.5)
+	if _pdash_left > 0.0:
+		# 능력 돌진 (유령 대쉬 등): 정해진 방향으로 쭉
+		_pdash_left -= delta
+		velocity.x = _pdash_vel.x
+		velocity.z = _pdash_vel.z
+		_face_direction(_pdash_vel, delta)
+		move_and_slide()
+		return
 	var speed := 0.0
 	if not sk.possessed_frozen():
 		speed = sk.chase_speed() if Input.is_action_pressed("run") else GameConfig.num("seeker", "investigate_speed", 4.8)
 		speed *= sk.possessed_speed_mult()  # 폭주 배율도 여기에 들어 있음
+		speed = minf(speed, sk.possessed_max_speed())
 	velocity.x = dir.x * speed
 	velocity.z = dir.z * speed
+	if _phase_left > 0.0:
+		velocity.y = 0.0  # 벽 통과 중엔 떨어지지 않고 같은 높이로 떠다님
 	_face_direction(dir, delta)
 	move_and_slide()
+
+
+# ---------------------------------------------------------------- 술래로 변한 뒤의 능력 ([R] / [T])
+
+var _pdash_left := 0.0
+@onready var _pivot_base_y: float = pivot.position.y
+var _pdash_vel := Vector3.ZERO
+var _phase_left := 0.0
+var _phase_mask := -1
+
+
+## 능력 키: 방장이면 바로, 손님이면 방장에게 부탁 (술래는 방장 컴퓨터가 움직임)
+func _seeker_skill(n: int) -> void:
+	var sk := turned_seeker
+	if not is_instance_valid(sk):
+		return
+	var info: Array = sk.poss_skills()[n]
+	if sk.poss_cd(n) > 0.0:
+		notice.emit("%s 준비 중... %d초" % [info[0], ceili(sk.poss_cd(n))])
+		return
+	var aim := -spring_arm.global_basis.z
+	aim.y = 0.0
+	if Net.is_client():
+		var g := _game()
+		var idx: int = (g.get("seekers") as Array).find(sk) if g else -1
+		if idx >= 0:
+			Net.seeker_skill.rpc_id(1, idx, n, aim)
+	else:
+		var r := sk.poss_use(n, aim)
+		if r != "":
+			notice.emit(r)
+			return
+	_shake(0.12)
+
+
+## (방장이 시킴) 정해진 방향으로 돌진
+func poss_dash(dir: Vector3, spd: float, seconds: float) -> void:
+	dir.y = 0.0
+	_pdash_vel = dir.normalized() * spd
+	_pdash_left = seconds
+	_shake(0.25)
+
+
+## (방장이 시킴) 순간이동
+func poss_teleport(pos: Vector3) -> void:
+	global_position = pos + Vector3.UP * 0.15
+	velocity = Vector3.ZERO
+	play_sfx(SFX_TELEPORT)
+	_shake(0.3)
+
+
+## (방장이 시킴) 유령: seconds 동안 벽을 통과. 끝날 때 벽 속이면 빠져나올 때까지 연장
+func poss_phase(seconds: float) -> void:
+	if _phase_mask < 0:
+		_phase_mask = collision_mask
+	collision_mask = 0
+	_phase_left = seconds
+	notice.emit("벽을 통과할 수 있어요! (%d초)" % roundi(seconds))
+
+
+func _update_phase(delta: float) -> void:
+	if _phase_left <= 0.0:
+		return
+	_phase_left -= delta
+	if _phase_left > 0.0:
+		return
+	var q := PhysicsPointQueryParameters3D.new()
+	q.position = global_position + Vector3.UP * 1.0
+	q.exclude = [get_rid()]
+	for hit in get_world_3d().direct_space_state.intersect_point(q, 4):
+		if hit["collider"] is StaticBody3D:
+			_phase_left = 0.1  # 아직 벽 속: 조금 더
+			return
+	collision_mask = _phase_mask
+	_phase_mask = -1
+
+
+## (방장이 시킴) 사냥 본능: radius 안 생존자 머리 위에 붉은 표시가 seconds 동안 벽 너머로 보임
+func poss_sense(radius: float, seconds: float) -> void:
+	var n := 0
+	for node in get_tree().get_nodes_in_group("survivor"):
+		var s := node as Survivor
+		if s == null or s == self or s.is_dead or s.escaped or s.turned_seeker:
+			continue
+		if s.global_position.distance_to(global_position) > radius:
+			continue
+		n += 1
+		var mk := Label3D.new()
+		mk.text = "◆"
+		mk.font_size = 96
+		mk.outline_size = 12
+		mk.modulate = Color(1.0, 0.15, 0.1)
+		mk.outline_modulate = Color(0.15, 0, 0, 0.9)
+		mk.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		mk.no_depth_test = true
+		mk.fixed_size = true
+		mk.pixel_size = 0.0009
+		mk.position = Vector3.UP * 2.3
+		s.add_child(mk)
+		var tw := mk.create_tween()
+		tw.tween_property(mk, "modulate:a", 0.35, 0.4).set_trans(Tween.TRANS_SINE)
+		tw.tween_property(mk, "modulate:a", 1.0, 0.4).set_trans(Tween.TRANS_SINE)
+		tw.set_loops(maxi(1, int(seconds / 0.8)))
+		get_tree().create_timer(seconds).timeout.connect(func() -> void:
+			if is_instance_valid(mk):
+				mk.queue_free())
+	notice.emit("사냥 본능: 생존자 %d명이 느껴져요" % n if n > 0 else "사냥 본능: 근처에 생존자가 없어요")
+
+
+## (방장이 시킴) 그 자리에 붉은 표시 (새끼 거미가 묶은 곳 등)
+func poss_sense_at(pos: Vector3, seconds: float) -> void:
+	var mk := Label3D.new()
+	mk.text = "◆"
+	mk.font_size = 110
+	mk.outline_size = 14
+	mk.modulate = Color(1.0, 0.3, 0.1)
+	mk.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	mk.no_depth_test = true
+	mk.fixed_size = true
+	mk.pixel_size = 0.001
+	get_tree().current_scene.add_child(mk)
+	mk.global_position = pos + Vector3.UP * 2.0
+	var tw := mk.create_tween()
+	tw.tween_interval(maxf(0.0, seconds - 0.6))
+	tw.tween_property(mk, "modulate:a", 0.0, 0.6)
+	tw.tween_callback(mk.queue_free)
+	notice.emit("새끼 거미가 생존자를 묶었어요!")
+
+
+## (방장이 보냄) 화면 가운데 알림
+func net_notice(text: String) -> void:
+	notice.emit(text)
 
 
 ## 쿨타임 감소. 충전식 능력은 시간이 다 되면 1개 충전
@@ -643,6 +795,8 @@ func _try_kill_rat() -> bool:
 	var rat := _nearest_rat(GameConfig.num("rat", "minion_kill_reach", 2.0))
 	if rat:
 		var is_rat := not rat.has_meta("prompt")
+		if rat.has_meta("nid") and Net.is_client() and _game():
+			_game().call("net_extra_killed_local", rat)  # 보이기용 → 방장 컴퓨터의 진짜를 없앰
 		rat.call("kill", self)
 		notice.emit("쥐를 잡았어요! (술래가 이 위치를 알게 됐어요)" if is_rat else "제거했어요!")
 		return true

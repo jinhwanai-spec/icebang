@@ -26,7 +26,7 @@ func _ready() -> void:
 func _ability_update(delta: float) -> void:
 	_chain_cd = max(0.0, _chain_cd - delta)
 	_axe_cd = max(0.0, _axe_cd - delta)
-	if _lock_left > 0.0:
+	if _lock_left > 0.0 or possessed_by:
 		return
 
 	var chain_range := GameConfig.num("butcher", "chain_range", 10.0)
@@ -47,20 +47,20 @@ func _ability_update(delta: float) -> void:
 
 
 func _throw(kind: String, target: Survivor) -> void:
-	var dir := target.global_position - global_position
+	_throw_dir(kind, target.global_position - global_position)
+
+
+func _throw_dir(kind: String, dir: Vector3) -> void:
 	dir.y = 0.0
 	rotation.y = atan2(-dir.x, -dir.z)  # 던지는 방향을 바라봄
-	var p := Node3D.new()
-	p.set_script(ProjectileScript)
-	get_tree().current_scene.add_child(p)
 	var from := global_position + Vector3.UP * 1.3 + dir.normalized() * 0.8
 	if kind == "chain":
-		p.call("setup", self, from, dir, GameConfig.num("butcher", "chain_speed", 24.0),
-				GameConfig.num("butcher", "chain_range", 10.0), GameConfig.num("butcher", "chain_hit_radius", 0.45), "chain")
+		_launch("chain", self, from, dir, GameConfig.num("butcher", "chain_speed", 24.0),
+				GameConfig.num("butcher", "chain_range", 10.0), GameConfig.num("butcher", "chain_hit_radius", 0.45))
 		_lock_left = GameConfig.num("butcher", "chain_range", 10.0) / GameConfig.num("butcher", "chain_speed", 24.0) + 0.1
 	else:
-		p.call("setup", self, from, dir, GameConfig.num("butcher", "axe_speed", 9.0),
-				GameConfig.num("butcher", "axe_range", 10.0), GameConfig.num("butcher", "axe_hit_radius", 0.8), "axe")
+		_launch("axe", self, from, dir, GameConfig.num("butcher", "axe_speed", 9.0),
+				GameConfig.num("butcher", "axe_range", 10.0), GameConfig.num("butcher", "axe_hit_radius", 0.8))
 		_lock_left = 0.4
 		_hide_axe(GameConfig.num("butcher", "axe_range", 10.0) / GameConfig.num("butcher", "axe_speed", 9.0))
 	_throw_audio.play()
@@ -89,5 +89,30 @@ func _on_projectile_hit(kind: String, s: Survivor) -> void:
 	spot = NavigationServer3D.map_get_closest_point(agent.get_navigation_map(), spot)
 	s.pull_to(spot, 0.35)
 	_lock_left = 0.35 + GameConfig.num("butcher", "chain_recover_time", 0.8)  # 잠깐 멈춤 → 도망칠 기회
-	if state != State.CHASE:
+	if possessed_by:
+		_notify(s, "도살자의 쇠사슬에 끌려가요!")
+	elif state != State.CHASE:
 		_start_chase(s)
+
+
+# ---------------------------------------------------------------- 사람이 조종할 때 ([R] 쇠사슬 / [T] 도끼)
+
+func poss_skills() -> Array:
+	return [["쇠사슬 그랩", "조준한 쪽으로 쇠사슬(10m). 맞으면 내 앞까지 끌려와요"],
+			["도끼 던지기", "느리지만 판정이 넓어요(10m). 맞으면 피 흘림 + 절반 속도"]]
+
+
+func _poss_do(n: int, aim: Vector3):
+	var t := _aim_target(aim, 10.5, 12.0)  # 살짝 도와주는 조준
+	var dir := (t.global_position - global_position) if t else aim
+	if n == 0:
+		_throw_dir("chain", dir)
+		return GameConfig.num("butcher", "chain_cooldown", 40.0) * 0.6
+	_throw_dir("axe", dir)
+	return GameConfig.num("butcher", "axe_cooldown", 30.0) * 0.6
+
+
+func fx_mirror(kind: String, a: Vector3, b: Vector3, extra) -> void:
+	super.fx_mirror(kind, a, b, extra)
+	if kind == "proj" and str((extra as Array)[0]) == "axe":
+		_hide_axe(GameConfig.num("butcher", "axe_range", 10.0) / GameConfig.num("butcher", "axe_speed", 9.0))

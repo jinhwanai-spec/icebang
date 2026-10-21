@@ -47,7 +47,7 @@ func _ability_update(delta: float) -> void:
 		_fog_left -= delta
 		if _fog_left <= 0.0:
 			_set_fog(false)
-	if _lock_left > 0.0:
+	if _lock_left > 0.0 or possessed_by:
 		return
 
 	# 짙은 안개: 생존자를 쫓거나 소리를 확인하러 갈 때 (변신 중에는 못 씀)
@@ -71,9 +71,17 @@ func _start_disguise() -> void:
 		ids.append((node as Survivor).character_id)
 	if ids.is_empty():
 		return
+	var cid: String = ids[randi() % ids.size()]
+	_disguise_as(cid)
+	_fx("disguise", Vector3.ZERO, Vector3.ZERO, cid)
+
+
+func _disguise_as(cid: String) -> void:
+	if _disguise:
+		_disguise.queue_free()
 	_disguise = ClayBody.new()
 	add_child(_disguise)
-	_disguise.build(ids[randi() % ids.size()])
+	_disguise.build(cid)
 	_disguise.rotation.y = PI  # 점토 인형은 +Z가 앞, 술래는 -Z가 앞
 	body.visible = false
 	state_label.visible = false
@@ -85,6 +93,7 @@ func _unmask() -> void:
 	_disguise.queue_free()
 	_disguise = null
 	body.visible = true
+	_fx("disguise", Vector3.ZERO, Vector3.ZERO, "")
 	_lock_left = GameConfig.num("witch", "unmask_freeze", 0.7)
 	_disguise_cd = GameConfig.num("witch", "disguise_cooldown", 40.0)
 
@@ -121,15 +130,16 @@ func _set_fog(on: bool) -> void:
 		_base_fog = env.fog_density
 	# 헬멧(정비공 보급품)을 쓴 유저에게는 안개가 안 통함
 	var p = game.get("player")
-	if on and p and is_instance_valid(p) and p.item == "helmet":
-		on = false
+	if on and p and is_instance_valid(p) and (p.item == "helmet" or p.get("turned_seeker") != null):
+		on = false  # 술래가 된 사람(마녀 본인)의 시야는 그대로
+	_fx("fog", Vector3.ZERO, Vector3.ZERO, on)
 	var target := GameConfig.num("witch", "fog_density", 1.5) if on else _base_fog
 	var tw := create_tween()
 	tw.tween_property(env, "fog_density", target, 1.2)
 	if on:
 		for node in get_tree().get_nodes_in_group("survivor"):
-			if node.has_signal("notice"):
-				node.emit_signal("notice", "짙은 안개가 몰려옵니다... 웃음소리를 잘 들어보세요")
+			if node is Survivor:
+				_notify(node as Survivor, "짙은 안개가 몰려옵니다... 웃음소리를 잘 들어보세요")
 
 
 ## 안개 중에는 발소리 대신 마녀 웃음소리, 변신 중에는 생존자 발소리
@@ -169,3 +179,57 @@ func disable() -> void:
 
 func _on_stunned() -> void:
 	_lock_left = 0.0
+
+
+func fx_mirror(kind: String, a: Vector3, b: Vector3, extra) -> void:
+	match kind:
+		"fog":
+			_fog_left = GameConfig.num("witch", "fog_time", 15.0) if bool(extra) else 0.0  # 웃음소리 발소리용
+			_set_fog(bool(extra))
+		"disguise":
+			if str(extra) == "":
+				if _disguise:
+					_disguise.queue_free()
+					_disguise = null
+				body.visible = true
+			else:
+				_disguise_as(str(extra))
+		_:
+			super.fx_mirror(kind, a, b, extra)
+
+
+# ---------------------------------------------------------------- 사람이 조종할 때 ([R] 안개 / [T] 변신)
+
+func poss_skills() -> Array:
+	return [["짙은 안개", "15초 동안 생존자는 2m 앞만 보여요 (내 발소리는 웃음소리로)"],
+			["변신", "생존자 모습으로 변신 / 다시 누르면 풀기. 변신 중엔 걷기만, 잡으려면 먼저 풀려요"]]
+
+
+func poss_note(n: int) -> String:
+	if n == 0 and _fog_left > 0.0:
+		return "안개 %d초" % ceili(_fog_left)
+	if n == 1 and _disguise:
+		return "변신 중"
+	return ""
+
+
+func possessed_max_speed() -> float:
+	return GameConfig.num("player", "walk_speed", 4.5) if _disguise else INF
+
+
+func _poss_do(n: int, aim: Vector3):
+	if n == 0:
+		if _disguise:
+			return "변신 중에는 안개를 못 써요"
+		_fog_left = GameConfig.num("witch", "fog_time", 15.0)
+		_set_fog(true)
+		_lock_left = 0.5
+		return GameConfig.num("witch", "fog_cooldown", 40.0) * 0.6
+	if _disguise:
+		_unmask()
+		_disguise_cd = 0.0
+		return GameConfig.num("witch", "disguise_cooldown", 40.0) * 0.4
+	if _fog_left > 0.0:
+		return "안개 중에는 변신할 수 없어요"
+	_start_disguise()
+	return 1.0

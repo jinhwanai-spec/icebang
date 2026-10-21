@@ -9,6 +9,8 @@ var direction := Vector3.FORWARD
 var speed := 10.0
 var max_distance := 10.0
 var hit_radius := 0.5
+## 멀티 손님 화면: 보이기만 함 (맞히는 판정은 방장 컴퓨터가 함)
+var visual_only := false
 
 var _travelled := 0.0
 var _visual: Node3D
@@ -134,7 +136,7 @@ func _physics_process(delta: float) -> void:
 		var center := s.global_position + Vector3.UP * 0.9
 		var closest := Geometry3D.get_closest_point_to_segment(center, from, to)
 		if closest.distance_to(center) <= hit_radius + 0.35:
-			if is_instance_valid(thrower):
+			if is_instance_valid(thrower) and not visual_only:
 				thrower.call("_on_projectile_hit", kind, s)
 			queue_free()
 			return

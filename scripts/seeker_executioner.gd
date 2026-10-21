@@ -34,6 +34,7 @@ func _catchable(s: Survivor) -> bool:
 
 func _kill_survivor(s: Survivor) -> void:
 	s._kill()
+	_poss_caught(s, "도끼로 베었어요")
 	if s == chase_target:
 		chase_target = null
 		_enter_search()
@@ -44,7 +45,7 @@ func _ability_update(delta: float) -> void:
 	if _exec_target:
 		_update_execution(delta)
 		return
-	if _lock_left > 0.0 or _exec_cd > 0.0:
+	if _lock_left > 0.0 or _exec_cd > 0.0 or possessed_by:
 		return
 	var frozen := _nearest_frozen(GameConfig.num("executioner", "frozen_search", 15.0))
 	if frozen == null:
@@ -101,11 +102,11 @@ func _start_execution(s: Survivor) -> void:
 	s.frozen_changed.emit(false)
 	s.set_meta("executing", true)
 	_play("res://audio/mg_fail.wav", 0.7)
-	if s.has_signal("notice"):
-		s.emit_signal("notice", "처형인이 얼음을 깨고 나를 끌어냈어요! 동료가 기절시켜야 살 수 있어요!")
+	if s is Survivor:
+		_notify(s as Survivor, "처형인이 얼음을 깨고 나를 끌어냈어요! 동료가 기절시켜야 살 수 있어요!")
 	for node in get_tree().get_nodes_in_group("survivor"):
-		if node != s and node.has_signal("notice"):
-			node.emit_signal("notice", "%s이(가) 처형당하려 해요! 5초 안에 처형인을 기절시켜요!" % s.display_name)
+		if node != s and node is Survivor:
+			_notify(node as Survivor, "%s이(가) 처형당하려 해요! 5초 안에 처형인을 기절시켜요!" % s.display_name)
 
 
 func _update_execution(delta: float) -> void:
@@ -140,8 +141,8 @@ func _release(text: String) -> void:
 	s.pulled_time_left = 0.0
 	s.rooted_left = 0.0
 	s.body.rotation.x = 0.0
-	if s.has_signal("notice"):
-		s.emit_signal("notice", text)
+	if s is Survivor:
+		_notify(s as Survivor, text)
 
 
 func _on_stunned() -> void:
@@ -266,3 +267,26 @@ func _play(path: String, pitch: float) -> void:
 		_sfx.stream = load(path)
 		_sfx.pitch_scale = pitch
 		_sfx.play()
+
+
+# ---------------------------------------------------------------- 사람이 조종할 때 ([R] 처형 / [T] 사냥 본능)
+
+func poss_skills() -> Array:
+	return [["처형", "3m 안 얼음 생존자를 꺼내 5초 뒤 목을 베요 (동료가 기절시키면 실패)"],
+			["사냥 본능", "25m 안 생존자가 4초 동안 벽 너머로 보여요"]]
+
+
+func poss_note(n: int) -> String:
+	if n == 0 and _exec_target:
+		return "처형 중 %.1f초" % _exec_left
+	return ""
+
+
+func _poss_do(n: int, aim: Vector3):
+	if n == 1:
+		return super._poss_do(0, aim)
+	var f := _nearest_frozen(3.2)
+	if f == null:
+		return "가까이(3m)에 얼음 상태 생존자가 없어요"
+	_start_execution(f)
+	return GameConfig.num("executioner", "execute_cooldown", 150.0) * 0.6
