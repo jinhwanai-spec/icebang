@@ -186,7 +186,7 @@ func _main_building() -> void:
 				var gc := a + dir * u
 				gc.y = y + 1.95
 				var lit := rng.randf() < 0.05
-				kit.block(gc, Vector3(1.6, 2.0, 0.04), _deco_mat("lit" if lit else "glass"), "b_" + ("lit" if lit else "glass"), true, Basis(dir, Vector3.UP, dir.cross(Vector3.UP).normalized()), false, Color(0.9, 0.85, 0.6) if lit else Color(0.1, 0.13, 0.2))
+				kit.block(gc, Vector3(1.6, 2.0, 0.04), _deco_mat("lit" if lit else "glass"), "b_" + ("lit" if lit else "glass"), true, Basis(dir, Vector3.UP, dir.cross(Vector3.UP).normalized()), false, Color(0.9, 0.85, 0.6, 0.5) if lit else Color(0.1, 0.13, 0.2))
 				var fn := gc + n * (BuildingKit.WALL_T * 0.5)
 				var tt := Vector3.UP.cross(n)
 				_bx("trim", fn + n * 0.03, tt, n, Vector3(0.06, 2.0, 0.05), Color(0.2, 0.2, 0.22))

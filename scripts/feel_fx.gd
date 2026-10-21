@@ -347,7 +347,7 @@ func _update_camera(delta: float, alive: bool) -> void:
 	_dip_target = lerpf(_dip_target, 0.0, 1.0 - exp(-7.0 * delta))
 	# 6) 트라우마 흔들림 (노이즈)
 	_trauma = maxf(0.0, _trauma - delta * 1.1)
-	var sh := _trauma * _trauma * _shake_mult
+	var sh := _trauma * _trauma * _shake_mult * SaveData.shake
 	var sx := _noise.get_noise_2d(_t * 22.0, 0.0) * 0.14 * sh
 	var sy := _noise.get_noise_2d(_t * 22.0, 50.0) * 0.12 * sh
 	var sr := _noise.get_noise_2d(_t * 18.0, 100.0) * deg_to_rad(2.5) * sh

@@ -179,7 +179,7 @@ func _process(delta: float) -> void:
 	if Net.is_client():
 		return  # 판정·폭주·탈출은 방장 컴퓨터가 계산해서 알려 줌
 	if not raged and round_time >= GameConfig.num("seeker", "rage_time", 600.0):
-		_enrage_all("10분이 지났어요... 술래들이 폭주합니다!")
+		_enrage_all("%d분이 지났어요... 술래들이 폭주합니다!" % roundi(GameConfig.num("seeker", "rage_time", 600.0) / 60.0))
 	_update_turncoat(delta)
 	if escape_phase:
 		_update_escape(delta)
@@ -803,7 +803,7 @@ func _stats_rows() -> Array:
 			"rescues": s.stat_rescues, "stages": s.stat_stages, "dodges": s.stat_dodges,
 			"alive": round_time if s.stat_out_time < 0.0 else s.stat_out_time,
 			"result": "탈출" if s.escaped else ("탈락" if s.is_dead else "생존"),
-			"mvp": s == mvp, "me": s == player,
+			"mvp": s == mvp, "me": s == player, "missions": missions_done,
 		})
 	return rows
 
@@ -816,10 +816,13 @@ func _end_round(win: bool, reason: String) -> void:
 
 	# 코인 계산: 이겨도 져도 한 만큼은 받음 → 여러 판 할수록 성장
 	var mission_coins := missions_done * int(GameConfig.num("reward", "per_mission", 10))
+	if Net.in_match() and player:
+		player_rescues = player.stat_rescues  # 멀티는 _on_rescued 가 일찍 끝나서 생존자 기록으로 셈
 	var rescue_coins := player_rescues * int(GameConfig.num("reward", "per_rescue", 5))
 	var clear_coins := int(GameConfig.num("reward", "clear", 50)) if win else 0
 	var total := mission_coins + rescue_coins + clear_coins
 	SaveData.add_coins(total)
+	var lost_stage := SaveData.stage
 	var game_clear := win and SaveData.stage >= SEEKER_ORDER.size()
 	if game_clear:
 		# 마지막 술래까지 물리침 → 게임 클리어! 다음 판은 처음부터
@@ -841,7 +844,9 @@ func _end_round(win: bool, reason: String) -> void:
 	elif win:
 		details += "\n다음은 스테이지 %d / %d!" % [SaveData.stage, SEEKER_ORDER.size()]
 	else:
-		details += "\n스테이지 1부터 다시 시작해요."
+		var names := ["거대 쥐", "유령", "도축자", "인형술사", "사냥개", "거미 여왕", "먹보 하마", "사이코", "처형인", "마네킹", "안개 마녀"]
+		var si := clampi(lost_stage, 1, names.size()) - 1
+		details += "\n스테이지 %d (%s)에서 졌어요. 스테이지 1부터 다시 시작해요. (최고 기록: 스테이지 %d)" % [lost_stage, names[si], SaveData.best_stage]
 
 	var rows := _stats_rows()
 	if Net.is_host():
@@ -1073,7 +1078,7 @@ func _net_send_snapshot() -> void:
 		sks.append([sk.global_position, sk.rotation.y, sk.velocity, int(sk.state), sk.body.visible, sk.enraged, sk.attack_seq])
 	var gens: Array = []
 	for g in generators:
-		gens.append(g.progress)
+		gens.append(g.progress if is_instance_valid(g) else 1.0)
 	Net.world_snapshot.rpc([surv, sks, gens, missions_done, escape_phase, escape_left, raged])
 
 
@@ -1133,6 +1138,46 @@ func net_apply_to_me(method: String, args: Array) -> void:
 	player.callv(method, real)
 
 
+## (방장 컴퓨터) 게스트 능력이 술래·생존자에게 닿음 → 방장 세계에서 실제로 적용
+const NET_ABILITY_METHODS := ["stun", "float_up", "unfreeze", "teleport_to", "bandage_pull", "give_boost",
+		"alert_to", "reveal"]
+func net_ability_call(sender: int, kind: String, index: int, method: String, args: Array) -> void:
+	if not method in NET_ABILITY_METHODS:
+		return
+	var t: Node = null
+	if kind == "seeker" and index >= 0 and index < seekers.size():
+		t = seekers[index]
+	elif kind == "survivor" and index >= 0 and index < survivors.size():
+		t = survivors[index]
+	if t == null or not is_instance_valid(t) or not t.has_method(method):
+		return
+	var real: Array = []
+	for a in args:
+		if a is Dictionary and a.has("surv"):
+			var i: int = a["surv"]
+			real.append(survivors[i] if i >= 0 and i < survivors.size() else null)
+		elif a is Dictionary and a.has("sk"):
+			var j: int = a["sk"]
+			real.append(seekers[j] if j >= 0 and j < seekers.size() else null)
+		else:
+			real.append(a)
+	t.callv(method, real)
+
+
+## (방장 컴퓨터) 게스트가 놓은 능력 효과를 방장 세계에도 놓음 (방장 술래에게 실제로 걸리게)
+func net_ability_effect(sender: int, kind: String, pos: Vector3, dir: Vector3, slot: int, target_index: int) -> void:
+	if slot < 0 or slot >= survivors.size() or survivors[slot].net_owner != sender:
+		return
+	if not kind in ["smoke", "ward", "trap", "decoy", "barricade", "orb", "arrow", "wisp"]:
+		return
+	var e := Node3D.new()
+	e.set_script(preload("res://scripts/ability_effect.gd"))
+	get_tree().current_scene.add_child(e)
+	if kind == "wisp" and target_index >= 0 and target_index < seekers.size():
+		e.set_meta("target", seekers[target_index])
+	e.call("setup", kind, pos, dir, survivors[slot])
+
+
 ## (방장 컴퓨터) 다른 사람의 미니게임 결과
 func net_minigame_result(gen_index: int, slot: int, cleared: bool) -> void:
 	if gen_index < 0 or gen_index >= generators.size() or slot < 0 or slot >= survivors.size():
@@ -1171,10 +1216,23 @@ func net_client_round_end(win: bool, reason: String, details: String, rows: Arra
 	_ended = true
 	_round_over = true
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	var my_rescues := 0
+	var missions := 0
 	for r in rows:
 		var i: int = r.get("idx", -1)
 		r["me"] = i >= 0 and i < survivors.size() and survivors[i] == player
-	hud.show_result(win, reason, details + "\n로비로 가서 준비하거나, 방장이 다음 판을 바로 시작할 수 있어요.", rows)
+		missions = int(r.get("missions", 0))
+		if r["me"]:
+			my_rescues = int(r.get("rescues", 0))
+	# 게스트도 한 만큼 코인을 받음 (방장과 같은 계산)
+	var mission_coins := missions * int(GameConfig.num("reward", "per_mission", 10))
+	var rescue_coins := my_rescues * int(GameConfig.num("reward", "per_rescue", 5))
+	var clear_coins := int(GameConfig.num("reward", "clear", 50)) if win else 0
+	var total := mission_coins + rescue_coins + clear_coins
+	SaveData.add_coins(total)
+	SaveData.save_game()
+	details += "\n봉인석 %d개 +%d · 땡 %d번 +%d · 클리어 보너스 +%d   (보유 코인 %d)" % [missions, mission_coins, my_rescues, rescue_coins, clear_coins, SaveData.coins]
+	hud.show_result(win, reason, details + "\n로비로 가서 준비하거나, 방장이 다음 판을 바로 시작할 수 있어요.", rows, total)
 
 
 ## (방장 컴퓨터) 누군가 나감 → 그 자리는 봇이 이어서 함

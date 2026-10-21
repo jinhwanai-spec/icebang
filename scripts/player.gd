@@ -81,6 +81,8 @@ func _ready() -> void:
 	flashlight.shadow_normal_bias = 2.0
 	flashlight.position = Vector3(0.3, -0.2, -0.5)
 	camera.add_child(flashlight)
+	_flashlight = flashlight
+	_flash_base = flashlight.light_energy
 	# 손전등이 바로 앞의 내 캐릭터 등을 하얗게 비추지 않도록 (내 몸은 2번 레이어, 손전등은 2번 레이어 제외)
 	for mi in body.find_children("*", "MeshInstance3D", true, false):
 		(mi as MeshInstance3D).layers = 2
@@ -90,6 +92,29 @@ func _ready() -> void:
 	feel = FeelFxScript.new()
 	feel.setup(self)
 	add_child(feel)
+
+
+## 손전등이 바로 앞 벽을 비추면 하얗게 타 버리던 문제: 가까운 벽일수록 자동으로 어둡게 (눈이 적응하듯)
+var _flashlight: SpotLight3D
+var _flash_base := 4.0
+var _flash_t := 0.0
+var _flash_k := 1.0
+
+func _process(delta: float) -> void:
+	super._process(delta)
+	if _flashlight == null:
+		return
+	_flash_t -= delta
+	if _flash_t <= 0.0:
+		_flash_t = 0.08
+		var from := camera.global_position
+		var to := from - camera.global_basis.z * 7.0
+		var q := PhysicsRayQueryParameters3D.create(from, to)
+		q.exclude = [get_rid()]
+		var hit := get_world_3d().direct_space_state.intersect_ray(q)
+		var d := 7.0 if hit.is_empty() else from.distance_to(hit["position"])
+		_flash_k = clampf(pow(d / 5.0, 1.6), 0.12, 1.0)
+	_flashlight.light_energy = lerpf(_flashlight.light_energy, _flash_base * _flash_k, 1.0 - exp(-10.0 * delta))
 
 
 ## [손맛] 발소리가 난 순간 머리 흔들림 + 소리 크기를 조금씩 다르게 (매번 똑같지 않게)
@@ -112,12 +137,41 @@ func use_nearby_prop() -> bool:
 	return ok
 
 
+## 능력이 술래·다른 생존자에게 닿을 때. 멀티 게스트는 방장에게도 보내야 실제로 적용됨
+## (술래·봇·다른 사람의 진짜 캐릭터는 방장 컴퓨터가 움직이므로). 내 화면에도 바로 보이게 여기서도 실행
+func _net_call(target: Node, method: String, args: Array = []) -> void:
+	if target == null or not is_instance_valid(target):
+		return
+	if Net.is_client() and target != self:
+		var g = _game()
+		var kind := "seeker" if target is Seeker else "survivor"
+		var idx: int = g.seekers.find(target) if target is Seeker else g.survivors.find(target)
+		var enc: Array = []
+		for a in args:
+			if a is Seeker:
+				enc.append({"sk": g.seekers.find(a)})
+			elif a is Survivor:
+				enc.append({"surv": g.survivors.find(a)})
+			else:
+				enc.append(a)
+		if idx >= 0:
+			Net.ability_call.rpc_id(1, kind, idx, method, enc)
+	target.callv(method, args)
+
+
+## 멀티에서 일시정지 메뉴가 열려 있으면 조작을 막음 (게임은 안 멈춤)
+var ui_block := false
+
+
 func _unhandled_input(event: InputEvent) -> void:
+	if ui_block:
+		return
 	# 마우스로 시점 회전 (얼음 상태, 탈락 상태에서도 가능)
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		var motion := event as InputEventMouseMotion
-		pivot.rotate_y(-motion.relative.x * MOUSE_SENSITIVITY)
-		spring_arm.rotation.x = clamp(spring_arm.rotation.x - motion.relative.y * MOUSE_SENSITIVITY,
+		var sens := MOUSE_SENSITIVITY * SaveData.sensitivity  # 설정 창의 마우스 감도
+		pivot.rotate_y(-motion.relative.x * sens)
+		spring_arm.rotation.x = clamp(spring_arm.rotation.x - motion.relative.y * sens,
 				deg_to_rad(-55.0), deg_to_rad(40.0))
 
 	if turned_seeker:
@@ -202,10 +256,14 @@ func _physics_process(delta: float) -> void:
 		elif not can_interact():
 			minigame.close()
 	if is_dead or escaped:
+		if song != 0:
+			_set_song(0)  # 악사 노래: 죽거나 탈출하면 끔
 		_locker_view(false)
 		_spectate()
 		return
 	if turned_seeker:
+		if song != 0:
+			_set_song(0)
 		_seeker_move(delta)
 		return
 	if in_locker:
@@ -236,7 +294,7 @@ func _physics_process(delta: float) -> void:
 		return
 
 	# 1) 키보드 입력 → 카메라가 보는 방향 기준 이동 방향
-	var input := Input.get_vector("move_left", "move_right", "move_forward", "move_back")
+	var input := Vector2.ZERO if ui_block else Input.get_vector("move_left", "move_right", "move_forward", "move_back")
 	var dir := pivot.global_basis * Vector3(input.x, 0.0, input.y)
 	dir.y = 0.0
 	dir = dir.normalized() * min(input.length(), 1.0)
@@ -797,7 +855,7 @@ func _summon(index: int) -> void:
 	if not is_instance_valid(target) or target.is_dead:
 		return
 	var spot: Vector3 = _game().closest_floor_point(global_position + look_direction() * 2.0)
-	target.teleport_to(spot)
+	_net_call(target, "teleport_to", [spot])
 	ability_cooldown_left[1] = CharacterDB.cooldown(character_id, 2)
 	notice.emit("%s 소환!%s" % [target.display_name, " (얼음 상태 그대로)" if target.is_frozen else ""])
 
@@ -807,7 +865,7 @@ func _camera_photo() -> bool:
 	play_sfx(SFX_SHUTTER)
 	flashed.emit()
 	if _seeker_in_front(GameConfig.num("cameraman", "photo_range", 14.0), GameConfig.num("cameraman", "photo_angle", 30.0)):
-		_seeker().stun(GameConfig.num("cameraman", "photo_stun_time", 1.5))
+		_net_call(_seeker(), "stun", [GameConfig.num("cameraman", "photo_stun_time", 1.5)])
 		if feel:
 			feel.on_hit_landed(false)
 		notice.emit("찰칵! 술래 스턴!")
@@ -914,7 +972,7 @@ func _gravity_float() -> bool:
 	if target == null:
 		notice.emit("정면에 술래가 없어요")
 		return false
-	target.float_up(GameConfig.num("gravity", "float_time", 3.0))
+	_net_call(target, "float_up", [GameConfig.num("gravity", "float_time", 3.0)])
 	_burst(target.global_position + Vector3.UP * 1.5, Color(0.6, 0.8, 1.0), 4.0)
 	play_sfx(SFX_ABILITY)
 	notice.emit("무중력! 술래가 공중에 떴어요")
@@ -930,6 +988,8 @@ func _place_effect(kind: String, pos: Vector3) -> bool:
 	get_tree().current_scene.add_child(e)
 	var floor_pos: Vector3 = pos if kind == "orb" else _game().closest_floor_point(pos)
 	e.call("setup", kind, floor_pos, look_direction(), self)
+	if Net.is_client():  # 멀티 게스트: 방장 세계에도 같은 효과를 놓아야 방장의 술래에게 걸림
+		Net.ability_effect.rpc_id(1, kind, floor_pos, look_direction(), net_slot, -1)
 	play_sfx(SFX_ABILITY)
 	var names := {"smoke": "연막탄!", "ward": "등불 결계!", "trap": "덫을 숨겼어요", "decoy": "미끼 인형!", "barricade": "바리케이드!", "orb": "무중력 구슬!"}
 	notice.emit(names.get(kind, ""))
@@ -961,10 +1021,10 @@ func _medic_heal(index: int) -> void:
 	if not is_instance_valid(t) or t.is_dead or t.escaped:
 		return
 	if t.is_frozen:
-		t.unfreeze(self)
+		_net_call(t, "unfreeze", [self])
 		notice.emit("치료! %s 해동" % t.display_name)
 	else:
-		t.give_boost(GameConfig.num("medic", "heal_speed", 0.2), GameConfig.num("medic", "heal_time", 8.0))
+		_net_call(t, "give_boost", [GameConfig.num("medic", "heal_speed", 0.2), GameConfig.num("medic", "heal_time", 8.0)])
 		notice.emit("치료! %s 이동속도 +%d%%" % [t.display_name, int(GameConfig.num("medic", "heal_speed", 0.2) * 100)])
 	_burst(t.global_position + Vector3.UP, Color(0.5, 1.0, 0.7), 2.5)
 	play_sfx(SFX_ABILITY)
@@ -995,7 +1055,7 @@ func _medic_bandage() -> bool:
 		notice.emit("조준한 곳에 동료가 없어요 (%dm 안)" % int(reach))
 		return false
 	var spot: Vector3 = _game().closest_floor_point(global_position + look_direction() * 1.5)
-	target.bandage_pull(spot, GameConfig.num("medic", "bandage_pull_time", 0.5))
+	_net_call(target, "bandage_pull", [spot, GameConfig.num("medic", "bandage_pull_time", 0.5)])
 	_beam(global_position + Vector3.UP * 1.1, target.global_position + Vector3.UP * 1.1, Color(0.95, 0.95, 0.88), 0.12, 0.5)
 	play_sfx(SFX_ABILITY)
 	notice.emit("붕대 당기기! %s%s" % [target.display_name, " (얼음 상태 그대로)" if target.is_frozen else ""])
@@ -1108,7 +1168,7 @@ func _bard_toggle(which: int) -> bool:
 		notice.emit("노래를 멈췄어요")
 	else:
 		_set_song(which)
-		notice.emit("광란의 메탈! 술래 위치가 모두에게 보여요 (내 위치도 들켜요)" if which == 1 else "질주의 비트! 우리 팀 이동속도 +15% (내 위치가 들켜요)")
+		notice.emit("광란의 메탈! 술래 위치가 모두에게 보여요 (내 위치도 들켜요)" if which == 1 else "질주의 비트! 우리 팀 이동속도 +%d%% (내 위치가 들켜요)" % roundi(GameConfig.num("bard", "beat_speed", 0.15) * 100))
 	return true
 
 
@@ -1146,14 +1206,14 @@ func _update_song(delta: float) -> void:
 	_song_tick = 1.0
 	for node in get_tree().get_nodes_in_group("seeker"):
 		var sk := node as Seeker
-		sk.alert_to(global_position)
+		_net_call(sk, "alert_to", [global_position])
 		if song == 1:
-			sk.reveal(1.3)
+			_net_call(sk, "reveal", [1.3])
 	if song == 2:
 		for node in get_tree().get_nodes_in_group("survivor"):
 			var s := node as Survivor
-			if not s.is_dead:
-				s.give_boost(GameConfig.num("bard", "beat_speed", 0.15), 1.3)
+			if not s.is_dead and s != self:
+				_net_call(s, "give_boost", [GameConfig.num("bard", "beat_speed", 0.15), 1.3])
 		give_boost(GameConfig.num("bard", "beat_self_speed", 0.3), 1.3)  # 악사 본인은 더 빠르게
 
 
@@ -1182,6 +1242,8 @@ func _keeper_wisps() -> bool:
 		get_tree().current_scene.add_child(w)
 		w.set_meta("target", node)
 		w.call("setup", "wisp", global_position + Vector3.UP * 2.0, look_direction(), self)
+		if Net.is_client():
+			Net.ability_effect.rpc_id(1, "wisp", global_position + Vector3.UP * 2.0, look_direction(), net_slot, _game().seekers.find(node))
 		_wisps_alive += 1
 	notice.emit("붉은 탐색광이 술래를 찾아 나서요")
 	return true
@@ -1355,6 +1417,8 @@ func use_noise_ability() -> void:
 		target = hit["position"]
 
 	NoiseBus.make_noise(target, GameConfig.num("ability", "noise_range", 18.0), null)
+	if Net.is_client():
+		Net.remote_noise.rpc_id(1, target, GameConfig.num("ability", "noise_range", 18.0))
 	noise_cooldown_left = GameConfig.num("ability", "noise_cooldown", 100.0)
 	_spawn_lure_sound(target)
 
@@ -1366,11 +1430,11 @@ func _use_emote_slot(slot: int) -> void:
 	for k in EMOTES.size():
 		if EMOTES[k][0] == eid:
 			i = k
-	if i < 0:
-		notice.emit("%d번 칸에 장착한 이모트가 없어요 (치장 상점 → 이모트)" % ((slot + 1) % 10))
-		return
 	if is_frozen or is_dead or escaped or in_locker or is_shadowed() or chained_by or rooted_left > 0.0 \
 			or (minigame and is_instance_valid(minigame)) or not is_on_floor():
+		return
+	if i < 0:
+		notice.emit("%d번 칸에 장착한 이모트가 없어요 (치장 상점 → 이모트)" % ((slot + 1) % 10))
 		return
 	if dance_left > 0.0:
 		var same: bool = emote_id == EMOTES[i][0]

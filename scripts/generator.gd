@@ -499,7 +499,7 @@ func _update_visual() -> void:
 		mat.emission = Color(0.6, 0.3, 1.0) * (0.9 + progress * 1.2)
 		mat.roughness = 0.2
 		mat.metallic = 0.3
-		progress_label.text = "봉인석 %d / %d" % [stages_done(), stage_count()]
+		progress_label.text = "가동 %d / %d 단계" % [stages_done(), stage_count()]
 		light.light_color = Color(0.5, 0.4, 1.0)
 		light.light_energy = 1.0 + progress * 1.5
 		if _rune_mat:

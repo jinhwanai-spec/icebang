@@ -2733,6 +2733,10 @@ const MODELS := {
 		"walk": _ORC, "run": _CHARGE, "attack": "Charged_Axe_Chop", "walk_v": 0.55, "run_v": 5.2,
 		"atk": [4.12, 4.45, 4.95], "eyes": [Vector3(-0.066, 2.55, 0.19), Vector3(0.066, 2.55, 0.19)],
 		"skin": Color(0.66, 0.55, 0.52), "weapon": "_model_cleaver"},
+	"ghost": {"path": "res://models/seekers/ghost.glb", "scale": 1.0, "eye": Color(0.75, 0.9, 1.0), "glide": true,
+		"idle": "Idle", "walk": "Idle", "run": "Idle", "attack": "mage_soell_cast", "walk_v": 1.0, "run_v": 5.0,
+		"atk": [0.3, 0.6, 1.0], "eyes": [Vector3(-0.05, 2.8, 0.41), Vector3(0.05, 2.8, 0.41)], "light": 0.05,
+		"skin": Color(0.72, 0.75, 0.82)},
 	"rat": {"path": "res://models/seekers/rat.glb", "scale": 1.0, "eye": Color(1.0, 0.12, 0.08),
 		"walk": "Sneaky_Walk_inplace", "run": _SPRINT, "attack": "Left_Slash", "walk_v": 0.6, "run_v": 5.3,
 		"atk": [1.05, 1.35, 1.8], "eyes": [Vector3(-0.08, 2.28, 0.82), Vector3(0.08, 2.28, 0.82)], "skin": Color(0.8, 0.74, 0.7)},
@@ -2931,6 +2935,9 @@ func _animate_model(delta: float, speed: float) -> void:
 		_ap.seek(ct, true)
 		if _attack_t <= 0.0:
 			_cur_clip = ""
+	elif _mdef.get("glide", false):
+		# 떠다니는 술래 (유령): 걷지 않고 미끄러지듯. 둥실둥실 + 빠를수록 앞으로 숙임
+		_play(_mdef.get("idle", _IDLE), 0.3, 0.6 + clampf(_spd_s / 8.0, 0.0, 0.6))
 	else:
 		var sp := _spd_s
 		if sp < 0.35:
@@ -2951,6 +2958,10 @@ func _animate_model(delta: float, speed: float) -> void:
 					_ap.advance(_jerk_acc)
 					_ap.speed_scale = 0.0
 					_jerk_acc = 0.0
+	if _mdef.get("glide", false) and _attack_t <= 0.0:
+		var inst := _root.get_child(0) as Node3D
+		inst.position.y = 0.22 + sin(_time * 1.7) * 0.07
+		inst.rotation.x = lerpf(inst.rotation.x, clampf(_spd_s / 9.0, 0.0, 0.3), 1.0 - exp(-4.0 * delta))
 	_flicker_eyes(delta)
 
 

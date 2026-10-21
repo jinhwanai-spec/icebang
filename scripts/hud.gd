@@ -108,6 +108,12 @@ var _message_time := 0.0
 var _grain: ColorRect
 var _danger: ColorRect
 var _heart: AudioStreamPlayer
+## 조작 도움말 (처음 30초 + F1/설정으로 항상 보기), 능력 준비 알림
+var _help: Label
+var _help_hint: Label
+var _ready_sfx: AudioStreamPlayer
+var _ready_prev := {}
+var _ready_flash := 0.0
 var _heart_timer := 0.0
 # [손맛] 화면 피드백 상태
 var _feel_bound: Node = null
@@ -250,11 +256,24 @@ func _ready() -> void:
 	_ability_label = _make_label(root, 18, Control.PRESET_BOTTOM_LEFT)
 	_shared_label = _make_label(root, 16, Control.PRESET_BOTTOM_RIGHT)
 	_shared_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	# 화면 구석 정보는 반투명 판 위에 (배경이 밝아도 잘 읽히고 덜 지저분하게)
+	for l: Label in [_top_label, _ability_label, _shared_label]:
+		_card(l)
 
 	var help := _make_label(root, 14, Control.PRESET_TOP_RIGHT)
+	_help = help
 	help.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	help.text = "WASD 이동 · Shift 달리기(소리 큼) · Ctrl 살금살금 · Space 구르기\nE 봉인석·문·판자·사물함·쥐·거미줄 · Q 얼음 · R/T 고유 능력\n얼음 동료 옆에 10초 붙어 있으면 땡 · Esc 일시정지\n헤드셋을 쓰면 발소리로 위치를 알 수 있어요"
+	help.text = help.text.replace("10초", "%d초" % int(GameConfig.num("player", "thaw_time", 10.0))) + "\nF1 도움말 켜기/끄기"
 	help.modulate = Color(1, 1, 1, 0.6)
+	_help_hint = _make_label(root, 13, Control.PRESET_TOP_RIGHT)
+	_help_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_help_hint.text = "F1 도움말"
+	_help_hint.modulate = Color(1, 1, 1, 0.4)
+	_ready_sfx = AudioStreamPlayer.new()
+	_ready_sfx.stream = load("res://audio/ui_ready.wav")
+	_ready_sfx.volume_db = -8.0
+	add_child(_ready_sfx)
 
 	_message_label = _make_label(root, 28, Control.PRESET_CENTER_TOP)
 	_message_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -433,7 +452,9 @@ func _process(delta: float) -> void:
 	elif p.is_shadowed():
 		_status_label.text = "그림자 속 %.1f초 - 감지·잡기 불가 (R: 나오기 · T: 동료 그림자로 건너가기)" % p.shadow_left
 	elif p.in_locker:
-		_status_label.text = "사물함에 숨는 중... (E: 나가기)  30초가 넘으면 고양이가 울어요"
+		_status_label.text = "사물함에 숨는 중... (E: 나가기)  %d초가 넘으면 고양이가 울어요" % int(GameConfig.num("structure", "locker_cat_time", 30.0))
+	elif _last_mobile(p):
+		_status_label.text = "마지막으로 움직이는 생존자예요! 지금 얼음(Q)하면 모두 얼어서 패배해요"
 	elif p.nearby_prop:
 		_status_label.text = p.nearby_prop.call("prompt", p)
 	elif p.nearby_web:
@@ -450,6 +471,8 @@ func _process(delta: float) -> void:
 		_status_label.text = "풀숲에 숨어 있어요"
 	elif p.freeze_cooldown_left > 0.0:
 		_status_label.text = "얼음 다시 쓰기까지 %.1f초" % p.freeze_cooldown_left
+	elif p.freeze_count == int(GameConfig.num("freeze_rule", "limit_from", 4)) - 1 and not main.escape_phase:
+		_status_label.text = "다음 얼음부터는 %d초 안에 땡을 못 받으면 얼음이 깨져요" % int(GameConfig.num("freeze_rule", "shatter_time", 60.0))
 	else:
 		_status_label.text = ""
 	# [손맛] 안내 문구가 새로 뜨면 살짝 튀어나오듯
@@ -508,10 +531,26 @@ func _process(delta: float) -> void:
 			state = "%d초" % ceili(p.ability_cooldown_left[slot - 1])
 		else:
 			state = "준비됨"
+		# 쿨타임이 끝나는 순간: 짧은 알림음 + 능력 줄이 반짝
+		var rdy := state == "준비됨" or state.begins_with("준비됨")
+		var was = _ready_prev.get(slot, true)
+		if rdy and not was and not p.is_dead:
+			_ready_sfx.play()
+			_ready_flash = 0.6
+		_ready_prev[slot] = rdy
 		if pid == "hunter" and slot == 2 and arrows > 0:
 			state += "  (화살 %d발)" % arrows
 		ability_lines.append("[%s] %s: %s" % [key, info["ability_%d" % slot], state])
 	_ability_label.text = "\n".join(ability_lines)
+	if _ready_flash > 0.0:
+		_ready_flash = maxf(0.0, _ready_flash - get_process_delta_time())
+		var k := _ready_flash / 0.6
+		_ability_label.modulate = Color(1, 1, 1).lerp(Color(0.6, 1.0, 1.4), k)
+	else:
+		_ability_label.modulate = Color(1, 1, 1)
+	var help_on: bool = SaveData.show_help or (main != null and main.round_time < 30.0)
+	_help.visible = help_on
+	_help_hint.visible = not help_on
 
 	# --- 아래쪽 오른쪽: 상점 공통 능력
 	var noise_text: String
@@ -522,7 +561,10 @@ func _process(delta: float) -> void:
 	else:
 		noise_text = "준비됨"
 	var emote_text := "준비됨" if SaveData.has_ability("emote") else "잠김"
-	_shared_label.text = "공통 능력 (얼음 상태에서)\n[F] 소리 내기: %s\n[G] 이모티콘: %s\n이모트 (숫자키, 다시 누르면 멈춤)\n%s" % [noise_text, emote_text, _emote_slots_text()]
+	if help_on:
+		_shared_label.text = "공통 능력 (얼음 상태에서)\n[F] 소리 내기: %s\n[G] 이모티콘: %s\n이모트 (숫자키, 다시 누르면 멈춤)\n%s" % [noise_text, emote_text, _emote_slots_text()]
+	else:
+		_shared_label.text = "[F] 소리 내기: %s   [G] 이모티콘: %s\n이모트: 숫자키 1~0" % [noise_text, emote_text]
 
 
 var _win_check_t := 0.0
@@ -692,15 +734,40 @@ func _update_stamina_bar(delta: float, p) -> void:
 	_stamina_bg.visible = not p.is_dead and not p.escaped
 
 
+var _settings: Node = null
+
 func _unhandled_input(event: InputEvent) -> void:
+	if _settings and is_instance_valid(_settings):
+		return  # 설정 창이 열려 있으면 Esc 는 설정 창이 닫는 데 씀
+	if event is InputEventKey and event.pressed and not event.echo and (event as InputEventKey).keycode == KEY_F1:
+		SaveData.show_help = not SaveData.show_help
+		SaveData.save_game()
+		return
 	if event.is_action_pressed("pause") and main and main.ready_to_play and not _result_panel.visible:
 		_set_paused(not get_tree().paused)
+
+
+## 맵 안에서 나만 움직일 수 있는지 (나까지 얼면 즉시 패배)
+func _last_mobile(p) -> bool:
+	if main == null or p.is_frozen or main.escape_phase:
+		return false
+	var others := 0
+	var inside := 0
+	for s in main.survivors:
+		if s.is_dead or s.escaped or s.turned_seeker != null:
+			continue
+		inside += 1
+		if s != p and not s.is_frozen:
+			others += 1
+	return inside > 1 and others == 0
 
 
 func _set_paused(paused: bool) -> void:
 	if not Net.in_match():  # 멀티에서는 게임을 멈추지 않고 메뉴만 띄움
 		get_tree().paused = paused
 	_pause_panel.visible = paused
+	if main and main.player and "ui_block" in main.player:
+		main.player.ui_block = paused and Net.in_match()
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if paused else Input.MOUSE_MODE_CAPTURED
 
 
@@ -777,6 +844,20 @@ func _make_overlay(parent: Control, tint: Color, strength: float, inner: float) 
 	return rect
 
 
+func _card(l: Label) -> void:
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.03, 0.035, 0.05, 0.55)
+	sb.border_color = Color(0.5, 0.6, 0.75, 0.18)
+	sb.set_border_width_all(1)
+	sb.set_corner_radius_all(8)
+	sb.content_margin_left = 12
+	sb.content_margin_right = 12
+	sb.content_margin_top = 6
+	sb.content_margin_bottom = 7
+	l.add_theme_stylebox_override("normal", sb)
+	l.add_theme_constant_override("outline_size", 4)
+
+
 func _make_label(parent: Control, font_size: int, preset: Control.LayoutPreset) -> Label:
 	var label := Label.new()
 	label.add_theme_font_size_override("font_size", font_size)
@@ -831,6 +912,10 @@ func _build_pause_panel(root: Control) -> void:
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	box.add_child(title)
 	_make_button(box, "계속하기", func() -> void: _set_paused(false))
+	_make_button(box, "설정", func() -> void:
+		var sp := SettingsPanel.new()
+		_pause_panel.get_parent().add_child(sp)
+		_settings = sp)
 	_make_button(box, "버그 신고 (F8)", func() -> void:
 		var path := CrashLog.make_report("일시정지 메뉴에서 신고")
 		show_message("버그 리포트 저장 완료 (경로 복사됨)\n" + ProjectSettings.globalize_path(path), 5.0))

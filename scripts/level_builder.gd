@@ -526,6 +526,9 @@ func _deco_mat(key: String) -> Material:
 	if key == "lit":
 		_deco[key] = _lit_shader_mat()
 		return _deco[key]
+	if key == "trim" or key == "metal" or key == "wood":
+		_deco[key] = _furniture_mat(key)
+		return _deco[key]
 	var m := StandardMaterial3D.new()
 	m.vertex_color_use_as_albedo = true
 	m.roughness = 0.85
@@ -553,6 +556,49 @@ func _deco_mat(key: String) -> Material:
 	return m
 
 
+## 가구·소품 공통 재질 (assets/props/furniture.gdshader): 부품 색 + 때·얼룩·긁힘·거칠기 변화
+static var _furn_noise: NoiseTexture2D
+static var _furn_scratch: NoiseTexture2D
+func _furniture_mat(key: String) -> ShaderMaterial:
+	if _furn_noise == null:
+		_furn_noise = NoiseTexture2D.new()
+		_furn_noise.width = 256
+		_furn_noise.height = 256
+		_furn_noise.seamless = true
+		_furn_noise.generate_mipmaps = true
+		var fn := FastNoiseLite.new()
+		fn.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+		fn.frequency = 0.012
+		fn.fractal_octaves = 4
+		_furn_noise.noise = fn
+		_furn_scratch = NoiseTexture2D.new()
+		_furn_scratch.width = 256
+		_furn_scratch.height = 256
+		_furn_scratch.seamless = true
+		_furn_scratch.generate_mipmaps = true
+		var fs := FastNoiseLite.new()
+		fs.noise_type = FastNoiseLite.TYPE_CELLULAR
+		fs.frequency = 0.05
+		fs.cellular_return_type = FastNoiseLite.RETURN_DISTANCE2_SUB
+		_furn_scratch.noise = fs
+	var m := ShaderMaterial.new()
+	m.shader = preload("res://assets/props/furniture.gdshader")
+	m.set_shader_parameter("noise_tex", _furn_noise)
+	m.set_shader_parameter("scratch_tex", _furn_scratch)
+	match key:
+		"metal":
+			m.set_shader_parameter("rough_v", 0.5)
+			m.set_shader_parameter("metallic_v", 0.45)
+			m.set_shader_parameter("grime", 0.5)
+		"wood":
+			m.set_shader_parameter("rough_v", 0.8)
+			m.set_shader_parameter("grime", 0.3)
+		_:
+			m.set_shader_parameter("rough_v", 0.85)
+			m.set_shader_parameter("grime", 0.45)
+	return m
+
+
 ## 빛나는 부품 ("lit"): 부품 색 그대로 빛남 (초록 모니터는 초록, 형광등은 흰빛, 비상등은 빨강)
 func _lit_shader_mat() -> ShaderMaterial:
 	var sh := Shader.new()
@@ -563,6 +609,10 @@ void fragment() {
 	ALBEDO = COLOR.rgb * 0.35;
 	ROUGHNESS = 0.4;
 	EMISSION = COLOR.rgb * COLOR.rgb * energy;
+	// 불 켜진 창문(색 알파 0.5로 표시): 멀리서는 환하게, 바로 앞(방 안)에서는 눈부시지 않게 은은히
+	float win = step(COLOR.a, 0.75);
+	float far_k = smoothstep(2.5, 10.0, length(VERTEX));
+	EMISSION *= mix(1.0, 0.18 + 0.82 * far_k, win);
 }
 """
 	var m := ShaderMaterial.new()
@@ -759,7 +809,7 @@ func _window(at: Vector3, t: Vector3, n: Vector3, frame_col: Color, trim: Color)
 		return
 	var lit := r < 0.3
 	_bx("lit" if lit else "glass", at + n * 0.085, t, n, Vector3(w, hh, 0.02),
-			Color(1.0, 0.75, 0.45) if lit else Color(0.07, 0.09, 0.12))
+			Color(1.0, 0.75, 0.45, 0.5) if lit else Color(0.07, 0.09, 0.12))
 	if lit and rng.randf() < 0.6:
 		# 커튼 (불 켜진 창에 사람 없는 방 느낌)
 		var cc: Color = [Color(0.6, 0.2, 0.2), Color(0.5, 0.45, 0.3), Color(0.25, 0.3, 0.5)][rng.randi() % 3]

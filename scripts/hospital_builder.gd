@@ -118,7 +118,7 @@ func _hospital() -> void:
 				var gc := a + dir * u
 				gc.y = y + 1.9
 				var lit := rng.randf() < 0.06
-				kit.block(gc, Vector3(1.3, 1.8, 0.04), _deco_mat("lit" if lit else "glass"), "b_" + ("lit" if lit else "glass"), true, Basis(dir, Vector3.UP, dir.cross(Vector3.UP).normalized()), false, Color(0.6, 0.95, 0.75) if lit else Color(0.1, 0.13, 0.2))
+				kit.block(gc, Vector3(1.3, 1.8, 0.04), _deco_mat("lit" if lit else "glass"), "b_" + ("lit" if lit else "glass"), true, Basis(dir, Vector3.UP, dir.cross(Vector3.UP).normalized()), false, Color(0.6, 0.95, 0.75, 0.5) if lit else Color(0.1, 0.13, 0.2))
 				var tt := Vector3.UP.cross(n)
 				var fn := gc + n * (BuildingKit.WALL_T * 0.5)
 				_bx("trim", fn + Vector3.UP * -0.95 + n * 0.08, tt, n, Vector3(1.5, 0.08, 0.2), trim)

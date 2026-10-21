@@ -50,9 +50,10 @@ static func _later(who: Node3D, id: String, delay: float, fn: Callable) -> void:
 	if who.has_meta("warmup"):
 		fn.call()  # 판 시작 때 미리 한 번 그려 보기 (처음 쓸 때 끊김 방지): 기다리지 않고 바로
 		return
-	who.get_tree().create_timer(delay).timeout.connect(func():
-		if is_instance_valid(who) and who.get("emote_id") == id and float(who.get("dance_left")) > 0.0:
-			fn.call())
+	# 타이머를 who 의 트윈으로: who 가 사라지면 같이 사라져서 "Lambda capture was freed" 오류가 안 남
+	who.create_tween().tween_callback(func():
+		if who.get("emote_id") == id and float(who.get("dance_left")) > 0.0:
+			fn.call()).set_delay(delay)
 
 
 static func _say(who: Node3D, text: String) -> void:
@@ -251,9 +252,7 @@ static func _disco(who: Node3D, id: String) -> void:
 		tw.parallel().tween_property(root, "rotation:y", root.rotation.y + TAU / cols.size(), 0.25)
 		tw.tween_interval(0.0)
 	_say(who, "Let's dance!")
-	who.get_tree().create_timer(6.4).timeout.connect(func():
-		if is_instance_valid(root):
-			root.queue_free())
+	root.create_tween().tween_callback(root.queue_free).set_delay(6.4)
 
 
 ## 트로트: 음표가 뿅뿅 떠오름

@@ -472,7 +472,7 @@ func _cabin(spot: Vector3) -> void:
 			var gc := a + dir * (L * 0.5)
 			gc.y = 1.5
 			var lit := rng.randf() < 0.5
-			kit.block(gc, Vector3(1.2, 1.0, 0.04), _deco_mat("lit" if lit else "glass"), "b_" + ("lit" if lit else "glass"), true, Basis(dir, Vector3.UP, dir.cross(Vector3.UP).normalized()), false, Color(1.0, 0.65, 0.3) if lit else Color(0.06, 0.07, 0.08))
+			kit.block(gc, Vector3(1.2, 1.0, 0.04), _deco_mat("lit" if lit else "glass"), "b_" + ("lit" if lit else "glass"), true, Basis(dir, Vector3.UP, dir.cross(Vector3.UP).normalized()), false, Color(1.0, 0.65, 0.3, 0.5) if lit else Color(0.06, 0.07, 0.08))
 			# 창문 십자 창살 + 창턱
 			var yawc := atan2(-dir.z, dir.x)
 			kit.part(gc, Vector3(1.2, 0.06, 0.36), Color(0.25, 0.17, 0.1), "trim", false, yawc)

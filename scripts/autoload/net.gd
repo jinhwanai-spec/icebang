@@ -424,6 +424,30 @@ func seeker_knockback(index: int, dir: Vector3, stun: float) -> void:
 		m.call("net_seeker_knockback", index, dir, stun)
 
 
+## 각자 → 방장: 게스트가 쓴 능력이 술래·다른 생존자에게 닿을 때 (술래·봇은 방장 컴퓨터가 움직임)
+## kind = "seeker" / "survivor", 인자 속 노드는 {"sk": 번호} / {"surv": 번호} 로 바꿔서 보냄
+@rpc("any_peer", "reliable")
+func ability_call(kind: String, index: int, method: String, args: Array) -> void:
+	var m := _main()
+	if m and multiplayer.is_server():
+		m.call("net_ability_call", multiplayer.get_remote_sender_id(), kind, index, method, args)
+
+
+## 각자 → 방장: 게스트가 놓은 능력 효과(덫·연막·결계·구슬·화살·탐색광 등)를 방장 세계에도 놓음
+@rpc("any_peer", "reliable")
+func ability_effect(kind: String, pos: Vector3, dir: Vector3, slot: int, target_index: int) -> void:
+	var m := _main()
+	if m and multiplayer.is_server():
+		m.call("net_ability_effect", multiplayer.get_remote_sender_id(), kind, pos, dir, slot, target_index)
+
+
+## 각자 → 방장: 게스트가 낸 소리(소리 내기 F 등)를 방장의 술래가 듣게
+@rpc("any_peer", "reliable")
+func remote_noise(pos: Vector3, radius: float) -> void:
+	if multiplayer.is_server():
+		NoiseBus.make_noise(pos, radius, null)
+
+
 ## 방장 → 모두: 화면 가운데 알림
 @rpc("authority", "reliable")
 func message(text: String, seconds: float) -> void:

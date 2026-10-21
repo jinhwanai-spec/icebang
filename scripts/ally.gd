@@ -381,8 +381,8 @@ func _use_abilities(seeker: Seeker) -> bool:
 			if _ready_slot(0):
 				for node in get_tree().get_nodes_in_group("survivor"):
 					var s := node as Survivor
-					if s and s != self and s.is_frozen and not s.is_dead:
-						s.unfreeze(self)
+					if s and s != self and s.is_frozen and not s.is_dead and not _seeker_near(s.global_position):
+						s.unfreeze(self)  # 술래가 바로 옆이면 녹여도 곧 다시 잡히니 기다림
 						_spend(0)
 						break
 			# 붕대: 술래 근처에 있는 얼음 동료를 내 앞으로 당겨 와서 구함
@@ -434,14 +434,6 @@ func _use_abilities(seeker: Seeker) -> bool:
 			if item == "" and _ready_slot(1):
 				give_random_item()
 				_spend(1)
-		"keeper":
-			# 쫓기면 결계, 술래가 근처면 미끼 인형
-			if chased and d < 7.0 and _ready_slot(0):
-				_effect("ward", global_position)
-				_spend(0)
-			if d < 15.0 and not chased and _ready_slot(1):
-				_effect("decoy", global_position + Vector3(randf_range(-4, 4), 0, randf_range(-4, 4)))
-				_spend(1)
 		"gravity":
 			# 쫓기며 술래가 보이면 무중력, 조금 떨어져 있으면 무중력 구슬
 			if chased and d < 10.0 and _ready_slot(0) and seeker.visible_to_players() and _clear_line_to(seeker):
@@ -485,6 +477,14 @@ func _clear_line_to(target: Node3D) -> bool:
 
 
 ## 근처에 술래가 있어서 구하러 가기 위험한 얼음 동료
+func _seeker_near(p: Vector3) -> bool:
+	var safe := GameConfig.num("ally", "rescue_safe_distance", 7.0)
+	for k in get_tree().get_nodes_in_group("seeker"):
+		if k is Node3D and k.visible and (k as Node3D).global_position.distance_to(p) < safe:
+			return true
+	return false
+
+
 func _frozen_friend_in_danger() -> Survivor:
 	var safe := GameConfig.num("ally", "rescue_safe_distance", 7.0)
 	for node in get_tree().get_nodes_in_group("survivor"):

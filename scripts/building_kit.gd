@@ -2074,7 +2074,7 @@ func city_building(r: Rect2, y0: float, total_h: float, wall_mat: Material, trim
 				var gc := a + dir * u
 				gc.y = y + (WIN_SILL + WIN_TOP) * 0.5
 				var lit := rng.randf() < 0.12
-				block(gc, Vector3(1.1, WIN_TOP - WIN_SILL, 0.04), lb._deco_mat("lit" if lit else "glass"), "b_" + ("lit" if lit else "glass"), true, Basis(dir, Vector3.UP, dir.cross(Vector3.UP).normalized()), false, Color(1.0, 0.75, 0.45) if lit else Color(0.07, 0.09, 0.12))
+				block(gc, Vector3(1.1, WIN_TOP - WIN_SILL, 0.04), lb._deco_mat("lit" if lit else "glass"), "b_" + ("lit" if lit else "glass"), true, Basis(dir, Vector3.UP, dir.cross(Vector3.UP).normalized()), false, Color(1.0, 0.75, 0.45, 0.5) if lit else Color(0.07, 0.09, 0.12))
 				lb._window_frame_only(gc + n * (WALL_T * 0.5), dir, n, trim)
 			var in_side := -1 if dir.cross(Vector3.UP).dot(n) > 0.0 else 1
 			wall(a, b, y, fh, wall_mat, "w_build_%d" % wall_mat.get_instance_id(), ops, WALL_T, in_side)

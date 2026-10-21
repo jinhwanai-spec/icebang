@@ -18,6 +18,12 @@ var clears := 0
 var selected_character := "chameleon"
 ## 그래픽 품질: "high" (안개 속 빛줄기 등 고급 효과) / "low" (사양 낮은 PC용)
 var graphics := "high"
+## 설정 (settings_panel.gd): 마우스 감도 배율, 전체 음량(0~1), 화면 흔들림(0~1), 전체화면, 조작 도움말 항상 보기
+var sensitivity := 1.0
+var volume := 1.0
+var shake := 1.0
+var fullscreen := false
+var show_help := false
 ## 치장: 산 아이템 목록, 칸별 착용 아이템 (cosmetics.gd)
 var owned_cos: Array = ["eyes_basic", "hair_none", "outfit_none", "acc_none"]
 var equipped := {"eyes": "eyes_basic", "hair": "hair_none", "outfit": "outfit_none", "acc": "acc_none"}
@@ -35,6 +41,31 @@ var unlocked := {
 
 func _ready() -> void:
 	load_game()
+	apply_audio()
+	apply_window()
+	get_tree().root.size_changed.connect(_fit_ui_scale)
+	_fit_ui_scale.call_deferred()
+
+
+## 큰 화면(1440p·4K)에서 글자·버튼이 너무 작아지지 않게: 1080p 까지는 그대로, 그보다 크면 비례해서 키움
+func _fit_ui_scale() -> void:
+	var root := get_tree().root
+	var sz := Vector2(root.size)
+	var f := maxf(1.0, sz.y / 1080.0)
+	root.content_scale_mode = Window.CONTENT_SCALE_MODE_CANVAS_ITEMS
+	root.content_scale_aspect = Window.CONTENT_SCALE_ASPECT_EXPAND
+	root.content_scale_size = Vector2i(maxi(1, roundi(sz.x / f)), maxi(1, roundi(sz.y / f)))
+
+func apply_audio() -> void:
+	AudioServer.set_bus_volume_db(0, linear_to_db(maxf(volume, 0.0001)))
+	AudioServer.set_bus_mute(0, volume <= 0.001)
+
+
+func apply_window() -> void:
+	if fullscreen:
+		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN)
+	elif DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_FULLSCREEN:
+		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
 
 
 func load_game() -> void:
@@ -51,6 +82,11 @@ func load_game() -> void:
 		best_stage = mini(best_stage, 11)
 	selected_character = str(cfg.get_value("progress", "character", "chameleon"))
 	graphics = str(cfg.get_value("settings", "graphics", "high"))
+	sensitivity = float(cfg.get_value("settings", "sensitivity", 1.0))
+	volume = float(cfg.get_value("settings", "volume", 1.0))
+	shake = float(cfg.get_value("settings", "shake", 1.0))
+	fullscreen = bool(cfg.get_value("settings", "fullscreen", false))
+	show_help = bool(cfg.get_value("settings", "show_help", false))
 	for id in unlocked.keys():
 		unlocked[id] = bool(cfg.get_value("unlocked", id, false))
 	owned_cos = cfg.get_value("cosmetics", "owned", owned_cos)
@@ -70,6 +106,11 @@ func save_game() -> void:
 	cfg.set_value("progress", "rules", RULES_VERSION)
 	cfg.set_value("progress", "character", selected_character)
 	cfg.set_value("settings", "graphics", graphics)
+	cfg.set_value("settings", "sensitivity", sensitivity)
+	cfg.set_value("settings", "volume", volume)
+	cfg.set_value("settings", "shake", shake)
+	cfg.set_value("settings", "fullscreen", fullscreen)
+	cfg.set_value("settings", "show_help", show_help)
 	for id in unlocked.keys():
 		cfg.set_value("unlocked", id, unlocked[id])
 	cfg.set_value("cosmetics", "owned", owned_cos)

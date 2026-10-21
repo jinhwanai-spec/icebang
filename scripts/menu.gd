@@ -74,6 +74,8 @@ func _ready() -> void:
 func _show(page: String) -> void:
 	for k in _pages:
 		(_pages[k] as Control).visible = k == page
+	if _backdrop:
+		_backdrop.visible = page == "main"  # 3D 배경은 메인 화면에서만 (다른 화면은 가볍게)
 	match page:
 		"main":
 			_refresh_main()
@@ -199,18 +201,17 @@ func _build_main_page() -> Control:
 	page.add_child(foot)
 	if GameConfig.flag("debug", "test_coins_button", true):
 		foot.add_child(_text_button("+100 코인 (테스트)", _on_test_coins))
-	foot.add_child(_text_button("기록 초기화", _on_reset))
+	_reset_btn = _text_button("기록 초기화", _on_reset)
+	foot.add_child(_reset_btn)
 	foot.add_child(_text_button("버그 신고 (F8)", _on_bug_report))
-	# 그래픽 품질 (높음/낮음) 바꾸기
-	var gfx := _text_button("", func() -> void: pass)
-	var gfx_text := func() -> void: gfx.text = "그래픽: %s" % ("높음" if SaveData.high_graphics() else "낮음 (가벼움)")
-	gfx_text.call()
-	gfx.pressed.connect(func() -> void:
-		SaveData.graphics = "low" if SaveData.high_graphics() else "high"
-		SaveData.save_game()
-		gfx_text.call())
-	foot.add_child(gfx)
+	foot.add_child(_text_button("설정", _open_settings))
 	return page
+
+
+## 설정 창 (마우스 감도·음량·흔들림·전체화면·그래픽, settings_panel.gd)
+func _open_settings() -> void:
+	var sp := SettingsPanel.new()
+	add_child(sp)
 
 
 func _refresh_main() -> void:
@@ -247,7 +248,8 @@ func _build_solo_page() -> Control:
 	_card_box.add_theme_constant_override("h_separation", 12)
 	_card_box.add_theme_constant_override("v_separation", 12)
 	scroll.add_child(_card_box)
-	col.add_child(_test_pickers())
+	if GameConfig.flag("debug", "test_pickers", true):  # 출시 전에는 balance.cfg 에서 false
+		col.add_child(_test_pickers())
 	var row := HBoxContainer.new()
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
 	row.add_theme_constant_override("separation", 12)
@@ -807,6 +809,12 @@ func _build_wardrobe_page() -> Control:
 
 
 func _process(delta: float) -> void:
+	if _backdrop and _backdrop.visible and _bd_body:
+		_bd_t += delta
+		_bd_body.animate(delta, 0.0)
+		# 아주 천천히 다가가는 듯한 카메라 + 숨 쉬듯 흔들림
+		_bd_cam.position = Vector3(sin(_bd_t * 0.13) * 0.25, 1.55 + sin(_bd_t * 0.5) * 0.03, 3.2 - fmod(_bd_t * 0.02, 0.6))
+		_bd_cam.look_at(Vector3(1.0, 1.5 + sin(_bd_t * 0.21) * 0.05, -4.2), Vector3.UP)
 	if _w_body and is_instance_valid(_w_body) and _pages.has("wardrobe") and (_pages["wardrobe"] as Control).visible:
 		if _w_slot == "emote" and _w_epick != "":
 			# 이모트 미리보기: 얼굴(또는 엉덩이)이 카메라 쪽, 끝나면 반복
@@ -1034,7 +1042,23 @@ func _on_test_coins() -> void:
 	_refresh_main()
 
 
+var _reset_btn: Button
+var _reset_armed := false
+
+## 기록 초기화: 실수로 날리지 않게 한 번 더 눌러야 지움 (3초 안에)
 func _on_reset() -> void:
+	if not _reset_armed:
+		_reset_armed = true
+		_reset_btn.text = "정말 지울까요? 한 번 더 누르면 코인·스테이지가 모두 사라져요"
+		_reset_btn.add_theme_color_override("font_color", C_BLOOD)
+		get_tree().create_timer(3.0).timeout.connect(func() -> void:
+			if is_instance_valid(_reset_btn):
+				_reset_armed = false
+				_reset_btn.text = "기록 초기화"
+				_reset_btn.remove_theme_color_override("font_color"))
+		return
+	_reset_armed = false
+	_reset_btn.text = "기록 초기화 완료"
 	SaveData.reset()
 	_selected = SaveData.selected_character
 	_refresh_main()
@@ -1063,6 +1087,7 @@ void fragment() {
 	m.shader = sh
 	bg.material = m
 	add_child(bg)
+	_build_backdrop()
 	# 천천히 내리는 눈 (얼음땡 분위기)
 	var snow := CPUParticles2D.new()
 	snow.amount = 90
@@ -1080,6 +1105,103 @@ void fragment() {
 	snow.scale_amount_max = 2.6
 	snow.color = Color(0.8, 0.9, 1.0, 0.35)
 	add_child(snow)
+
+
+## 메인 화면 뒤: 안개 속에 서 있는 이번 스테이지의 술래 (3D). 눈만 빛나고 뒤에서 차가운 역광
+var _backdrop: SubViewportContainer
+var _bd_body: SeekerBody
+var _bd_cam: Camera3D
+var _bd_t := 0.0
+
+func _build_backdrop() -> void:
+	_backdrop = SubViewportContainer.new()
+	_backdrop.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_backdrop.stretch = true
+	_backdrop.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(_backdrop)
+	var vp := SubViewport.new()
+	vp.transparent_bg = true
+	vp.own_world_3d = true
+	vp.msaa_3d = Viewport.MSAA_2X
+	_backdrop.add_child(vp)
+	var env := Environment.new()
+	env.background_mode = Environment.BG_CLEAR_COLOR
+	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+	env.ambient_light_color = Color(0.25, 0.3, 0.42)
+	env.ambient_light_energy = 0.25
+	env.tonemap_mode = Environment.TONE_MAPPER_ACES
+	env.tonemap_exposure = 1.1
+	env.fog_enabled = true
+	env.fog_light_color = Color(0.06, 0.08, 0.12)
+	env.fog_density = 0.09
+	env.glow_enabled = true
+	env.glow_intensity = 0.9
+	env.glow_hdr_threshold = 0.8
+	env.glow_blend_mode = Environment.GLOW_BLEND_MODE_SCREEN
+	var we := WorldEnvironment.new()
+	we.environment = env
+	vp.add_child(we)
+	var root := Node3D.new()
+	vp.add_child(root)
+	# 젖은 바닥 (멀리는 안개에 묻힘)
+	var fl := MeshInstance3D.new()
+	var pm := PlaneMesh.new()
+	pm.size = Vector2(300, 300)
+	fl.mesh = pm
+	var fm := StandardMaterial3D.new()
+	fm.albedo_color = Color(0.05, 0.055, 0.065)
+	fm.roughness = 0.35
+	fm.metallic_specular = 0.6
+	fl.material_override = fm
+	root.add_child(fl)
+	# 이번 스테이지의 술래 (고퀄 모델이 있는 술래면 그대로, 아니면 도축자)
+	var order := ["rat", "ghost", "butcher", "puppeteer", "hound", "spider", "diet", "psycho", "executioner", "mannequin", "witch"]
+	var t: String = order[clampi(SaveData.stage, 1, order.size()) - 1]
+	if not SeekerBody.MODELS.has(t):
+		t = "butcher"
+	_bd_body = SeekerBody.new()
+	root.add_child(_bd_body)
+	_bd_body.build(t)
+	_bd_body.position = Vector3(3.3, 0, -4.2)
+	_bd_body.rotation.y = deg_to_rad(-200.0)  # 비스듬히 이쪽을 봄
+	# 뒤에서 비추는 차가운 역광 + 아래에서 살짝 붉은 빛
+	var rim := SpotLight3D.new()
+	rim.light_color = Color(0.55, 0.7, 1.0)
+	rim.light_energy = 9.0
+	rim.spot_range = 14.0
+	rim.spot_angle = 28.0
+	rim.position = Vector3(4.5, 4.5, -9.5)
+	root.add_child(rim)
+	rim.look_at_from_position(rim.position, Vector3(3.3, 1.4, -4.2), Vector3.UP)
+	var under := OmniLight3D.new()
+	under.light_color = Color(1.0, 0.25, 0.15)
+	under.light_energy = 0.35
+	under.omni_range = 4.0
+	under.position = Vector3(3.0, 0.25, -3.2)
+	root.add_child(under)
+	_bd_cam = Camera3D.new()
+	_bd_cam.fov = 42.0
+	_bd_cam.position = Vector3(0.0, 1.55, 3.2)
+	vp.add_child(_bd_cam)
+	_bd_cam.look_at(Vector3(1.0, 1.5, -4.2), Vector3.UP)
+	_bd_cam.current = true
+	# 화면 가운데(버튼) 쪽은 어둡게 덮어서 글자가 잘 보이게
+	var shade := ColorRect.new()
+	shade.set_anchors_preset(Control.PRESET_FULL_RECT)
+	shade.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var ss := Shader.new()
+	ss.code = """
+shader_type canvas_item;
+void fragment() {
+	float cx = 1.0 - smoothstep(0.18, 0.42, abs(UV.x - 0.5));
+	float a = 0.55 * cx + 0.25 * smoothstep(0.6, 1.0, UV.y);
+	COLOR = vec4(0.02, 0.025, 0.035, a);
+}
+"""
+	var sm := ShaderMaterial.new()
+	sm.shader = ss
+	shade.material = sm
+	_backdrop.add_child(shade)
 
 
 func _make_theme() -> Theme:

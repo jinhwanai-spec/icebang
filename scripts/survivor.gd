@@ -241,13 +241,18 @@ func is_blended() -> bool:
 
 
 ## 술래와 쥐가 나를 감지할 수 없는 상태 (카멜레온 능력)
+## 멀티: 게스트 캐릭터의 위장·그림자 상태 (방장 컴퓨터의 술래가 판단할 때 씀)
+var _net_hidden := false
+var _net_shadow := false
+
 func is_hidden_from_seeker() -> bool:
-	return blend_time_left > 0.0 or paint_time_left > 0.0 or shadow_left > 0.0 or in_locker != null
+	return blend_time_left > 0.0 or paint_time_left > 0.0 or shadow_left > 0.0 or in_locker != null \
+			or (net_puppet and _net_hidden)
 
 
 ## 그림자 속에 숨어 있는지 (감지도, 잡히지도 않음)
 func is_shadowed() -> bool:
-	return shadow_left > 0.0
+	return shadow_left > 0.0 or (net_puppet and _net_shadow)
 
 
 ## 봉인석 가동, 땡, 쥐 잡기 같은 상호작용을 할 수 있는지
@@ -472,8 +477,7 @@ func _update_ice_timer(delta: float) -> void:
 		add_child(_ice_label)
 	_ice_label.visible = true
 	_ice_label.text = "얼음 깨지기까지 %d초" % ceili(ice_left)
-	if ice_left <= 10.0:
-		_ice_label.modulate = Color(1.0, 0.35, 0.3)
+	_ice_label.modulate = Color(1.0, 0.35, 0.3) if ice_left <= 10.0 else Color(0.6, 0.9, 1.0)
 	if ice_left <= 0.0:
 		_shatter()
 
@@ -530,11 +534,15 @@ func exit_locker() -> void:
 
 
 ## 머리 위에 이모티콘(글자)을 2초간 띄웁니다.
+var _emote_token := 0
+
 func show_emote(text: String) -> void:
 	emote_label.text = text
 	emote_label.visible = true
+	_emote_token += 1
+	var tk := _emote_token
 	await get_tree().create_timer(2.0).timeout
-	if is_instance_valid(self):
+	if is_instance_valid(self) and tk == _emote_token:  # 그 사이 새 이모티콘이 떴으면 그대로 둠
 		emote_label.visible = false
 
 
@@ -919,6 +927,8 @@ func net_flags() -> int:
 	if rooted_left > 0.0: f |= 16
 	if bleed_time_left > 0.0: f |= 32
 	if is_shadowed() or in_locker or turned_seeker: f |= 64
+	if blend_time_left > 0.0 or paint_time_left > 0.0 or shadow_left > 0.0: f |= 1 << 14  # 술래에게 안 보임 (위장·칠하기·그림자)
+	if shadow_left > 0.0: f |= 1 << 15
 	if dance_left > 0.0:
 		f |= 128
 		f |= (maxi(0, EMOTES.find(emote_info(emote_id))) + 1) << 8  # 어떤 이모트인지 (6비트)
@@ -956,6 +966,8 @@ func net_target(pos: Vector3, yaw: float, speed: float, flags: int, thaw: float)
 	if not host:
 		bleed_time_left = 1.0 if flags & 32 != 0 else 0.0
 	body.visible = flags & 64 == 0
+	_net_hidden = flags & (1 << 14) != 0
+	_net_shadow = flags & (1 << 15) != 0
 	if flags & 128 != 0:
 		var idx := ((flags >> 8) & 63) - 1
 		var id: String = EMOTES[idx][0] if idx >= 0 and idx < EMOTES.size() else "butt_dance"
