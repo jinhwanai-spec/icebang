@@ -1065,6 +1065,16 @@ var _car_mats := {}
 var _wheel_mesh: CylinderMesh = null
 
 
+func _wheel() -> CylinderMesh:
+	if _wheel_mesh == null:
+		_wheel_mesh = CylinderMesh.new()
+		_wheel_mesh.top_radius = 0.34
+		_wheel_mesh.bottom_radius = 0.34
+		_wheel_mesh.height = 0.24
+		_wheel_mesh.radial_segments = 14
+	return _wheel_mesh
+
+
 func _car_mat(key: String, col: Color, rough := 0.8, emit := 0.0) -> StandardMaterial3D:
 	if not _car_mats.has(key):
 		var m := StandardMaterial3D.new()
@@ -1097,12 +1107,7 @@ func _car(pos: Vector3, yaw: float) -> void:
 	for sx in [-1.0, 1.0]:
 		_fade(_part(body, Vector3(sx * 0.68, 0.78, 2.13), _box_mesh(Vector3(0.36, 0.14, 0.05)), _car_mat("head_on" if lit else "head", Color(0.95, 0.92, 0.75) if lit else Color(0.75, 0.75, 0.7), 0.3, 1.5 if lit else 0.0)))
 		_fade(_part(body, Vector3(sx * 0.7, 0.8, -2.13), _box_mesh(Vector3(0.3, 0.14, 0.05)), _car_mat("tail", Color(0.55, 0.05, 0.04), 0.4)))
-	if _wheel_mesh == null:
-		_wheel_mesh = CylinderMesh.new()
-		_wheel_mesh.top_radius = 0.34
-		_wheel_mesh.bottom_radius = 0.34
-		_wheel_mesh.height = 0.24
-		_wheel_mesh.radial_segments = 14
+	_wheel()
 	var flat := rng.randi() % 5  # 바람 빠진 바퀴 하나 (0~3), 4면 없음
 	var k := 0
 	for wx in [-0.84, 0.84]:
@@ -1127,8 +1132,26 @@ func _fade(mi: MeshInstance3D, d := 38.0) -> void:
 func _bus(pos: Vector3, yaw: float) -> void:
 	var body := _prop(pos, yaw, Vector3(2.6, 3.1, 10.0))
 	var paint: StandardMaterial3D = _rust_mats[1]
-	_part(body, Vector3(0, 1.6, 0), _box_mesh(Vector3(2.6, 2.6, 10.0)), paint)
-	_part(body, Vector3(0, 2.2, 0), _box_mesh(Vector3(2.65, 0.9, 9.0)), _mat["glass"])
+	_part(body, Vector3(0, 1.75, 0), _box_mesh(Vector3(2.55, 2.5, 10.0)), paint)
+	_part(body, Vector3(0, 2.25, -0.3), _box_mesh(Vector3(2.6, 0.9, 8.6)), _mat["glass"])  # 옆 창
+	_part(body, Vector3(0, 2.15, 5.0), _box_mesh(Vector3(2.3, 1.1, 0.04)), _mat["glass"])  # 앞 유리
+	var dark := _car_mat("trim", Color(0.07, 0.07, 0.08), 0.6)
+	_fade(_part(body, Vector3(0, 0.55, 5.03), _box_mesh(Vector3(2.6, 0.3, 0.12)), dark), 60.0)  # 범퍼
+	_fade(_part(body, Vector3(0, 0.55, -5.03), _box_mesh(Vector3(2.6, 0.3, 0.12)), dark), 60.0)
+	_fade(_part(body, Vector3(0, 2.95, 5.02), _box_mesh(Vector3(1.6, 0.3, 0.04)), _car_mat("sign", Color(0.08, 0.08, 0.06), 0.5)), 60.0)  # 행선지 판
+	for sx in [-1.0, 1.0]:
+		_fade(_part(body, Vector3(sx * 0.95, 0.85, 5.02), _box_mesh(Vector3(0.35, 0.2, 0.05)), _car_mat("head", Color(0.75, 0.75, 0.7), 0.3)), 60.0)
+		_fade(_part(body, Vector3(sx * 1.0, 0.95, -5.02), _box_mesh(Vector3(0.25, 0.35, 0.05)), _car_mat("tail", Color(0.55, 0.05, 0.04), 0.4)), 60.0)
+		for pz in [-3.0, -1.0, 1.0, 3.0]:  # 창틀 기둥
+			_fade(_part(body, Vector3(sx * 1.29, 2.25, pz), _box_mesh(Vector3(0.04, 0.9, 0.12)), paint), 50.0)
+	_fade(_part(body, Vector3(1.29, 1.5, 3.9), _box_mesh(Vector3(0.04, 2.0, 1.1)), _mat["glass"]), 60.0)  # 문
+	_wheel()
+	var wheel_mat := _car_mat("tire", Color(0.04, 0.04, 0.045), 0.95)
+	for wz in [-3.4, 3.2]:
+		for wx in [-1.2, 1.2]:
+			var w := _part(body, Vector3(wx, 0.5, wz), _wheel_mesh, wheel_mat)
+			w.rotation.z = PI / 2.0
+			w.scale = Vector3(1.45, 1.0, 1.45)
 	# 버스 옆에 잡초
 	var side := body.global_basis.x * 2.2
 	_grass(pos + side, Vector2(2.0, 4.0))

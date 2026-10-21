@@ -477,9 +477,25 @@ func _gym() -> void:
 	kit.part(Vector3(c.x, y0 + 0.07, c.y), Vector3(18.0, 0.01, 0.08), line)
 	for s in [-1.0, 1.0]:
 		var hx: float = c.x + s * 10.5
-		kit.part(Vector3(hx + s * 0.6, y0 + 1.6, c.y), Vector3(0.2, 3.2, 0.2), Color(0.3, 0.3, 0.32), "metal", true)
+		# 골대는 벽에 단 받침대로 (바닥 기둥이 뒤쪽 출입문 앞을 막고 있었음)
+		var wx: float = r.end.x if s > 0 else r.position.x
 		kit.part(Vector3(hx, y0 + 3.3, c.y), Vector3(0.05, 1.05, 1.8), Color(0.95, 0.95, 0.95))
-		kit.part(Vector3(hx - s * 0.35, y0 + 3.0, c.y), Vector3(0.45, 0.04, 0.45), Color(0.9, 0.4, 0.1), "metal")
+		kit.part(Vector3(hx - s * 0.03, y0 + 3.2, c.y), Vector3(0.01, 0.45, 0.6), Color(0.85, 0.3, 0.1))  # 백보드 사각 표시
+		# 기둥에서 백보드까지 팔 + 버팀대 (예전엔 백보드가 기둥과 떨어져 공중에 떠 있었음)
+		var arm_l: float = absf(wx - hx)
+		for az in [-0.55, 0.55]:
+			kit.part(Vector3((hx + wx) * 0.5, y0 + 3.55, c.y + az), Vector3(arm_l, 0.1, 0.1), Color(0.3, 0.3, 0.32), "metal")
+			kit.part(Vector3((hx + wx) * 0.5, y0 + 2.95, c.y + az), Vector3(arm_l, 0.08, 0.08), Color(0.3, 0.3, 0.32), "metal")
+			kit.part(Vector3(wx - s * 0.05, y0 + 3.25, c.y + az), Vector3(0.1, 0.8, 0.25), Color(0.25, 0.25, 0.27), "metal")  # 벽 고정판
+		# 림: 가운데가 뚫린 고리 (막대 4개) + 늘어진 그물
+		var rc := Vector3(hx - s * 0.3, y0 + 3.0, c.y)
+		for k in 4:
+			var a := k * PI / 2.0
+			kit.part(rc + Vector3(cos(a) * 0.2, 0, sin(a) * 0.2), Vector3(0.03, 0.03, 0.42), Color(0.9, 0.4, 0.1), "metal", false, -a)
+		kit.part(rc + Vector3(s * 0.21, 0, 0), Vector3(0.04, 0.03, 0.1), Color(0.9, 0.4, 0.1), "metal")
+		for k in 4:
+			var a := k * PI / 2.0 + PI / 4.0
+			kit.part(rc + Vector3(cos(a) * 0.15, -0.2, sin(a) * 0.15), Vector3(0.012, 0.4, 0.012), Color(0.92, 0.92, 0.9))
 	# 무대 (북쪽) + 커튼
 	kit.part(Vector3(c.x, y0 + 0.5, r.position.y + 2.5), Vector3(14.0, 1.0, 4.4), Color(0.45, 0.32, 0.22), "trim", true)
 	for i in 12:
@@ -495,8 +511,10 @@ func _gym() -> void:
 	kit.furnish(store, y0, "gym_storage")
 	# 공 바구니, 뜀틀, 줄넘기
 	kit.part(Vector3(c.x - 6, y0 + 0.4, c.y + 6), Vector3(1.0, 0.8, 0.6), Color(0.3, 0.3, 0.32), "metal", true)
-	for i in 6:
-		kit.part(Vector3(c.x - 6.3 + (i % 3) * 0.3, y0 + 0.9, c.y + 5.9 + (i / 3) * 0.3), Vector3(0.24, 0.24, 0.24), Color(0.9, 0.45, 0.15))
+	for i in 6:  # 공 (둥근 통 모양으로, 네모 상자 대신)
+		_pipe(Vector3(c.x - 6.3 + (i % 3) * 0.3, y0 + 0.92, c.y + 5.9 + (i / 3) * 0.3), 0.12, 0.22, Color(0.9, 0.45, 0.15))
+	for i in 3:  # 굴러간 공 몇 개
+		_pipe(Vector3(c.x + rng.randf_range(-8, 8), y0 + 0.12, c.y + rng.randf_range(-6, 6)), 0.12, 0.22, Color(0.9, 0.45, 0.15))
 	for k in 4:
 		kit.part(Vector3(c.x + 6, y0 + 0.2 + k * 0.25, c.y + 5), Vector3(1.6 - k * 0.1, 0.25, 0.9), Color(0.6, 0.45, 0.3).darkened(0.1 * (k % 2)), "trim", true)
 	for i in 4:

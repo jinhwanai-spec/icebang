@@ -497,6 +497,15 @@ func stairs(strip: Rect2, along_x: bool, forward: bool, y_bottom: float, rise: f
 		var rp: Vector3 = Vector3(c.x, 0, c.y) + side * (width * 0.5 - 0.05) * s
 		var rail_basis := Basis(dir, Vector3.UP, dir.cross(Vector3.UP).normalized()) * Basis(Vector3(0, 0, 1), ang)
 		lb._batch("b_metal", _cube, lb._deco_mat("metal"), Transform3D(rail_basis * Basis.from_scale(Vector3(len, 0.06, 0.06)), rp + Vector3.UP * (y_bottom + rise * 0.5 + 0.95)), Color(0.25, 0.25, 0.27))
+		# 난간 기둥: 계단 단 위에서 손잡이까지 (예전엔 비스듬한 막대만 공중에 떠 있었음)
+		var nposts := maxi(2, int(run / 0.9) + 1) if steps > 0 else 0
+		for i in nposts:
+			var t := (i + 0.5) / nposts
+			var step_i := mini(steps - 1, int(t * steps))
+			var top_h := (step_i + 1) * rise / steps
+			var pp: Vector3 = rp + dir * (-run * 0.5 + t * run)
+			var rail_h := t * rise + 0.95
+			part(Vector3(pp.x, y_bottom + (top_h + rail_h) * 0.5, pp.z), Vector3(0.035, rail_h - top_h, 0.035), Color(0.25, 0.25, 0.27), "metal")
 
 
 ## 바닥 구멍 둘레 난간 (open_side 쪽은 비워 둠: "x-" "x+" "z-" "z+")
@@ -1085,6 +1094,41 @@ func _furnish_rich(room: Rect2, y: float, kind: String) -> void:
 				_along_wall(inner, sd, 0.08, 0.6, y, func(p, yw):
 					_yawbox(_local(p, yw, Vector3(0, 2.0, 0)), Vector3(0.55, 0.55, 0.06), yw, Color(0.25, 0.25, 0.28), false))
 			part(Vector3(inner.end.x - 0.5, y + 0.5, inner.end.y - 0.5), Vector3(0.5, 1.0, 0.45), Color(0.08, 0.08, 0.09), "trim", true)
+			# 넓은 방송실이 텅 비어 보이지 않게: 유리 녹음 부스(구석) + 테이프 선반 + 삼각대 카메라
+			if inner.get_area() > 60.0:
+				var corners := [Vector2(inner.position.x, inner.position.y), Vector2(inner.end.x, inner.position.y), Vector2(inner.position.x, inner.end.y), Vector2(inner.end.x, inner.end.y)]
+				for ci in [3, 0, 1, 2]:
+					var cn: Vector2 = corners[ci]
+					var sxn := 1.0 if cn.x <= inner.position.x + 0.01 else -1.0
+					var szn := 1.0 if cn.y <= inner.position.y + 0.01 else -1.0
+					var bc := Vector3(cn.x + sxn * 1.6, y, cn.y + szn * 1.6)
+					if blocks_door(bc, Vector3(3.4, 1, 3.4)) or _keep.intersects(Rect2(bc.x - 1.7, bc.z - 1.7, 3.4, 3.4)) or Rect2(bc.x - 1.7, bc.z - 1.7, 3.4, 3.4).has_point(Vector2(dpp.x, dpp.z)):
+						continue
+					_obj_begin()
+					var fx := bc.x + sxn * 1.6  # 부스 안쪽 벽 (방 안으로 향한 면)
+					var fz := bc.z + szn * 1.6
+					var wcol := Color(0.3, 0.3, 0.33)
+					# x 방향 벽 (z = fz), 문 틈 1m 비움
+					part(Vector3(bc.x - sxn * 0.5, y + 0.5, fz), Vector3(2.2, 1.0, 0.1), wcol, "trim", true)
+					part(Vector3(bc.x - sxn * 0.5, y + 1.65, fz), Vector3(2.2, 1.3, 0.03), Color(0.55, 0.65, 0.7), "glass")
+					part(Vector3(bc.x - sxn * 0.5, y + 2.33, fz), Vector3(2.2, 0.08, 0.12), wcol, "metal")
+					part(Vector3(bc.x + sxn * 0.6, y + 1.17, fz), Vector3(0.08, 2.34, 0.12), wcol, "metal")  # 문틀 기둥
+					# z 방향 벽 (x = fx)
+					part(Vector3(fx, y + 0.5, bc.z - szn * 0.1), Vector3(0.1, 1.0, 3.2), wcol, "trim", true)
+					part(Vector3(fx, y + 1.65, bc.z - szn * 0.1), Vector3(0.03, 1.3, 3.2), Color(0.55, 0.65, 0.7), "glass")
+					part(Vector3(fx, y + 2.33, bc.z - szn * 0.1), Vector3(0.12, 0.08, 3.2), wcol, "metal")
+					part(Vector3(fx, y + 1.17, fz), Vector3(0.12, 2.34, 0.12), wcol, "metal")  # 모서리 기둥
+					# 안: 작은 탁자 + 탁상 마이크 + 의자
+					var tp2 := Vector3(bc.x - sxn * 0.4, y, bc.z - szn * 0.6)
+					_table_impl(tp2, Vector2(1.0, 0.6))
+					part(tp2 + Vector3(0, 0.8, 0), Vector3(0.1, 0.03, 0.1), Color(0.1, 0.1, 0.1), "metal")
+					part(tp2 + Vector3(0, 0.92, 0), Vector3(0.02, 0.22, 0.02), Color(0.15, 0.15, 0.15), "metal")
+					part(tp2 + Vector3(0, 1.05, 0.02), Vector3(0.06, 0.1, 0.06), Color(0.08, 0.08, 0.08), "metal")
+					_chair_impl(tp2 + Vector3(0, 0, szn * 0.6), 0.0 if szn > 0 else PI, Color(0.15, 0.15, 0.18), false)
+					_obj_end()
+					break
+			if sides.size() > 1:
+				_along_wall(inner, sides[1], 0.5, 1.9, y, func(p, yw): if rng.randf() < 0.6: _rack(p, yw))
 		"art":
 			# 이젤 + 그림판, 석고상, 물감 선반, 바닥에 튄 물감
 			for i in 8:
@@ -1171,6 +1215,26 @@ func _furnish_rich(room: Rect2, y: float, kind: String) -> void:
 			var chart := _wall_item(inner, other, 0.75, 0.05)
 			var cp: Vector3 = chart[0]
 			_yawbox(_local(cp, chart[1], Vector3(0, y + 1.5, 0.0)) + Vector3.UP * 0.0, Vector3(0.45, 0.65, 0.01), chart[1], Color(0.95, 0.95, 0.92), false)
+			# 넓은 주사실·보건실: 가운데 대기 줄의자 + 처치 카트 + 링거대 (넓은 바닥이 텅 비어 보이지 않게)
+			if inner.get_area() > 80.0:
+				var bw := _wall_item(inner, bs, 0.5, 0.1)
+				var to_bed: float = bw[1]  # 침대 벽을 봄 (줄의자 앞 = -z)
+				for row in 2:
+					var rp := Vector3(c.x, y, c.y) + Basis(Vector3.UP, float(bw[1])) * Vector3(0, 0, -0.6 - row * 1.3)
+					if not _keep.has_point(Vector2(rp.x, rp.z)) and not blocks_door(rp, Vector3(3.0, 1, 1.0)):
+						_beam_seats(rp, to_bed, 5, Color(0.35, 0.5, 0.55))
+				var cp2 := Vector3(c.x, y, c.y) + Basis(Vector3.UP, float(bw[1])) * Vector3(2.4, 0, 1.6)
+				if not _keep.has_point(Vector2(cp2.x, cp2.z)) and not blocks_door(cp2, Vector3(1, 1, 1)):
+					_obj_begin()
+					_yawbox(_local(cp2, bw[1], Vector3(0, 0.5, 0)), Vector3(0.7, 0.04, 0.45), bw[1], Color(0.75, 0.76, 0.78), false, "metal")
+					_yawbox(_local(cp2, bw[1], Vector3(0, 0.88, 0)), Vector3(0.7, 0.04, 0.45), bw[1], Color(0.75, 0.76, 0.78), false, "metal")
+					for sx in [-1.0, 1.0]:
+						for sz in [-1.0, 1.0]:
+							_yawbox(_local(cp2, bw[1], Vector3(0.33 * sx, 0.45, 0.2 * sz)), Vector3(0.025, 0.9, 0.025), bw[1], Color(0.6, 0.6, 0.62), false, "metal")
+							_yawbox(_local(cp2, bw[1], Vector3(0.33 * sx, 0.03, 0.2 * sz)), Vector3(0.05, 0.06, 0.05), bw[1], Color(0.1, 0.1, 0.1), false, "metal")
+					for k in 4:
+						_yawbox(_local(cp2, bw[1], Vector3(rng.randf_range(-0.25, 0.25), 0.94, rng.randf_range(-0.15, 0.15))), Vector3(0.08, 0.1, 0.06), bw[1], [Color(0.9, 0.9, 0.95), Color(0.6, 0.75, 0.9), Color(0.9, 0.5, 0.5)][rng.randi() % 3], false)
+					_obj_end()
 			# 신장·체중계: 벽 쪽에 붙여 두고, 기둥 위에 저울 막대·추·키 재는 판까지 (예전엔 맨 막대 하나)
 			var sc := _wall_item(inner, other, 0.12, 0.45)
 			var sp: Vector3 = sc[0]
@@ -1229,6 +1293,13 @@ func _furnish_rich(room: Rect2, y: float, kind: String) -> void:
 					var st := _local(p, face, Vector3(0, 0, -0.6))
 					part(st + Vector3.UP * 0.55, Vector3(0.03, 1.1, 0.03), Color(0.2, 0.2, 0.2), "metal")
 					part(st + Vector3.UP * 1.1, Vector3(0.45, 0.32, 0.02), Color(0.15, 0.15, 0.15), "metal", false, face)
+					# 보면대: 세 갈래 다리 + 악보 받침 턱 + 가끔 올려진 악보 (막대 하나만 서 있지 않게)
+					for k in 3:
+						var la := face + k * TAU / 3.0
+						part(st + Vector3(sin(la) * 0.13, 0.02, cos(la) * 0.13), Vector3(0.025, 0.025, 0.28), Color(0.2, 0.2, 0.2), "metal", false, la)
+					part(_local(st, face, Vector3(0, 0.95, 0.02)), Vector3(0.45, 0.02, 0.05), Color(0.2, 0.2, 0.2), "metal", false, face)
+					if rng.randf() < 0.6:
+						part(_local(st, face, Vector3(0, 1.1, 0.015)), Vector3(0.3, 0.24, 0.005), Color(0.92, 0.9, 0.84), "trim", false, face)
 			part(Vector3(inner.end.x - 0.6, y + 0.3, inner.end.y - 0.6), Vector3(0.7, 0.6, 0.7), Color(0.6, 0.15, 0.12), "trim", true)
 		"lab":
 			# 실험대(싱크·수도꼭지·비커), 벽에 약품장·원소 주기율표, 해골 모형
@@ -1286,8 +1357,8 @@ func _furnish_rich(room: Rect2, y: float, kind: String) -> void:
 			for k in 2:
 				var p := Vector3(c.x + (k - 0.5) * 2.6, y, c.y)
 				if not _keep.has_point(Vector2(p.x, p.z)) and not blocks_door(p, Vector3(2.0, 1, 1.0)):
-					_med_shelf(p + Vector3(0, 0, -0.26), 0.0)
-					_med_shelf(p + Vector3(0, 0, 0.26), PI)
+					_med_shelf(p + Vector3(0, 0, -0.26), PI)  # 양면 진열대: 둘 다 바깥(통로) 쪽을 봄 (예전엔 등판이 밖으로)
+					_med_shelf(p + Vector3(0, 0, 0.26), 0.0)
 			for k in 4:
 				part(Vector3(rng.randf_range(inner.position.x + 1, inner.end.x - 1), y + 0.03, rng.randf_range(inner.position.y + 1, inner.end.y - 1)), Vector3(0.18, 0.06, 0.12), Color(0.95, 0.95, 0.95), "trim", false, rng.randf() * PI)
 		"operating":
@@ -1431,8 +1502,13 @@ func _med_shelf(p: Vector3, yaw: float) -> void:
 
 
 func _med_shelf_impl(p: Vector3, yaw: float) -> void:
-	_yawbox(_local(p, yaw, Vector3(0, 0.95, 0)), Vector3(1.8, 1.9, 0.45), yaw, Color(0.88, 0.88, 0.86), true)
+	_yawbox(_local(p, yaw, Vector3(0, 0.95, -0.04)), Vector3(1.8, 1.9, 0.37), yaw, Color(0.88, 0.88, 0.86), true)
+	# 옆판·위판·선반 턱 (상자에서 약병만 튀어나와 보이지 않게, 진짜 진열장처럼)
+	for sx in [-1.0, 1.0]:
+		_yawbox(_local(p, yaw, Vector3(0.89 * sx, 0.95, 0.0)), Vector3(0.04, 1.92, 0.46), yaw, Color(0.8, 0.8, 0.78), false)
+	_yawbox(_local(p, yaw, Vector3(0, 1.92, 0.0)), Vector3(1.84, 0.05, 0.47), yaw, Color(0.8, 0.8, 0.78), false)
 	for k in 4:
+		_yawbox(_local(p, yaw, Vector3(0, 0.19 + k * 0.45, 0.04)), Vector3(1.76, 0.025, 0.38), yaw, Color(0.82, 0.82, 0.8), false)
 		for i in 7:
 			if rng.randf() < 0.3:
 				continue
@@ -1509,6 +1585,9 @@ func _toilets(room: Rect2, y: float) -> void:
 		if i < m / 2:
 			_yawbox(_local(p, yaw, Vector3(0, 0.82, 0)), Vector3(0.6, 0.15, 0.45), yaw, Color(0.92, 0.92, 0.92), true)
 			_yawbox(_local(p, yaw, Vector3(0, 1.0, -0.15)), Vector3(0.04, 0.25, 0.12), yaw, Color(0.7, 0.7, 0.72), false, "metal")
+			# 세면대 아래 배수관 (U자로 벽에 들어감)
+			_yawbox(_local(p, yaw, Vector3(0, 0.6, -0.02)), Vector3(0.04, 0.3, 0.04), yaw, Color(0.7, 0.7, 0.72), false, "metal")
+			_yawbox(_local(p, yaw, Vector3(0, 0.46, -0.12)), Vector3(0.04, 0.04, 0.24), yaw, Color(0.7, 0.7, 0.72), false, "metal")
 			_yawbox(_local(p, yaw, Vector3(0, 1.55, -0.24)), Vector3(0.55, 0.75, 0.02), yaw, Color(0.55, 0.62, 0.66), false, "glass")
 			if rng.randf() < 0.3:
 				decal(_local(p, yaw, Vector3(0, 1.55, -0.22)), Basis(Vector3.UP, yaw) * Vector3.BACK, 0.5, "crack")
@@ -1517,7 +1596,11 @@ func _toilets(room: Rect2, y: float) -> void:
 			_yawbox(_local(p, yaw, Vector3(0, 0.62, -0.12)), Vector3(0.36, 0.55, 0.24), yaw, Color(0.95, 0.95, 0.95), false)
 			_yawbox(_local(p, yaw, Vector3(0, 0.42, 0.0)), Vector3(0.3, 0.12, 0.2), yaw, Color(0.92, 0.92, 0.92), false)
 			_yawbox(_local(p, yaw, Vector3(0, 1.1, -0.2)), Vector3(0.03, 0.45, 0.03), yaw, Color(0.7, 0.7, 0.72), false, "metal")
-			_yawbox(_local(p, yaw, Vector3(0.42, 0.95, 0.0)), Vector3(0.03, 0.9, 0.45), yaw, Color(0.55, 0.62, 0.68), false)
+			# 파이프 끝: 물 내림 밸브 + 벽으로 들어가는 꺾임 (막대가 공중에서 끝나지 않게)
+			_yawbox(_local(p, yaw, Vector3(0, 1.36, -0.19)), Vector3(0.08, 0.1, 0.08), yaw, Color(0.72, 0.72, 0.74), false, "metal")
+			_yawbox(_local(p, yaw, Vector3(0, 1.36, -0.235)), Vector3(0.03, 0.03, 0.06), yaw, Color(0.7, 0.7, 0.72), false, "metal")
+			_yawbox(_local(p, yaw, Vector3(0.42, 0.95, -0.02)), Vector3(0.03, 0.9, 0.45), yaw, Color(0.55, 0.62, 0.68), false)
+			_yawbox(_local(p, yaw, Vector3(0.42, 0.95, -0.245)), Vector3(0.06, 0.9, 0.02), yaw, Color(0.6, 0.6, 0.62), false, "metal")  # 칸막이 벽 고정쇠
 
 func _bookshelf(p: Vector3, along_z: bool) -> void:
 	_obj_begin()
@@ -2150,7 +2233,7 @@ func _overbed_table(p: Vector3, yaw: float) -> void:
 func _privacy_curtain(p0: Vector3, yw: float, y: float) -> void:
 	var p := Vector3(p0.x, 0.0, p0.z)  # 높이는 아래에서 절대값으로 더함
 	var col := Color(0.66, 0.78, 0.76).darkened(rng.randf() * 0.12)
-	var mesh_col := col.lightened(0.35)
+	var mesh_col := col.lightened(0.55)
 	var ceil_y := y + room_h - 0.02
 	# 레일은 사람 키보다 조금 높게 (천장이 높으면 가는 걸이봉 두 개로 천장에 매닮)
 	var rail_y := minf(ceil_y - 0.05, maxf(y + 2.45, ceil_y - 0.7))
@@ -2162,7 +2245,7 @@ func _privacy_curtain(p0: Vector3, yw: float, y: float) -> void:
 	var bottom := y + 0.3
 	var top := rail_y - 0.04
 	var h := top - bottom
-	var mesh_h := 0.35  # 위쪽 그물 띠
+	var mesh_h := clampf(top - (y + 2.3), 0.35, 1.2)  # 위쪽 그물 띠 (천장이 높으면 넓게: 진짜 병실 커튼처럼)
 	var drawn := rng.randf() < 0.4
 	# 천: 한 장의 판 + 양쪽으로 번갈아 튀어나온 둥근 주름 몇 줄 (같은 색이라 줄무늬 막대처럼 안 보임)
 	var z0 := -0.95

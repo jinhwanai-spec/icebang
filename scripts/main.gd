@@ -619,6 +619,8 @@ func _on_seeker_killed(_sk: Seeker) -> void:
 func _clear_around_generators() -> void:
 	var radius := GameConfig.num("mission", "clear_radius", 4.0)
 	for g in generators:
+		if not is_instance_valid(g) or not g.is_inside_tree():
+			continue
 		var gp := g.global_position
 		for child in _nav_region.get_children():
 			if child == g or child.has_meta("indestructible") or not (child is Node3D) or not (child as Node3D).is_inside_tree():

@@ -585,16 +585,17 @@ func _camp_sites() -> void:
 			pole.top_radius = 0.025
 			pole.bottom_radius = 0.025
 			pole.height = 1.9
-			var stick := _part(tent, Vector3(-0.6, 0.8, 1.2), pole, _mat["metal"])
-			stick.rotation = Vector3(0.4, 0, -0.6)
+			# 부러진 지지대는 땅에 떨어져 누워 있음 (비스듬히 공중에 솟은 막대처럼 보이던 것)
+			var stick := _part(tent, Vector3(-1.5, 0.03, 0.6), pole, _mat["metal"])
+			stick.rotation = Vector3(PI / 2.0, 0.3, 0)
 		else:
 			# 입구가 열린 텐트: 어두운 입구 + 지지대
 			_part(tent, Vector3(0, 0.45, 1.41), _box_mesh(Vector3(0.7, 0.8, 0.02)), _mat["charred"])
 			var pole2 := CylinderMesh.new()
 			pole2.top_radius = 0.025
 			pole2.bottom_radius = 0.025
-			pole2.height = 1.7
-			_part(tent, Vector3(0, 0.85, 1.45), pole2, _mat["metal"])
+			pole2.height = 1.52
+			_part(tent, Vector3(0, 0.76, 1.38), pole2, _mat["metal"])  # 입구 기둥 (꼭대기가 지붕선에 맞게)
 		# 바닥에 놓인 랜턴
 		var side := Vector3(cos(yaw + 1.3), 0, sin(yaw + 1.3))
 		var lant := _prop(p + side * 1.9, 0.0, Vector3(0.2, 0.3, 0.2))
