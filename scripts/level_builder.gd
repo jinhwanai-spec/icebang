@@ -1295,3 +1295,21 @@ func _yard_bench(p: Vector3, yaw: float) -> void:
 		_part(body, Vector3(0, 0.46, -0.16 + k * 0.15), _box_mesh(Vector3(1.8, 0.04, 0.12)), wood)
 	for k in 2:
 		_part(body, Vector3(0, 0.62 + k * 0.18, 0.25), _box_mesh(Vector3(1.8, 0.12, 0.04)), wood)
+
+
+## 생울타리: 부딪힘 상자 + 크기 제각각인 둥근 잎 덩어리 (매끈한 초록 판·애벌레처럼 보이지 않게). 길이 L은 로컬 z
+var _hedge_mats: Array = []
+
+
+func _hedge(p: Vector3, yaw: float, L: float) -> void:
+	if _hedge_mats.is_empty():
+		_hedge_mats = [_noise_mat(Color(0.16, 0.3, 0.14), 0.35, 1.0, 2.0), _noise_mat(Color(0.2, 0.36, 0.16), 0.4, 1.0, 1.5)]
+	var hb := _prop(p, yaw, Vector3(1.0, 1.2, L))
+	_part(hb, Vector3(0, 0.45, 0), _box_mesh(Vector3(0.8, 0.9, L - 0.2)), _hedge_mats[0])
+	for bk in int(L * 3.0):
+		var bm := SphereMesh.new()
+		bm.radius = rng.randf_range(0.3, 0.55)
+		bm.height = bm.radius * rng.randf_range(1.5, 2.0)
+		bm.radial_segments = 8
+		bm.rings = 4
+		_part(hb, Vector3(rng.randf_range(-0.3, 0.3), rng.randf_range(0.55, 1.05), rng.randf_range(-L * 0.45, L * 0.45)), bm, _hedge_mats[0] if rng.randf() < 0.6 else _hedge_mats[1])

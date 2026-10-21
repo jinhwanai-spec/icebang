@@ -619,21 +619,9 @@ func _yard_props() -> void:
 		if k % 2 == 1:
 			_yard_bench(Vector3(-3.0, 0, z + 2.6), PI / 2.0)
 	# 서쪽 잔디: 생울타리 줄 + 나무 무리 + 바위
-	var hedge := _noise_mat(Color(0.16, 0.3, 0.14), 0.35, 1.0, 2.0)
 	for k in 4:
 		var hz := -10.0 + k * 12.0
-		# 생울타리: 부딪힘 상자 + 둥근 잎 덩어리를 겹쳐서 울퉁불퉁하게 (매끈한 초록 판 같던 것)
-		var hb := _prop(Vector3(-58.0, 0, hz), 0.0, Vector3(1.0, 1.2, 7.0))
-		_part(hb, Vector3(0, 0.45, 0), _box_mesh(Vector3(0.8, 0.9, 6.8)), hedge)
-		var hedge2 := _noise_mat(Color(0.2, 0.36, 0.16), 0.4, 1.0, 1.5)
-		for bk in 22:
-			var bm := SphereMesh.new()
-			bm.radius = rng.randf_range(0.3, 0.55)
-			bm.height = bm.radius * rng.randf_range(1.5, 2.0)
-			bm.radial_segments = 8
-			bm.rings = 4
-			var bz := rng.randf_range(-3.1, 3.1)
-			_part(hb, Vector3(rng.randf_range(-0.3, 0.3), rng.randf_range(0.55, 1.05), bz), bm, hedge if rng.randf() < 0.6 else hedge2)
+		_hedge(Vector3(-58.0, 0, hz), 0.0, 7.0)
 	for k in 7:
 		var tp := Vector3(rng.randf_range(-70, -50), 0, rng.randf_range(-30, 35))
 		if _in_building(tp, 4.0) or Rect2(-67, 39, 11, 10).has_point(Vector2(tp.x, tp.z)) or Vector2(tp.x, tp.z).distance_to(Vector2(-62, -20)) < 6.0:

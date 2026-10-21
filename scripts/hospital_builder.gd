@@ -491,6 +491,24 @@ func _parking_lot() -> void:
 				_tree(tp)
 		if rng.randf() < 0.7:
 			_wheelchair(Vector3(wx + sx * 0.6, 0, -14.0))
+	# 건물 뒤 정원: 생울타리 두 줄 + 나무 + 흡연 쉼터(지붕·벤치) + 벤치 (뒤쪽 잔디가 텅 비어 보이지 않게)
+	for k in 3:
+		_hedge(Vector3(-34.0 + k * 10.0, 0, -52.0), PI / 2.0, 6.0)
+	for k in 5:
+		var tp := Vector3(-38.0 + k * 9.0 + rng.randf_range(-1.5, 1.5), 0, -57.0 + rng.randf_range(-1.5, 1.5))
+		if absf(tp.x) > 4.0:  # 술래 시작 지점(0, -52) 앞은 비움
+			_tree(tp)
+	var sh := Vector3(-30.0, 0, -45.0)
+	var shelter := _prop(sh, 0.0, Vector3(3.2, 0.5, 0.6))
+	for sx in [-1.5, 1.5]:
+		for sz in [-0.9, 0.9]:
+			_part(shelter, Vector3(sx, 1.2, sz), _box_mesh(Vector3(0.08, 2.4, 0.08)), _mat["metal"])
+	_part(shelter, Vector3(0, 2.45, 0), _box_mesh(Vector3(3.4, 0.08, 2.2)), _mat["metal"])
+	_part(shelter, Vector3(0, 1.3, 0.92), _box_mesh(Vector3(3.0, 2.2, 0.03)), _mat["glass"])
+	_part(shelter, Vector3(0, 0.45, 0.6), _box_mesh(Vector3(2.8, 0.06, 0.4)), _mat["crate"])
+	_part(shelter, Vector3(1.2, 0.4, -0.7), _box_mesh(Vector3(0.3, 0.8, 0.3)), _mat["metal"])  # 재떨이 통
+	for k in 2:
+		_yard_bench(Vector3(-12.0 + k * 22.0, 0, -47.0), 0.0)
 	# 건물 뒤 공터: 폐기물 컨테이너, 산소 탱크
 	for i in 4:
 		_dumpster(Vector3(-20 + i * 12, 0, -40), 0.0)

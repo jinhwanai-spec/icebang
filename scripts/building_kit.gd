@@ -860,6 +860,27 @@ func _furnish_inner(room: Rect2, y: float, kind: String, keep_center := false) -
 				_beam_seats(p, rng.randf_range(-0.04, 0.04), nseat, Color(0.3, 0.45, 0.6))
 			_vending(_against(inner, 0, 1.0, 0.8), y)
 			_plant(Vector3(inner.end.x - 0.5, y, inner.end.y - 0.5))
+			# 대기실 꾸밈: 구석 화분, 정수기, 벽걸이 TV, 잡지 탁자 (넓은 바닥이 텅 비어 보이지 않게)
+			_plant(Vector3(inner.position.x + 0.5, y, inner.end.y - 0.5))
+			var wc := _against(inner, 1, 0.5, 0.45)
+			var wcp: Vector3 = wc[0]
+			wcp.y = y
+			if not blocks_door(wcp, Vector3(0.6, 1, 0.6)):
+				_obj_begin()
+				_yawbox(_local(wcp, wc[1], Vector3(0, 0.5, 0)), Vector3(0.36, 1.0, 0.36), wc[1], Color(0.85, 0.86, 0.88), true)
+				lb._pipe(_local(wcp, wc[1], Vector3(0, 1.2, 0)), 0.15, 0.42, Color(0.55, 0.75, 0.9))  # 물통
+				_yawbox(_local(wcp, wc[1], Vector3(0, 0.75, 0.19)), Vector3(0.2, 0.04, 0.04), wc[1], Color(0.3, 0.5, 0.9), false, "metal")
+				_obj_end()
+			var lds := _door_side(room)
+			var tvs := _wall_item(inner, (2 if lds < 2 else 0) if lds >= 0 else 3, 0.5, 0.05)  # 문·창이 없는 옆벽
+			var tvp: Vector3 = tvs[0]
+			_yawbox(Vector3(tvp.x, y + 2.3, tvp.z), Vector3(1.3, 0.75, 0.06), tvs[1], Color(0.04, 0.04, 0.05), false, "metal")
+			_yawbox(_local(Vector3(tvp.x, y + 2.3, tvp.z), tvs[1], Vector3(0, 0, 0.035)), Vector3(1.2, 0.66, 0.01), tvs[1], Color(0.1, 0.15, 0.2) if rng.randf() < 0.6 else Color(0.35, 0.55, 0.75), false, "glass")
+			var mt := Vector3(inner.position.x + inner.size.x * 0.82, y, inner.position.y + inner.size.y * 0.6)
+			if not _keep.has_point(Vector2(mt.x, mt.z)) and not blocks_door(mt, Vector3(1.2, 1, 1.2)):
+				_table(mt, Vector2(0.9, 0.6))
+				for k in 3:
+					part(mt + Vector3(rng.randf_range(-0.3, 0.3), 0.78, rng.randf_range(-0.2, 0.2)), Vector3(0.22, 0.01, 0.3), Color.from_hsv(rng.randf(), 0.5, 0.8), "trim", false, rng.randf() * PI)
 		"pharmacy":
 			_counter(_against(inner, 2, 3.0, 0.8), y)
 			for i in 3:
