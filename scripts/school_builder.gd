@@ -104,10 +104,20 @@ func _playground() -> void:
 			_box(Vector3(cx + s * 3.6, 1.2, gz), Vector3(0.12, 2.4, 0.12), _mat["paint"])
 		_box(Vector3(cx, 2.4, gz), Vector3(7.3, 0.12, 0.12), _mat["paint"], false)
 		var net := StandardMaterial3D.new()
-		net.albedo_color = Color(0.9, 0.9, 0.9, 0.25)
+		net.albedo_color = Color(0.9, 0.9, 0.9, 0.16)
 		net.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 		net.cull_mode = BaseMaterial3D.CULL_DISABLED
-		_box(Vector3(cx, 1.2, gz + end * 1.0), Vector3(7.2, 2.3, 0.02), net, false)
+		# 뒤쪽 틀 (기둥·윗막대·옆 윗막대) + 뒤·옆·위 그물 (예전엔 그물판 한 장만 공중에 떠 있었음)
+		var bz: float = gz + end * 1.2
+		for s in [-1.0, 1.0]:
+			_box(Vector3(cx + s * 3.6, 1.2, bz), Vector3(0.08, 2.4, 0.08), _mat["paint"], false)
+			_box(Vector3(cx + s * 3.6, 2.4, (gz + bz) * 0.5), Vector3(0.08, 0.08, 1.2), _mat["paint"], false)
+			_box(Vector3(cx + s * 3.6, 0.04, (gz + bz) * 0.5), Vector3(0.06, 0.06, 1.2), _mat["paint"], false)
+			_box(Vector3(cx + s * 3.6, 1.2, (gz + bz) * 0.5), Vector3(0.02, 2.3, 1.2), net, false)
+		_box(Vector3(cx, 2.4, bz), Vector3(7.3, 0.08, 0.08), _mat["paint"], false)
+		_box(Vector3(cx, 0.04, bz), Vector3(7.2, 0.06, 0.06), _mat["paint"], false)
+		_box(Vector3(cx, 1.2, bz), Vector3(7.2, 2.3, 0.02), net, false)
+		_box(Vector3(cx, 2.4, (gz + bz) * 0.5), Vector3(7.2, 0.02, 1.2), net, false)
 	# 스탠드 (서쪽, 계단식 콘크리트)
 	for k in 4:
 		_box(Vector3(field.position.x - 1.5 - k * 0.9, 0.25 + k * 0.45, cz), Vector3(0.9, 0.5 + k * 0.9, 40.0), _mat["concrete"])

@@ -391,17 +391,40 @@ func _scatter_floor() -> void:
 func _lantern_posts() -> void:
 	for i in 26:
 		var p := Vector3(rng.randf_range(-HALF + 8, HALF - 8), 0, rng.randf_range(-HALF + 8, HALF - 8))
+		if i < 14:
+			# 절반 이상은 공터 가장자리에 (숲 아무 데나 꽂힌 막대처럼 보이지 않게)
+			var cl: Vector3 = CLEARINGS[i % CLEARINGS.size()]
+			var a := rng.randf() * TAU
+			p = Vector3(cl.x + cos(a) * (CLEARING_RADIUS - 0.6), 0, cl.z + sin(a) * (CLEARING_RADIUS - 0.6))
 		if _near_spawn(p, 5.0):
 			continue
-		var body := _prop(p, rng.randf() * TAU, Vector3(0.2, 2.2, 0.2))
+		var in_cabin := false
+		for cr in _cabin_rects:
+			if (cr as Rect2).grow(1.5).has_point(Vector2(p.x, p.z)):
+				in_cabin = true
+		if in_cabin:
+			continue
+		var body := _prop(p, rng.randf() * TAU, Vector3(0.25, 2.2, 0.25))
 		var pole := CylinderMesh.new()
-		pole.top_radius = 0.04
-		pole.bottom_radius = 0.06
-		pole.height = 2.2
-		var post := _part(body, Vector3(0, 1.1, 0), pole, _mat["log"])
-		post.rotation.z = rng.randf_range(-0.06, 0.06)
-		_part(body, Vector3(0.2, 2.1, 0), _box_mesh(Vector3(0.45, 0.04, 0.04)), _mat["log"])
-		_lantern(body, Vector3(0.38, 1.88, 0), rng.randf() < 0.45)
+		pole.top_radius = 0.065
+		pole.bottom_radius = 0.085
+		pole.height = 2.25
+		pole.radial_segments = 8
+		var post := _part(body, Vector3(0, 1.12, 0), pole, _mat["log"])
+		post.rotation.z = rng.randf_range(-0.04, 0.04)
+		# 밑동: 땅에 박은 돌 몇 개 + 비스듬한 버팀목
+		for k in 3:
+			var ka := k * TAU / 3.0 + rng.randf() * 0.5
+			var st := _part(body, Vector3(cos(ka) * 0.16, 0.06, sin(ka) * 0.16), _box_mesh(Vector3(0.18, 0.12, 0.15)), _mat["rock"] if _mat.has("rock") else _mat["log"])
+			st.rotation.y = ka
+		var brace := _part(body, Vector3(-0.18, 0.35, 0), _box_mesh(Vector3(0.05, 0.75, 0.05)), _mat["log"])
+		brace.rotation.z = -0.5
+		# 팔 + 버팀대 + 고리에 매단 랜턴
+		_part(body, Vector3(0.22, 2.1, 0), _box_mesh(Vector3(0.5, 0.06, 0.06)), _mat["log"])
+		var kn := _part(body, Vector3(0.12, 1.98, 0), _box_mesh(Vector3(0.04, 0.26, 0.04)), _mat["log"])
+		kn.rotation.z = 0.8
+		_part(body, Vector3(0.4, 2.03, 0), _box_mesh(Vector3(0.015, 0.12, 0.015)), _mat["metal"])
+		_lantern(body, Vector3(0.4, 1.84, 0), rng.randf() < 0.45)
 
 
 ## 작은 랜턴 (켜져 있으면 따뜻한 빛)
@@ -641,7 +664,14 @@ func _forest() -> void:
 		var p := Vector3(rng.randf_range(-HALF + 5, HALF - 5), 0, rng.randf_range(-HALF + 5, HALF - 5))
 		if _near_spawn(p, 6.0):
 			continue
-		_grass(p, Vector2(rng.randf_range(2.5, 6.0), rng.randf_range(2.5, 6.0)))
+		var gs := Vector2(rng.randf_range(2.5, 6.0), rng.randf_range(2.5, 6.0))
+		var in_cabin := false
+		for cr in _cabin_rects:  # 오두막 바닥을 뚫고 풀이 자라던 것
+			if (cr as Rect2).grow(maxf(gs.x, gs.y) * 0.5 + 0.3).has_point(Vector2(p.x, p.z)):
+				in_cabin = true
+		if in_cabin:
+			continue
+		_grass(p, gs)
 
 
 func _rock(pos: Vector3) -> void:

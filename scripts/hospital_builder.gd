@@ -335,9 +335,7 @@ func _lobby(r: Rect2, y: float) -> void:
 	kit.part(Vector3(r.end.x - 0.13, y + 2.6, c.y - 1.0), Vector3(0.04, 0.5, 2.6), Color(0.2, 0.4, 0.45))
 	# 대기 의자 줄 (현관 쪽 비워 둠)
 	for row in 3:
-		for j in 5:
-			var p := Vector3(r.position.x + 1.6 + j * 0.62, y, r.position.y + 2.0 + row * 1.6)
-			kit._chair(p, PI, Color(0.3, 0.45, 0.6), rng.randf() < 0.08)
+		kit._beam_seats(Vector3(r.position.x + 1.6 + 2 * 0.62, y, r.position.y + 2.0 + row * 1.6), PI, 5, Color(0.3, 0.45, 0.6))
 	# 안내판 + 화분 + 피 묻은 바닥
 	kit.part(Vector3(c.x - 1.0, y + 1.0, r.position.y + 0.6), Vector3(1.2, 2.0, 0.08), Color(0.2, 0.35, 0.4))
 	kit._plant(Vector3(r.position.x + 0.6, y, r.end.y - 0.8))
@@ -349,7 +347,23 @@ func _lobby(r: Rect2, y: float) -> void:
 func _hosp_corridor(core: Rect2, corr_z: float, corr_w: float, y: float, h: float, rooms: Array, base: bool) -> void:
 	for side in [-1.0, 1.0]:
 		var z: float = corr_z + side * (corr_w * 0.5 - 0.06)
-		kit.part(Vector3(core.get_center().x, y + 0.9, z), Vector3(core.size.x - 0.4, 0.07, 0.07), Color(0.75, 0.75, 0.7) if not base else Color(0.35, 0.35, 0.33), "trim")
+		# 벽 손잡이 난간: 문 앞에서는 끊음 (예전엔 문 한가운데를 막대가 가로질렀음)
+		var cuts: Array = []
+		for rm in rooms:
+			var da: Vector3 = rm.get("door_at", Vector3.INF)
+			if da != Vector3.INF and signf(da.z - corr_z) == side:
+				cuts.append(da.x)
+		cuts.sort()
+		var x0 := core.position.x + 0.2
+		var xe := core.end.x - 0.2
+		for cx in cuts + [INF]:
+			var x1: float = minf(xe, cx - 0.9) if cx != INF else xe
+			if x1 - x0 > 0.3:
+				kit.part(Vector3((x0 + x1) * 0.5, y + 0.9, z), Vector3(x1 - x0, 0.07, 0.07), Color(0.75, 0.75, 0.7) if not base else Color(0.35, 0.35, 0.33), "trim")
+				for ex in [x0 + 0.04, x1 - 0.04]:  # 끝 받침 (벽에 붙는 쇠)
+					kit.part(Vector3(ex, y + 0.9, z + side * 0.04), Vector3(0.05, 0.05, 0.1), Color(0.6, 0.6, 0.6), "metal")
+			if cx != INF:
+				x0 = maxf(x0, cx + 0.9)
 	for i in 9:
 		var x := core.position.x + 3.0 + i * (core.size.x - 6.0) / 8.0
 		kit.ceiling_light(Vector3(x, y + h - 0.28, corr_z), Color(0.75, 0.95, 0.85) if not base else Color(1.0, 0.75, 0.5), 0.6, 0.3)
@@ -362,15 +376,14 @@ func _hosp_corridor(core: Rect2, corr_z: float, corr_w: float, y: float, h: floa
 			1:
 				_stretcher(Vector3(x, y, corr_z - corr_w * 0.5 + 0.5))
 			2:
-				for j in 3:
-					kit._chair(Vector3(x - 0.6 + j * 0.6, y, corr_z - corr_w * 0.5 + 0.35), PI, Color(0.3, 0.45, 0.6))
+				kit._beam_seats(Vector3(x, y, corr_z - corr_w * 0.5 + 0.38), PI, 3, Color(0.3, 0.45, 0.6))
 			_:
-				kit.part(Vector3(x, y + 0.9, corr_z + corr_w * 0.5 - 0.4), Vector3(0.03, 1.8, 0.03), Color(0.7, 0.7, 0.72), "metal")
-				kit.part(Vector3(x, y + 1.65, corr_z + corr_w * 0.5 - 0.4), Vector3(0.12, 0.2, 0.06), Color(0.8, 0.9, 1.0), "glass")
-				kit.part(Vector3(x, y + 0.03, corr_z + corr_w * 0.5 - 0.4), Vector3(0.5, 0.05, 0.5), Color(0.5, 0.5, 0.52), "metal")
+				kit._iv_stand(Vector3(x, y, corr_z + corr_w * 0.5 - 0.4), y)
 		# 천장에 매달린 안내판
 		if i % 3 == 1 and not base:
 			kit.part(Vector3(x, y + h - 0.7, corr_z), Vector3(0.06, 0.35, 1.6), Color(0.15, 0.35, 0.4))
+			for s in [-1.0, 1.0]:  # 천장에 매단 줄 (예전엔 안내판이 공중에 떠 있었음)
+				kit.part(Vector3(x, y + h - 0.26, corr_z + 0.65 * s), Vector3(0.015, 0.52, 0.015), Color(0.6, 0.6, 0.62), "metal")
 			for s in [-1.0, 1.0]:
 				kit.part(Vector3(x + 0.04 * s, y + h - 0.7, corr_z + 0.45 * s), Vector3(0.01, 0.06, 0.45), Color(0.9, 0.95, 0.95), "lit")
 				kit.part(Vector3(x + 0.04 * s, y + h - 0.7, corr_z + 0.62 * s), Vector3(0.01, 0.14, 0.06), Color(0.9, 0.95, 0.95), "lit")
@@ -382,16 +395,38 @@ func _hosp_corridor(core: Rect2, corr_z: float, corr_w: float, y: float, h: floa
 	kit.grime(Rect2(core.position.x, corr_z - corr_w * 0.5, core.size.x, corr_w), y + 0.005, h, 0.3, 0.4, [2, 3])
 
 
+## 휠체어: 큰 바퀴(육각으로 겹친 판 3장) + 앉는 천·등받이 + 밀 손잡이 + 팔걸이 + 발판 + 작은 앞바퀴
 func _wheelchair(p: Vector3) -> void:
-	kit.part(p + Vector3.UP * 0.5, Vector3(0.5, 0.06, 0.5), Color(0.2, 0.25, 0.35))
-	kit.part(p + Vector3(0, 0.8, -0.24), Vector3(0.5, 0.55, 0.05), Color(0.2, 0.25, 0.35))
+	var seat := Color(0.2, 0.25, 0.35)
+	var m := Color(0.62, 0.62, 0.64)
+	var tire := Color(0.1, 0.1, 0.11)
+	kit.part(p + Vector3.UP * 0.5, Vector3(0.46, 0.05, 0.44), seat)
+	kit.part(p + Vector3(0, 0.78, -0.22), Vector3(0.46, 0.5, 0.03), seat)
 	for s in [-1.0, 1.0]:
-		kit.part(p + Vector3(0.3 * s, 0.32, 0), Vector3(0.04, 0.62, 0.62), Color(0.6, 0.6, 0.62), "metal")
+		var wc := p + Vector3(0.29 * s, 0.31, -0.05)
+		# 큰 바퀴: 십자 판 2장 + 사각 판을 겹쳐 옆에서 보면 팔각형(둥글게)
+		kit.part(wc, Vector3(0.03, 0.6, 0.25), tire, "metal")
+		kit.part(wc, Vector3(0.032, 0.25, 0.6), tire, "metal")
+		kit.part(wc, Vector3(0.035, 0.45, 0.45), m, "metal")
+		kit.part(p + Vector3(0.24 * s, 0.75, 0.0), Vector3(0.04, 0.04, 0.42), m, "metal")  # 팔걸이
+		kit.part(p + Vector3(0.24 * s, 0.62, 0.18), Vector3(0.03, 0.26, 0.03), m, "metal")
+		kit.part(p + Vector3(0.22 * s, 0.75, -0.24), Vector3(0.03, 0.5, 0.03), m, "metal")  # 등받이 기둥
+		kit.part(p + Vector3(0.22 * s, 1.0, -0.3), Vector3(0.03, 0.03, 0.14), Color(0.08, 0.08, 0.09))  # 밀 손잡이
+		kit.part(p + Vector3(0.18 * s, 0.25, 0.3), Vector3(0.03, 0.45, 0.03), m, "metal")  # 앞 기둥
+		kit.part(p + Vector3(0.18 * s, 0.06, 0.32), Vector3(0.04, 0.12, 0.08), tire, "metal")  # 앞바퀴
+	kit.part(p + Vector3(0, 0.12, 0.38), Vector3(0.36, 0.02, 0.14), m, "metal")  # 발판
 
 
+## 들것: 바퀴 달린 다리 4개 + 철 틀 + 매트 (+ 가끔 흰 천을 덮은 무언가)
 func _stretcher(p: Vector3) -> void:
+	var m := Color(0.6, 0.6, 0.62)
 	kit.part(p + Vector3.UP * 0.75, Vector3(2.0, 0.08, 0.65), Color(0.85, 0.88, 0.9), "trim")
-	kit.part(p + Vector3.UP * 0.4, Vector3(1.8, 0.05, 0.05), Color(0.6, 0.6, 0.62), "metal")
+	kit.part(p + Vector3.UP * 0.68, Vector3(2.0, 0.05, 0.6), m, "metal")
+	kit.part(p + Vector3.UP * 0.3, Vector3(1.8, 0.04, 0.04), m, "metal")
+	for sx in [-1.0, 1.0]:
+		for sz in [-1.0, 1.0]:
+			kit.part(p + Vector3(0.85 * sx, 0.36, 0.26 * sz), Vector3(0.04, 0.62, 0.04), m, "metal")
+			kit.part(p + Vector3(0.85 * sx, 0.04, 0.26 * sz), Vector3(0.06, 0.08, 0.08), Color(0.1, 0.1, 0.11), "metal")
 	if rng.randf() < 0.4:
 		kit.part(p + Vector3.UP * 0.9, Vector3(1.6, 0.2, 0.5), Color(0.92, 0.92, 0.94))  # 흰 천
 

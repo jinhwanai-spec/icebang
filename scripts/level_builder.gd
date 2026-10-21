@@ -1038,10 +1038,15 @@ func _road_props() -> void:
 	for i in 25:
 		var c: float = ROAD_CENTERS[rng.randi() % ROAD_CENTERS.size()]
 		var along := rng.randf_range(-HALF + 6.0, HALF - 6.0)
-		var side := ROAD_HALF - 1.0 if rng.randf() < 0.5 else -ROAD_HALF + 1.0
-		var pos := Vector3(c + side, 0, along) if rng.randf() < 0.5 else Vector3(along, 0, c + side)
-		if not _near_spawn(pos, 6.0):
-			_grass(pos, Vector2(rng.randf_range(2.0, 3.5), rng.randf_range(3.0, 6.0)))
+		# 연석에 붙은 좁은 띠로만 (예전엔 넓은 풀숲이 차도 한가운데·교차로까지 튀어나왔음)
+		var side := ROAD_HALF - 0.55 if rng.randf() < 0.5 else -ROAD_HALF + 0.55
+		var x_axis := rng.randf() < 0.5
+		var pos := Vector3(c + side, 0, along) if x_axis else Vector3(along, 0, c + side)
+		if _near_spawn(pos, 6.0) or not _far_from_roads(along, ROAD_HALF + 3.5):
+			continue
+		var across := rng.randf_range(0.8, 1.1)
+		var length := rng.randf_range(3.0, 6.0)
+		_grass(pos, Vector2(across, length) if x_axis else Vector2(length, across))
 
 
 func _near_spawn(pos: Vector3, dist: float) -> bool:
@@ -1056,19 +1061,67 @@ func _near_spawn(pos: Vector3, dist: float) -> bool:
 
 # ================================================================ 소품 모양
 
+var _car_mats := {}
+var _wheel_mesh: CylinderMesh = null
+
+
+func _car_mat(key: String, col: Color, rough := 0.8, emit := 0.0) -> StandardMaterial3D:
+	if not _car_mats.has(key):
+		var m := StandardMaterial3D.new()
+		m.albedo_color = col
+		m.roughness = rough
+		if emit > 0.0:
+			m.emission_enabled = true
+			m.emission = col
+			m.emission_energy_multiplier = emit
+		_car_mats[key] = m
+	return _car_mats[key]
+
+
+## 버려진 승용차: 차체(아래) + 좁은 유리 객실 + 칠한 지붕 + 범퍼·전조등·후미등 + 바퀴(타이어+휠)
+## (예전엔 상자 두 개라 장난감처럼 보였음)
 func _car(pos: Vector3, yaw: float) -> void:
 	var body := _prop(pos, yaw, Vector3(1.9, 1.5, 4.3))
 	var paint: StandardMaterial3D = _rust_mats[rng.randi() % _rust_mats.size()]
-	_part(body, Vector3(0, 0.6, 0), _box_mesh(Vector3(1.9, 0.8, 4.3)), paint)
-	_part(body, Vector3(0, 1.25, -0.2), _box_mesh(Vector3(1.7, 0.6, 2.2)), _mat["glass"])
-	for wx in [-0.9, 0.9]:
-		for wz in [-1.4, 1.4]:
-			var wheel := CylinderMesh.new()
-			wheel.top_radius = 0.35
-			wheel.bottom_radius = 0.35
-			wheel.height = 0.25
-			var w := _part(body, Vector3(wx, 0.3, wz), wheel, _mat["metal"])
+	var dark := _car_mat("trim", Color(0.07, 0.07, 0.08), 0.6)
+	_part(body, Vector3(0, 0.62, 0), _box_mesh(Vector3(1.86, 0.62, 4.25)), paint)  # 차체
+	_part(body, Vector3(0, 0.98, 1.35), _box_mesh(Vector3(1.8, 0.12, 1.2)), paint)  # 보닛 (조금 높게)
+	_part(body, Vector3(0, 1.17, -0.25), _box_mesh(Vector3(1.62, 0.5, 2.0)), _mat["glass"])  # 객실 유리
+	_part(body, Vector3(0, 1.45, -0.3), _box_mesh(Vector3(1.66, 0.07, 1.75)), paint)  # 지붕
+	for sx in [-1.0, 1.0]:  # 문 기둥 (유리 덩어리가 아니라 창문으로 보이게)
+		for pz in [0.72, -0.25, -1.2]:
+			_fade(_part(body, Vector3(sx * 0.8, 1.17, pz), _box_mesh(Vector3(0.05, 0.52, 0.1)), paint))
+	_fade(_part(body, Vector3(0, 0.45, 2.15), _box_mesh(Vector3(1.9, 0.22, 0.12)), dark))  # 앞 범퍼
+	_fade(_part(body, Vector3(0, 0.45, -2.15), _box_mesh(Vector3(1.9, 0.22, 0.12)), dark))  # 뒤 범퍼
+	var lit := rng.randf() < 0.12  # 가끔 배터리가 남아 희미하게 켜진 차
+	for sx in [-1.0, 1.0]:
+		_fade(_part(body, Vector3(sx * 0.68, 0.78, 2.13), _box_mesh(Vector3(0.36, 0.14, 0.05)), _car_mat("head_on" if lit else "head", Color(0.95, 0.92, 0.75) if lit else Color(0.75, 0.75, 0.7), 0.3, 1.5 if lit else 0.0)))
+		_fade(_part(body, Vector3(sx * 0.7, 0.8, -2.13), _box_mesh(Vector3(0.3, 0.14, 0.05)), _car_mat("tail", Color(0.55, 0.05, 0.04), 0.4)))
+	if _wheel_mesh == null:
+		_wheel_mesh = CylinderMesh.new()
+		_wheel_mesh.top_radius = 0.34
+		_wheel_mesh.bottom_radius = 0.34
+		_wheel_mesh.height = 0.24
+		_wheel_mesh.radial_segments = 14
+	var flat := rng.randi() % 5  # 바람 빠진 바퀴 하나 (0~3), 4면 없음
+	var k := 0
+	for wx in [-0.84, 0.84]:
+		for wz in [-1.35, 1.35]:
+			var w := _part(body, Vector3(wx, 0.34 if k != flat else 0.26, wz), _wheel_mesh, _car_mat("tire", Color(0.04, 0.04, 0.045), 0.95))
 			w.rotation.z = PI / 2.0
+			var hub := _part(body, Vector3(wx * 1.08, 0.34 if k != flat else 0.26, wz), _box_mesh(Vector3(0.03, 0.28, 0.28)), _mat["metal"])
+			hub.rotation.x = PI / 4.0
+			_fade(hub)
+			k += 1
+	if k > 0 and flat < 4:
+		body.rotation.z = 0.025 * (1.0 if flat < 2 else -1.0)  # 바퀴 빠진 쪽으로 살짝 기움
+
+
+## 작은 장식 부품은 멀리서 안 그림 (그리기 호출 줄이기)
+func _fade(mi: MeshInstance3D, d := 38.0) -> void:
+	mi.visibility_range_end = d
+	mi.visibility_range_end_margin = 4.0
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
 
 func _bus(pos: Vector3, yaw: float) -> void:
