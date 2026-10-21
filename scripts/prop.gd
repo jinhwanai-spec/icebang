@@ -496,6 +496,9 @@ func _swing_locker(hold: float) -> void:
 static var _col_mats := {}
 ## 학교·병원 문: 칠한 판문 + 작은 유리창 + 손잡이 (+ 병원은 아래 철판)
 func _modern_door(style: String) -> void:
+	if style == "city":
+		_panel_door()
+		return
 	var col := Color(0.55, 0.42, 0.3) if style == "school" else Color(0.62, 0.72, 0.68)
 	for c in _door_body.get_children():
 		if c is MeshInstance3D:
@@ -512,6 +515,34 @@ func _modern_door(style: String) -> void:
 			_deco(_door_body, Vector3(0, -0.85, z * 1.05), Vector3(1.38, 0.35, 0.01), _mat_col(Color(0.6, 0.62, 0.65), 0.3))
 		else:
 			_deco(_door_body, Vector3(0, -0.45, z * 1.05), Vector3(1.1, 0.7, 0.012), frame)
+
+
+## 도시 집·가게 문: 칠한 판넬 문 (위 2칸 + 아래 2칸 도드라진 판) + 둥근 손잡이 + 경첩. 색은 몇 가지 중 하나
+func _panel_door() -> void:
+	var cols := [Color(0.42, 0.27, 0.17), Color(0.5, 0.48, 0.44), Color(0.25, 0.3, 0.36), Color(0.55, 0.22, 0.18), Color(0.78, 0.76, 0.7)]
+	var col: Color = cols[randi() % cols.size()]
+	for c in _door_body.get_children():
+		if c is MeshInstance3D:
+			(c as MeshInstance3D).material_override = _mat_col(col, 0.6)
+	var panel := _mat_col(col.lightened(0.06), 0.6)
+	var groove := _mat_col(col.darkened(0.35), 0.7)
+	for z in [-0.055, 0.055]:
+		for px in [-0.33, 0.33]:
+			for py in [0.45, -0.5]:
+				var ph := 0.7 if py > 0 else 0.8
+				_far(_deco(_door_body, Vector3(px, py, z * 1.05), Vector3(0.5, ph, 0.012), groove))
+				_far(_deco(_door_body, Vector3(px, py, z * 1.18), Vector3(0.42, ph - 0.08, 0.012), panel))
+		# 둥근 손잡이 (작은 판 + 손잡이)
+		_far(_deco(_door_body, Vector3(0.58, -0.02, z * 1.2), Vector3(0.07, 0.16, 0.012), _mat_col(Color(0.7, 0.6, 0.3), 0.35)))
+		_far(_deco(_door_body, Vector3(0.58, -0.02, z * 1.7), Vector3(0.07, 0.07, 0.06), _mat_col(Color(0.75, 0.65, 0.3), 0.3)))
+	for y in [-0.75, 0.75]:
+		_far(_deco(_door_body, Vector3(-0.69, y, 0), Vector3(0.03, 0.12, 0.12), _mat_col(Color(0.3, 0.3, 0.3), 0.4)))
+
+
+## 문 장식은 멀리서 안 그림 (그리기 호출 줄이기)
+func _far(mi: MeshInstance3D) -> void:
+	mi.visibility_range_end = 28.0
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
 
 func _mat_col(c: Color, rough := 0.85) -> StandardMaterial3D:

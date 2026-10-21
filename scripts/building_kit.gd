@@ -2488,7 +2488,7 @@ func city_building(r: Rect2, y0: float, total_h: float, wall_mat: Material, trim
 				entrances.append([dc, n])
 				_door_frame(dc, dir, trim.darkened(0.4))
 				if rng.randf() < 0.5:
-					lb.props.append(["door", dc, atan2(dir.z, -dir.x) + PI, DOOR_W - 0.1])
+					lb.props.append(["door", dc, atan2(dir.z, -dir.x) + PI, DOOR_W - 0.1, door_style])
 			var vault_done := false
 			for i in count:
 				var u := 0.8 + gap * (i + 0.5)

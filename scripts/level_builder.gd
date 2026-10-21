@@ -503,7 +503,9 @@ func _building(b: Rect2) -> void:
 	var trim: Color = _building_cols[ci].lightened(0.18)
 	var kind: String = ["apartment", "office", "shop", "apartment"][rng.randi() % 4]
 	# 모든 건물에 들어갈 수 있음: 외벽(창문·출입구) + 방·계단·가구 (building_kit.gd)
+	kit.door_style = "city"  # 도시 건물: 판넬 문 (헛간 같은 Z자 나무문 대신)
 	var spots: Array = kit.city_building(b, base_y, h, _building_mats[ci], trim, kind)
+	kit.door_style = ""
 	for sp in spots:
 		if rng.randf() < 0.25:
 			generator_spots.append(sp)
