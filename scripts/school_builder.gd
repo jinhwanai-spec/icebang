@@ -446,7 +446,11 @@ func _gym() -> void:
 			var du := L * 0.5
 			ops.append([du - 1.5, du + 1.5, 0.0, 2.8])
 			var dc := a + dir * du
-			kit._door_frame(dc, dir, Color(0.3, 0.3, 0.32))
+			# 문틀은 3m 출입구 크기에 맞춤 (좁은 기본 문틀이 넓은 구멍 안에 따로 서 있던 것)
+			var fyaw := atan2(-dir.z, dir.x)
+			for fs in [-1.0, 1.0]:
+				kit.part(dc + dir * (1.5 - 0.05) * fs + Vector3.UP * (y0 + 1.4), Vector3(0.1, 2.8, 0.45), Color(0.3, 0.3, 0.32), "trim", false, fyaw)
+			kit.part(dc + Vector3.UP * (y0 + 2.85), Vector3(3.1, 0.12, 0.45), Color(0.3, 0.3, 0.32), "trim", false, fyaw)
 		for i in int(L / 4.0):
 			var u := 2.0 + i * 4.0
 			if absf(u - L * 0.5) < 2.5 and (si == 2 or si == 3):
@@ -517,6 +521,21 @@ func _gym() -> void:
 		_pipe(Vector3(c.x + rng.randf_range(-8, 8), y0 + 0.12, c.y + rng.randf_range(-6, 6)), 0.12, 0.22, Color(0.9, 0.45, 0.15))
 	for k in 4:
 		kit.part(Vector3(c.x + 6, y0 + 0.2 + k * 0.25, c.y + 5), Vector3(1.6 - k * 0.1, 0.25, 0.9), Color(0.6, 0.45, 0.3).darkened(0.1 * (k % 2)), "trim", true)
+	# 넓은 체육관이 텅 비어 보이지 않게: 벽 점수판 + 쌓인 매트 + 접이식 의자 더미 + 굴러다니는 콘
+	var sb := Vector3(c.x, y0 + 4.2, r.end.y - 0.25)
+	kit.part(sb, Vector3(3.0, 1.2, 0.15), Color(0.08, 0.08, 0.09), "metal")
+	for k in 4:
+		kit.part(sb + Vector3(-1.0 + k * 0.66, 0.1, -0.08), Vector3(0.45, 0.5, 0.01), Color(0.9, 0.3, 0.1) if k % 2 == 0 else Color(0.2, 0.2, 0.22), "lit" if k % 2 == 0 else "trim")
+	for k in 5:
+		kit.part(Vector3(r.end.x - 4.5, y0 + 0.08 + k * 0.12, r.end.y - 1.4), Vector3(2.0, 0.11, 1.0), Color(0.2, 0.35, 0.65).darkened(0.08 * (k % 2)), "trim", k == 0)
+	for k in 6:  # 벽에 기대 세워 둔 접이식 의자들
+		var cp := Vector3(r.position.x + 8.0 + k * 0.5, y0 + 0.45, r.end.y - 0.35)
+		kit.part(cp, Vector3(0.42, 0.9, 0.06), Color(0.3, 0.32, 0.34).lightened(0.05 * (k % 3)), "metal", false, rng.randf_range(-0.08, 0.08))
+		kit.part(cp + Vector3(0, 0.05, -0.08), Vector3(0.38, 0.4, 0.03), Color(0.25, 0.27, 0.3), "metal")
+	for k in 5:
+		var q := Vector3(c.x + rng.randf_range(-9, 9), y0, c.y + rng.randf_range(-7, 7))
+		kit.part(q + Vector3.UP * 0.02, Vector3(0.3, 0.04, 0.3), Color(0.9, 0.45, 0.1))
+		_pipe(q + Vector3.UP * 0.2, 0.06, 0.32, Color(0.95, 0.5, 0.12))
 	for i in 4:
 		kit.ceiling_light(Vector3(c.x - 7.5 + i * 5.0, y0 + h - 0.1, c.y), Color(0.9, 0.95, 1.0), 1.2, 0.5)
 	generator_spots.append(Vector3(c.x, y0 + 0.06, c.y + 2.0))
