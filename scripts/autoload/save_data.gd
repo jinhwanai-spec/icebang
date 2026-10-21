@@ -29,7 +29,8 @@ var owned_cos: Array = ["eyes_basic", "hair_none", "outfit_none", "acc_none"]
 var equipped := {"eyes": "eyes_basic", "hair": "hair_none", "outfit": "outfit_none", "acc": "acc_none"}
 ## 이모트: 산 이모트 목록, 숫자키 1~0 칸에 장착한 이모트 ("" = 빈 칸)
 var owned_emotes: Array = []
-var emote_slots: Array = ["butt_dance", "fart", "disco", "trot", "poop", "chicken", "dead", "robot", "gaedari", "dizzy"]
+var _clean_v1 := false
+var emote_slots: Array = ["wave_hi", "clap", "disco", "trot", "heart_hands", "chicken", "dead", "robot", "gaedari", "dizzy"]
 ## 테스트용으로 고른 맵 ("" = 랜덤). 저장하지 않음
 var test_map := ""
 ## 능력 이름 → 해금 여부
@@ -95,6 +96,17 @@ func load_game() -> void:
 	var sl: Array = cfg.get_value("emotes", "slots", emote_slots)
 	if sl.size() == 10:
 		emote_slots = sl
+	# (10/22) 기본 이모트 칸에서 장난(방귀·엉덩이 등) 이모트를 한 번 빼 줌. 옷장에서 다시 끼울 수 있음
+	if not bool(cfg.get_value("emotes", "clean_v1", false)):
+		var safe := ["wave_hi", "clap", "disco", "trot", "heart_hands", "chicken", "dead", "robot", "gaedari", "dizzy"]
+		for i in emote_slots.size():
+			var row := emote_row(str(emote_slots[i]))
+			if not row.is_empty() and str(row[4]) == "crude":
+				for c in safe:
+					if not emote_slots.has(c):
+						emote_slots[i] = c
+						break
+		_clean_v1 = true
 
 
 func save_game() -> void:
@@ -117,6 +129,7 @@ func save_game() -> void:
 	cfg.set_value("cosmetics", "equipped", equipped)
 	cfg.set_value("emotes", "owned", owned_emotes)
 	cfg.set_value("emotes", "slots", emote_slots)
+	cfg.set_value("emotes", "clean_v1", true)
 	cfg.save(SAVE_PATH)
 
 

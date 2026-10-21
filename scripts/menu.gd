@@ -440,7 +440,7 @@ func _build_multi_page() -> Control:
 	opt.add_child(_mp_mode)
 	_mp_fill = _button("", func() -> void: Net.cycle_fill())
 	_mp_fill.custom_minimum_size.x = 250
-	_mp_fill.tooltip_text = "판 인원 (사람 + 봇). 6명 이상이면 AI 술래가 2마리 나와요 (기본 방식)"
+	_mp_fill.tooltip_text = "판 인원 (사람 + 봇). 6명 이상이면 AI 술래가 2마리 나와요 (기본 방식)\n술래 1마리가 맡는 생존자가 4명보다 많으면 1명마다 술래 이동속도 +4% (최대 +16%)"
 	opt.add_child(_mp_fill)
 	_mp_lobby.add_child(_test_pickers())  # 방장이 고른 스테이지·맵으로 시작
 

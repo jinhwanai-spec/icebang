@@ -709,6 +709,9 @@ const HELP_SEEKER := "술래 조작\nWASD 이동 · Shift 추격 속도 · 마�
 ## 술래로 변한 사람: 아래쪽 왼쪽 능력 칸 (술래 종류별 [R] [T] + 패시브)
 func _seeker_skill_text(sk, detail := true) -> String:
 	var lines: Array = ["술래 · %s" % Seeker.TYPE_NAMES.get(sk.seeker_type, "")]
+	var cm: float = sk.crowd_mult()
+	if cm > 1.001:
+		lines[0] += "   (인원 보정: 이동속도 +%d%%)" % roundi((cm - 1.0) * 100.0)
 	var skills: Array = sk.poss_skills()
 	for n in 2:
 		var cd: float = sk.poss_cd(n)

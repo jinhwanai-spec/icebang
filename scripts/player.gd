@@ -601,9 +601,7 @@ func poss_sense(radius: float, seconds: float) -> void:
 		tw.tween_property(mk, "modulate:a", 0.35, 0.4).set_trans(Tween.TRANS_SINE)
 		tw.tween_property(mk, "modulate:a", 1.0, 0.4).set_trans(Tween.TRANS_SINE)
 		tw.set_loops(maxi(1, int(seconds / 0.8)))
-		get_tree().create_timer(seconds).timeout.connect(func() -> void:
-			if is_instance_valid(mk):
-				mk.queue_free())
+		get_tree().create_timer(seconds).timeout.connect(mk.queue_free)
 	notice.emit("사냥 본능: 생존자 %d명이 느껴져요" % n if n > 0 else "사냥 본능: 근처에 생존자가 없어요")
 
 
@@ -1322,7 +1320,7 @@ func _bard_toggle(which: int) -> bool:
 		notice.emit("노래를 멈췄어요")
 	else:
 		_set_song(which)
-		notice.emit("광란의 메탈! 술래 위치가 모두에게 보여요 (내 위치도 들켜요)" if which == 1 else "질주의 비트! 우리 팀 이동속도 +%d%% (내 위치가 들켜요)" % roundi(GameConfig.num("bard", "beat_speed", 0.15) * 100))
+		notice.emit("메탈 연주! 술래 위치가 모두에게 보여요 (내 위치도 들켜요)" if which == 1 else "빠른 비트! 우리 팀 이동속도 +%d%% (내 위치가 들켜요)" % roundi(GameConfig.num("bard", "beat_speed", 0.15) * 100))
 	return true
 
 

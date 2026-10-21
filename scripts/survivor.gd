@@ -129,38 +129,38 @@ func _process(delta: float) -> void:
 ## 상점(치장 상점의 이모트 탭)에서 사고, 숫자키 1~0 칸에 장착 (SaveData.emote_slots)
 ## 소리는 audio/emote_<아이디>.wav, 효과는 emote_fx.gd. 순서는 멀티 통신 번호라 뒤에만 추가할 것 (최대 62개)
 const EMOTES := [
-	["butt_dance", "엉덩이 춤", 3.0, "back", "crude", 0],
-	["fart", "방귀 뿡", 2.2, "back", "crude", 0],
+	["butt_dance", "씰룩씰룩 춤", 3.0, "back", "crude", 0],
+	["fart", "뿡 장난", 2.2, "back", "crude", 0],
 	["disco", "디스코 (노래)", 6.4, "front", "funny", 0],
 	["trot", "트로트 어깨춤 (노래)", 6.4, "front", "funny", 0],
-	["poop", "응가", 3.2, "front", "crude", 0],
+	["poop", "쪼그려 앉기", 3.2, "front", "crude", 0],
 	["chicken", "닭 흉내", 3.4, "front", "funny", 0],
 	["dead", "죽은 척", 3.5, "front", "funny", 0],
 	["robot", "로봇 춤", 3.5, "front", "funny", 0],
 	["gaedari", "개다리 춤", 3.6, "front", "funny", 0],
 	["dizzy", "빙글빙글", 3.2, "front", "cute", 0],
 	# 귀여운
-	["heart_hands", "손하트", 3.0, "front", "cute", 300],
-	["wave_hi", "손 흔들기", 2.6, "front", "cute", 200],
+	["heart_hands", "손하트", 3.0, "front", "cute", 0],
+	["wave_hi", "손 흔들기", 2.6, "front", "cute", 0],
 	["bunny_hop", "깡총깡총", 3.2, "front", "cute", 350],
 	["shy", "부끄부끄", 3.0, "front", "cute", 300],
-	["clap", "짝짝짝", 2.8, "front", "cute", 200],
-	["aegyo", "볼콕 애교", 3.0, "front", "cute", 400],
+	["clap", "짝짝짝", 2.8, "front", "cute", 0],
+	["aegyo", "볼콕 포즈", 3.0, "front", "cute", 400],
 	["twirl", "발레 빙그르", 3.4, "front", "cute", 450],
 	["kiss_blow", "손 키스", 2.6, "front", "cute", 350],
 	["cheer", "응원 폼폼", 3.4, "front", "cute", 500],
 	["sleepy_nap", "꾸벅꾸벅 졸기", 3.6, "front", "cute", 400],
 	# 저질
-	["nose_pick", "코딱지 파기", 3.4, "front", "crude", 300],
-	["butt_slap", "엉덩이 찰싹", 2.8, "back", "crude", 350],
-	["burp", "꺼억 트림", 2.4, "front", "crude", 250],
-	["armpit_fart", "겨드랑이 방귀", 3.0, "front", "crude", 350],
-	["butt_scoot", "엉덩이 썰매", 3.4, "back", "crude", 400],
-	["dog_pee", "강아지 쉬야", 3.2, "back", "crude", 450],
+	["nose_pick", "코 만지작", 3.4, "front", "crude", 300],
+	["butt_slap", "찰싹 장난", 2.8, "back", "crude", 350],
+	["burp", "꺼억", 2.4, "front", "crude", 250],
+	["armpit_fart", "팔 뿡 장난", 3.0, "front", "crude", 350],
+	["butt_scoot", "바닥 썰매", 3.4, "back", "crude", 400],
+	["dog_pee", "강아지 흉내", 3.2, "back", "crude", 450],
 	["tongue", "메롱", 2.6, "front", "crude", 200],
-	["sniff_pits", "겨드랑이 킁킁", 3.0, "front", "crude", 300],
-	["rocket_fart", "초강력 방귀", 3.2, "back", "crude", 600],
-	["butt_scratch", "엉덩이 긁기", 3.0, "back", "crude", 250],
+	["sniff_pits", "킁킁 냄새", 3.0, "front", "crude", 300],
+	["rocket_fart", "로켓 발사", 3.2, "back", "crude", 600],
+	["butt_scratch", "등 긁기", 3.0, "back", "crude", 250],
 	# 웃긴
 	["floss", "플로스 춤", 4.0, "front", "funny", 500],
 	["worm", "웜 춤", 3.6, "back", "funny", 550],
@@ -173,7 +173,7 @@ const EMOTES := [
 	["tantrum", "떼쓰기", 3.6, "front", "funny", 400],
 	["air_guitar", "에어 기타", 4.0, "front", "funny", 550],
 ]
-const EMOTE_CATS := {"cute": "귀여운", "crude": "저질", "funny": "웃긴"}
+const EMOTE_CATS := {"cute": "귀여운", "crude": "장난", "funny": "웃긴"}
 const EMOTE_DEFAULT_SLOTS := ["butt_dance", "fart", "disco", "trot", "poop", "chicken", "dead", "robot", "gaedari", "dizzy"]
 const EmoteFx := preload("res://scripts/emote_fx.gd")
 const IceFx := preload("res://scripts/ice_fx.gd")

@@ -439,7 +439,7 @@ func _move_dir(dir: Vector3, delta: float, speed: float) -> void:
 		_stop()
 		return
 	dir = dir.normalized()
-	var m := _speed_mult * _zone_slow_multiplier()
+	var m := _speed_mult * _zone_slow_multiplier() * crowd_mult()
 	if _slow_left > 0.0:
 		m *= 1.0 - _slow_factor
 	if _freeze_boost_left > 0.0:
@@ -769,10 +769,7 @@ func _turn_burst(at: Vector3) -> void:
 	root.add_child(pt)
 	pt.global_position = at + Vector3.UP * 0.6
 	pt.emitting = true
-	pt.finished.connect(pt.queue_free)
-	get_tree().create_timer(2.5).timeout.connect(func() -> void:
-		if is_instance_valid(pt):
-			pt.queue_free())
+	get_tree().create_timer(2.5).timeout.connect(pt.queue_free)
 	_roar_ring(at)
 	# 붉은 빛이 번쩍했다가 사라짐
 	var light := OmniLight3D.new()
@@ -831,6 +828,32 @@ func possessed_frozen() -> bool:
 	return state == State.DISABLED or state == State.KNOCKBACK or _stun_left > 0.0 or _float_left > 0.0 or poss_lock() > 0.05
 
 
+## 인원 보정 배율: 술래 1마리가 맡는 생존자 수가 많을수록 빨라짐 (balance.cfg [seeker] crowd_*)
+## 판에 들어온 생존자 수 기준이라 누가 잡혀도 줄지 않음. 1초마다만 다시 셈
+var _crowd := 1.0
+var _crowd_at := -10.0
+func crowd_mult() -> float:
+	var now := Time.get_ticks_msec() / 1000.0
+	if now - _crowd_at < 1.0:
+		return _crowd
+	_crowd_at = now
+	var game := get_tree().get_first_node_in_group("game")
+	if game == null:
+		return _crowd
+	var surv := 0
+	for s in game.get("survivors"):
+		if is_instance_valid(s) and s.turned_seeker == null:
+			surv += 1
+	var hunters := 0
+	for k in game.get("seekers"):
+		if is_instance_valid(k) and not k.dormant and not k.is_killed:
+			hunters += 1
+	var per := float(surv) / maxf(1.0, hunters)
+	var extra := clampf(per - GameConfig.num("seeker", "crowd_base", 4.0), 0.0, GameConfig.num("seeker", "crowd_max", 4.0))
+	_crowd = 1.0 + extra * GameConfig.num("seeker", "crowd_step", 0.04)
+	return _crowd
+
+
 ## 변신한 사람의 최고 속도 (변신한 마녀는 생존자처럼 걸어야 함). 기본은 제한 없음
 func possessed_max_speed() -> float:
 	return INF
@@ -838,7 +861,7 @@ func possessed_max_speed() -> float:
 
 ## 변신한 사람의 이동 속도 배율 (술래 종류 속도·결계·무중력 구슬 감속)
 func possessed_speed_mult() -> float:
-	var m := _speed_mult * _zone_slow_multiplier()
+	var m := _speed_mult * _zone_slow_multiplier() * crowd_mult()
 	if _slow_left > 0.0:
 		m *= 1.0 - _slow_factor
 	return m
