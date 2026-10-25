@@ -56,7 +56,12 @@ func _ready() -> void:
 		sp[str(s.global_position.snapped(Vector3.ONE * 0.1))] = true
 	print("MT ", role, " distinct spawns=", sp.size())
 	m.player.connect("notice", func(t: String) -> void: print("MT ", role, " NOTICE: ", t))
+	print("MT ", role, " rule=", m.daily_rule, " stamina_max=", GameConfig.num("stamina", "max", 0))
 	if mode != "turncoat":
+		if role == "host":
+			Net.blackout.rpc(3.0)
+		await get_tree().create_timer(1.5).timeout
+		print("MT ", role, " blackout_left=", snappedf(m._blackout_left, 0.1), " lights_off=", m._bo_lights.size())
 		await get_tree().create_timer(3.0).timeout
 		print("MT ", role, " DONE")
 		get_tree().quit()
