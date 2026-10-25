@@ -33,6 +33,8 @@ var _clean_v1 := false
 var emote_slots: Array = ["wave_hi", "clap", "disco", "trot", "heart_hands", "chicken", "dead", "robot", "gaedari", "dizzy"]
 ## 테스트용으로 고른 맵 ("" = 랜덤). 저장하지 않음
 var test_map := ""
+## 오늘의 규칙: "random" = 판마다 무작위 / "" = 없음 / 규칙 id = 그 규칙만 (daily_rule.gd)
+var daily_rule := "random"
 ## 능력 이름 → 해금 여부
 var unlocked := {
 	"noise": false,  # 소리 내기
@@ -93,6 +95,7 @@ func load_game() -> void:
 	owned_cos = cfg.get_value("cosmetics", "owned", owned_cos)
 	equipped = cfg.get_value("cosmetics", "equipped", equipped)
 	owned_emotes = cfg.get_value("emotes", "owned", owned_emotes)
+	daily_rule = str(cfg.get_value("rules", "daily", daily_rule))
 	var sl: Array = cfg.get_value("emotes", "slots", emote_slots)
 	if sl.size() == 10:
 		emote_slots = sl
@@ -128,6 +131,7 @@ func save_game() -> void:
 	cfg.set_value("cosmetics", "owned", owned_cos)
 	cfg.set_value("cosmetics", "equipped", equipped)
 	cfg.set_value("emotes", "owned", owned_emotes)
+	cfg.set_value("rules", "daily", daily_rule)
 	cfg.set_value("emotes", "slots", emote_slots)
 	cfg.set_value("emotes", "clean_v1", true)
 	cfg.save(SAVE_PATH)

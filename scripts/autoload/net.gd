@@ -316,6 +316,7 @@ func start_match() -> void:
 		"stage": SaveData.stage,
 		"slots": slots,
 		"mode": match_mode,
+		"rule": DailyRule.choose(),
 	}
 	begin_match.rpc(cfg)
 
@@ -457,6 +458,14 @@ func ability_effect(kind: String, pos: Vector3, dir: Vector3, slot: int, target_
 	var m := _main()
 	if m and multiplayer.is_server():
 		m.call("net_ability_effect", multiplayer.get_remote_sender_id(), kind, pos, dir, slot, target_index)
+
+
+## 방장 → 모두: 정전 시작 (seconds 초 동안 불이 꺼짐)
+@rpc("authority", "reliable", "call_local")
+func blackout(seconds: float) -> void:
+	var m := _main()
+	if m:
+		m.call("start_blackout", seconds)
 
 
 ## 술래로 변한 손님 → 방장: 술래 능력 쓰기 (n = 0:[R] / 1:[T], aim = 카메라 방향)

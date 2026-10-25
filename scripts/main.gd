@@ -100,12 +100,19 @@ func _ready() -> void:
 	if Net.in_match():
 		level_rng.seed = int(Net.match_config["seed"])
 		forced_map = str(Net.match_config["map"])
+		daily_rule = str(Net.match_config.get("rule", ""))
 	else:
 		level_rng.randomize()
 		if forced_map == "" and SaveData.test_map != "":
 			forced_map = SaveData.test_map
+		daily_rule = DailyRule.choose()
+	DailyRule.apply(daily_rule)  # 오늘의 규칙: 이 판 동안만 숫자를 바꿈 (맵·술래를 만들기 전에)
+	Seeker.dark_sight = 1.0
 	world_env.environment.fog_density = GameConfig.num("view", "fog_density", 0.06)
+	LightFX.power_mats.clear()
+	LightFX.recording = true  # 맵의 빛나는 재질을 모아 둠 (정전 때 끔)
 	_build_level()
+	LightFX.recording = false
 	AtmosphereScript.apply(self, map_id)  # 조명·안개·빛 번짐 (그래픽 품질에 따라)
 	await _bake_navigation()
 	_spawn_characters()
@@ -118,6 +125,154 @@ func _ready() -> void:
 		await _warmup_emotes()
 	ready_to_play = true
 	hud.show_message("[%s] 봉인석 %d개를 찾아 가동하세요! 발소리에 귀를 기울이세요" % [map_name, mission_total], 5.0)
+	_schedule_blackout(true)
+	if daily_rule != "":
+		var r := DailyRule.find(daily_rule)
+		get_tree().create_timer(5.2, false).timeout.connect(func() -> void:
+			if is_instance_valid(hud):
+				hud.show_message("오늘의 규칙 — %s\n%s" % [r["name"], r["desc"]], 6.0))
+
+
+func _exit_tree() -> void:
+	DailyRule.clear()  # 메뉴·다음 판에 규칙이 남지 않게
+	Seeker.dark_sight = 1.0
+	if _blackout_left > 0.0:
+		_set_power(true, true)
+
+
+# ---------------------------------------------------------------- 오늘의 규칙 · 정전
+
+## 이번 판의 오늘의 규칙 id ("" = 없음, daily_rule.gd)
+var daily_rule := ""
+## 정전 남은 시간 (0 = 불 켜져 있음) / 다음 정전까지 남은 시간 (방장만) / 남은 정전 횟수
+var _blackout_left := 0.0
+var _blackout_next := -1.0
+var _blackouts_left := 0
+## 정전으로 끈 불빛들, 원래 값 (달빛·주변광·빛나는 부품)
+var _bo_lights: Array = []
+var _bo_saved := {}
+const SFX_POWER := preload("res://audio/feel_thunk.wav")
+const LightFX := preload("res://scripts/light_fx.gd")
+
+
+func _schedule_blackout(first: bool) -> void:
+	if Net.is_client() or GameConfig.num("blackout", "enabled", 1.0) < 0.5:
+		return
+	if first:
+		_blackouts_left = int(GameConfig.num("blackout", "count", 1.0))
+		_blackout_next = randf_range(GameConfig.num("blackout", "first_min", 70.0), GameConfig.num("blackout", "first_max", 180.0))
+	else:
+		_blackout_next = randf_range(GameConfig.num("blackout", "gap_min", 70.0), GameConfig.num("blackout", "gap_max", 140.0))
+	if _blackouts_left <= 0:
+		_blackout_next = -1.0
+
+
+## (방장·혼자) 정전 시간 재기
+func _update_blackout_timer(delta: float) -> void:
+	if _blackout_next < 0.0 or _blackout_left > 0.0 or escape_phase:
+		return
+	_blackout_next -= delta
+	if _blackout_next > 0.0:
+		return
+	_blackouts_left -= 1
+	var secs := GameConfig.num("blackout", "duration", 22.0)
+	if Net.in_match():
+		Net.blackout.rpc(secs)
+	else:
+		start_blackout(secs)
+	_schedule_blackout(false)
+
+
+## (모든 컴퓨터) 정전 시작: 불이 지직거리다 꺼지고 seconds 초 뒤 다시 켜짐
+func start_blackout(seconds: float) -> void:
+	if _blackout_left > 0.0:
+		_blackout_left = maxf(_blackout_left, seconds)
+		return
+	_blackout_left = seconds
+	Seeker.dark_sight = GameConfig.num("blackout", "seeker_sight", 0.65)
+	_power_sfx(0.85)
+	# 지직… 지직… 툭
+	var tw := create_tween()
+	for k in [false, true, false, true, false]:
+		tw.tween_callback(_set_power.bind(k, false))
+		tw.tween_interval(randf_range(0.07, 0.16))
+	tw.tween_callback(_set_power.bind(false, false))
+	hud.show_message("정전! 불이 모두 꺼졌어요 (%d초)\n술래도 잘 못 봐요 — 숨거나, 몰래 봉인석을 돌려요" % roundi(seconds), 4.5)
+	if hud.has_method("flash_red"):
+		hud.call("flash_red")
+
+
+func _update_blackout(delta: float) -> void:
+	if _blackout_left <= 0.0:
+		return
+	_blackout_left -= delta
+	if _blackout_left > 0.0:
+		return
+	_blackout_left = 0.0
+	Seeker.dark_sight = 1.0
+	_power_sfx(1.25)
+	var tw := create_tween()
+	for k in [true, false, true]:
+		tw.tween_callback(_set_power.bind(k, false))
+		tw.tween_interval(randf_range(0.06, 0.14))
+	tw.tween_callback(_set_power.bind(true, true))
+	hud.show_message("전기가 돌아왔어요!", 2.5)
+
+
+func _power_sfx(pitch: float) -> void:
+	var a := AudioStreamPlayer.new()
+	a.stream = SFX_POWER
+	a.pitch_scale = pitch
+	a.volume_db = 2.0
+	add_child(a)
+	a.play()
+	a.finished.connect(a.queue_free)
+
+
+## 맵 불빛 켜기/끄기. 사람·술래·봉인석·탈출구 불빛은 그대로 (손전등·술래 눈·봉인석 빛은 정전에도 보임)
+## final = 마지막 켜기 (저장한 목록을 비움)
+func _set_power(on: bool, final := false) -> void:
+	if _bo_lights.is_empty() and not on:
+		for l in find_children("*", "Light3D", true, false):
+			if l is DirectionalLight3D or not l.visible or _bo_keep(l):
+				continue
+			_bo_lights.append(l)
+		var env := world_env.environment
+		_bo_saved["ambient"] = env.ambient_light_energy
+		for d in find_children("*", "DirectionalLight3D", true, false):
+			_bo_saved[d] = (d as Light3D).light_energy
+		var lit = _builder._deco.get("lit") if _builder and "_deco" in _builder else null
+		if lit is ShaderMaterial:
+			_bo_saved["lit"] = lit
+		for m in LightFX.power_mats:
+			if m is BaseMaterial3D:
+				_bo_saved[m] = (m as BaseMaterial3D).emission_energy_multiplier
+	for l in _bo_lights:
+		if is_instance_valid(l):
+			(l as Light3D).visible = on
+	var env2 := world_env.environment
+	if _bo_saved.has("ambient"):
+		env2.ambient_light_energy = float(_bo_saved["ambient"]) * (1.0 if on else 0.22)
+	for d in _bo_saved:
+		if d is DirectionalLight3D and is_instance_valid(d):
+			(d as Light3D).light_energy = float(_bo_saved[d]) * (1.0 if on else 0.3)
+	if _bo_saved.has("lit"):
+		(_bo_saved["lit"] as ShaderMaterial).set_shader_parameter("energy", 2.2 if on else 0.12)
+	for m in _bo_saved:
+		if m is BaseMaterial3D:
+			(m as BaseMaterial3D).emission_energy_multiplier = float(_bo_saved[m]) * (1.0 if on else 0.03)
+	if on and final:
+		_bo_lights.clear()
+		_bo_saved.clear()
+
+
+func _bo_keep(l: Node) -> bool:
+	var n := l.get_parent()
+	while n and n != self:
+		if n is Survivor or n is Seeker or n is Generator or n.has_meta("exit") or n.has_meta("keep_power"):
+			return true
+		n = n.get_parent()
+	return false
 
 
 ## 이모트 효과·소리를 검은 화면 뒤에서 한 번씩 미리 만들어 그려 둠 (처음 쓸 때 끊김 방지, 약 0.3초)
@@ -175,12 +330,15 @@ func _process(delta: float) -> void:
 
 	if not ready_to_play or _round_over:
 		return
+	_update_blackout(delta)
 	round_time += delta
 	if Net.is_client():
 		_net_extras_follow(delta)
 		return  # 판정·폭주·탈출은 방장 컴퓨터가 계산해서 알려 줌
 	if not raged and round_time >= GameConfig.num("seeker", "rage_time", 600.0):
-		_enrage_all("%d분이 지났어요... 술래들이 폭주합니다!" % roundi(GameConfig.num("seeker", "rage_time", 600.0) / 60.0))
+		var rt := GameConfig.num("seeker", "rage_time", 600.0)
+		_enrage_all("폭주의 밤! 술래가 처음부터 폭주합니다!" if rt < 30.0 else "%d분이 지났어요... 술래들이 폭주합니다!" % roundi(rt / 60.0))
+	_update_blackout_timer(delta)
 	_update_turncoat(delta)
 	if escape_phase:
 		_update_escape(delta)
@@ -546,6 +704,7 @@ func _make_exit(pos: Vector3) -> Node3D:
 	# 멀리서는 안 보임: 작은 철문 + 약한 초록 불빛. 가까이(약 8m) 가야 글씨가 보이고,
 	# 20m 안에서는 바람 새는 소리가 들려서 헤드셋으로 방향을 찾을 수 있음
 	var root := Node3D.new()
+	root.set_meta("exit", true)  # 정전에도 탈출구 불빛은 켜 둠
 	add_child(root)
 	root.global_position = pos
 	# 바깥(맵 가장자리) 쪽을 등지게

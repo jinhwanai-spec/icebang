@@ -13,6 +13,9 @@ const MAX_HUMS := 10
 const MAX_PARTICLES := 10
 
 static var hums := 0
+## 맵을 만드는 동안 생긴 빛나는 재질 (정전 때 같이 끔). main.gd 가 recording 을 켜고 끔
+static var recording := false
+static var power_mats: Array = []
 static var particles := 0
 static var _cookie: Texture2D
 static var _hum_ready := false
@@ -81,6 +84,8 @@ static func glow_mat(col: Color, energy := 2.0, albedo_k := 0.5) -> StandardMate
 	m.emission = col
 	m.emission_energy_multiplier = energy
 	m.roughness = 0.4
+	if recording:
+		power_mats.append(m)
 	return m
 
 

@@ -339,6 +339,24 @@ func _test_pickers() -> Control:
 			mp.select(i)
 	mp.item_selected.connect(func(i: int) -> void: SaveData.test_map = MAP_CHOICES[i][0])
 	row.add_child(mp)
+	# 오늘의 규칙 (판마다 무작위 / 없음 / 하나 골라서)
+	row.add_child(_gap_h(16))
+	row.add_child(_label("오늘의 규칙", 14, C_DIM))
+	var rl := OptionButton.new()
+	var ids: Array = ["random", ""]
+	rl.add_item("무작위", 0)
+	rl.add_item("없음", 1)
+	for r in DailyRule.RULES:
+		ids.append(r["id"])
+		rl.add_item(r["name"], ids.size() - 1)
+	rl.set_item_tooltip(0, "판마다 규칙 하나가 무작위로 붙어요")
+	for i in range(2, ids.size()):
+		rl.set_item_tooltip(i, DailyRule.find(ids[i])["desc"])
+	rl.select(maxi(0, ids.find(SaveData.daily_rule)))
+	rl.item_selected.connect(func(i: int) -> void:
+		SaveData.daily_rule = ids[i]
+		SaveData.save_game())
+	row.add_child(rl)
 	return row
 
 

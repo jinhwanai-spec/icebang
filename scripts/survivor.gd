@@ -358,12 +358,23 @@ func bandage_pull(target: Vector3, seconds: float) -> void:
 
 func can_freeze() -> bool:
 	return not is_frozen and not is_dead and not escaped and in_locker == null and chained_by == null \
-			and freeze_cooldown_left <= 0.0 and pulled_time_left <= 0.0
+			and freeze_cooldown_left <= 0.0 and pulled_time_left <= 0.0 and not freezes_used_up()
+
+
+## 오늘의 규칙 '얼음 아끼기': 한 판에 얼음 횟수 제한 (탈출 단계에서는 무제한)
+func freezes_used_up() -> bool:
+	var mx := int(GameConfig.num("freeze_rule", "max_freezes", 0))
+	if mx <= 0 or freeze_count < mx:
+		return false
+	var game := get_tree().get_first_node_in_group("game")
+	return not (game != null and bool(game.get("escape_phase")))
 
 
 ## 얼음! 움직일 수 없지만 무엇에도 당하지 않아요(무적). 스스로는 풀 수 없어요.
 func freeze() -> void:
 	if not can_freeze():
+		if freezes_used_up() and not is_frozen and has_signal("notice"):
+			emit_signal("notice", "얼음을 다 썼어요! (오늘의 규칙: 한 판에 %d번)" % int(GameConfig.num("freeze_rule", "max_freezes", 0)))
 		return
 	is_frozen = true
 	rooted_left = 0.0  # 거미줄에 묶여 있어도 얼음하면 풀림

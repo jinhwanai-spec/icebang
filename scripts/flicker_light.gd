@@ -49,6 +49,8 @@ func _set_level(k: float) -> void:
 
 func _process(delta: float) -> void:
 	_init_base()
+	if not visible:
+		return  # 정전 등으로 꺼진 동안은 깜빡이지 않음 (재질 밝기도 main.gd 가 맡음)
 	_time += delta
 	match mode:
 		"fire":

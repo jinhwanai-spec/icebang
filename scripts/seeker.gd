@@ -23,6 +23,9 @@ signal killed(sk: Seeker)
 
 enum State { PATROL, INVESTIGATE, SEARCH, CHASE, CAMP, KNOCKBACK, DISABLED }
 
+## 정전 중 시야 배율 (main.gd 가 바꿈)
+static var dark_sight := 1.0
+
 ## 술래 이름 (화면 표시용)
 const TYPE_NAMES := {"rat": "역병의 쥐", "ghost": "유령", "butcher": "도살자", "puppeteer": "인형사", "hound": "케르베로스",
 		"spider": "거미 여왕", "diet": "하마", "psycho": "사이코", "executioner": "처형인", "mannequin": "마네킹", "witch": "안개 마녀"}
@@ -111,6 +114,7 @@ func _ready() -> void:
 	collision_mask |= 16  # 넘어진 판자(prop.gd PALLET_LAYER)에 막힘
 	NoiseBus.noise_made.connect(_on_noise_made)
 	body.build(seeker_type)
+	body.scale *= GameConfig.num("seeker", "body_scale", 1.0)  # 오늘의 규칙 '꼬마 술래'
 	# 종류별 속도 (기본은 모두 1.0 = 같은 속도. 스테이지가 올라도 빨라지지 않음)
 	_speed_mult = GameConfig.num(seeker_type, "speed_multiplier", 1.0) * GameConfig.num("seeker", "move_speed", 1.1)
 	step_audio.max_distance = GameConfig.num("view", "seeker_step_hear_distance", 32.0)
@@ -540,6 +544,7 @@ func _can_see(s: Survivor, max_range := -1.0) -> bool:
 	var dist := to_target.length()
 
 	var sight := max_range if max_range > 0.0 else GameConfig.num("seeker", "far_sight_range", 12.0)
+	sight *= dark_sight  # 정전 중에는 술래도 잘 못 봄
 	if s.is_in_grass():
 		sight = min(sight, GameConfig.num("seeker", "grass_sight_range", 2.0))
 	if dist > sight:

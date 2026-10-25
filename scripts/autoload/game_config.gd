@@ -7,6 +7,8 @@ extends Node
 const CONFIG_PATH := "res://balance.cfg"
 
 var _cfg := ConfigFile.new()
+## 판 동안만 바꾼 값 ("섹션/이름" → 숫자). 오늘의 규칙(daily_rule.gd)이 씀. 판이 끝나면 비움
+var overrides := {}
 
 
 func _ready() -> void:
@@ -19,6 +21,15 @@ func _ready() -> void:
 
 ## 숫자 설정값 읽기. 파일에 없으면 default_value를 돌려줍니다.
 func num(section: String, key: String, default_value: float) -> float:
+	if not overrides.is_empty():
+		var k := section + "/" + key
+		if overrides.has(k):
+			return float(overrides[k])
+	return float(_cfg.get_value(section, key, default_value))
+
+
+## 바꾼 값 무시하고 파일 값 그대로
+func base_num(section: String, key: String, default_value: float) -> float:
 	return float(_cfg.get_value(section, key, default_value))
 
 

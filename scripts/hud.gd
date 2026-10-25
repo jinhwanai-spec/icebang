@@ -407,6 +407,10 @@ func _process(delta: float) -> void:
 		_top_label.text += "\n봉인석 파괴됨! 술래를 모두 쓰러뜨려야 해요 (남은 술래 %d)" % main.seekers.filter(func(x): return not x.is_killed).size()
 	if main.paint_time_left > 0.0:
 		_top_label.text += "\n맵 물들이기 %d초" % ceili(main.paint_time_left)
+	if main._blackout_left > 0.0:
+		_top_label.text += "\n정전! %d초" % ceili(main._blackout_left)
+	if main.daily_rule != "":
+		_top_label.text += "\n오늘의 규칙: %s" % DailyRule.find(main.daily_rule).get("name", "")
 	if p.bleed_time_left > 0.0:
 		_top_label.text += "\n피를 흘리는 중! 술래가 따라와요 (%d초)" % ceili(p.bleed_time_left)
 	if p.speed_multiplier() < 0.99:
