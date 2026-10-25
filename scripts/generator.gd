@@ -64,6 +64,7 @@ var _motes: CPUParticles3D
 var _beam: MeshInstance3D
 
 func _process(delta: float) -> void:
+	_occ_left = maxf(0.0, _occ_left - delta)
 	var cam := get_viewport().get_camera_3d()
 	if cam == null:
 		return
@@ -412,6 +413,40 @@ func _make_pillar() -> void:
 
 
 ## 봉인석을 가동하려면 미니게임을 stages 번 클리어해야 함 (플레이어는 minigame.gd, 봇은 repair)
+# ---------------------------------------------------------------- 한 봉인석은 한 명만 가동
+
+## 지금 가동 중인 생존자. 1.5초 동안 다시 알리지 않으면 비었다고 봄
+var occupant: Node = null
+var _occ_left := 0.0
+var _occ_sent := -10.0
+
+
+func occupy(who: Node, from_net := false) -> void:
+	var changed := occupant != who
+	occupant = who
+	_occ_left = 1.5
+	# 멀리 있는 사람들에게도 알림 (내가 조종하는 캐릭터·방장 봇만, 0.7초마다)
+	if from_net or not Net.in_match() or not (who is Survivor):
+		return
+	var s := who as Survivor
+	if s.net_puppet:
+		return
+	var now := Time.get_ticks_msec() / 1000.0
+	if changed or now - _occ_sent > 0.7:
+		_occ_sent = now
+		var game := get_tree().get_first_node_in_group("game")
+		if game:
+			Net.gen_occupy.rpc((game.get("generators") as Array).find(self), s.net_slot)
+
+
+## who 말고 다른 사람이 가동 중인지
+func busy_for(who: Node) -> bool:
+	if _occ_left <= 0.0 or occupant == null or occupant == who or not is_instance_valid(occupant):
+		return false
+	var s := occupant as Survivor
+	return s == null or not (s.is_dead or s.is_frozen or s.escaped)
+
+
 func stage_count() -> int:
 	return int(GameConfig.num("minigame", "stages", 3))
 
@@ -424,6 +459,16 @@ func stages_done() -> int:
 ## 플레이어가 미니게임을 클리어했을 때
 func clear_stage(who: Node) -> void:
 	if completed:
+		return
+	var game := get_tree().get_first_node_in_group("game")
+	if game and who is Survivor and game.has_method("is_traitor_slot") and game.is_traitor_slot((who as Survivor).net_slot):
+		# 배신자: 돌리는 척하지만 오히려 한 단계 되돌림 (소리·모습은 똑같아서 옆에서 보면 모름)
+		progress = maxf(0.0, float(stages_done() - 1) / stage_count())
+		NoiseBus.make_noise(global_position, GameConfig.num("mission", "repair_noise", 11.0), who)
+		_play(SFX_STAGE_OK)
+		_update_visual()
+		if game.has_method("traitor_sabotaged"):
+			game.traitor_sabotaged()
 		return
 	# 정비공 패시브: 미니게임 한 단계를 깨면 두 단계가 진행
 	var step := 2 if who and who.get("character_id") == "mechanic" else 1

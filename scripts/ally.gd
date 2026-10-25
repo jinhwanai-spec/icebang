@@ -102,7 +102,12 @@ func _physics_process(delta: float) -> void:
 		pass  # 얼음 동료 옆에 붙어서 해동될 때까지 기다림
 	elif mode == "repair" and is_instance_valid(_goal_generator) and not _goal_generator.completed and can_interact() \
 			and global_position.distance_to(_goal_generator.global_position) <= REPAIR_REACH:
-		_goal_generator.repair(delta, self)  # 도착했으면 봉인석 가동
+		if _goal_generator.busy_for(self):
+			_avoid[_goal_generator] = Time.get_ticks_msec() / 1000.0 + 6.0  # 누가 하고 있으면 다른 데로
+			_goal_generator = null
+		else:
+			_goal_generator.occupy(self)
+			_goal_generator.repair(delta, self)  # 도착했으면 봉인석 가동
 	elif not agent.is_navigation_finished() or (mode == "repair" and is_instance_valid(_goal_generator) and not _goal_generator.completed):
 		# 길 끝까지 왔는데 봉인석에 손이 안 닿으면 봉인석 쪽으로 곧장 붙음 (멍하니 서 있지 않게)
 		var next := Survivor.next_flat_point(agent, global_position) if not agent.is_navigation_finished() else _goal_generator.global_position
@@ -293,6 +298,8 @@ func _pick_generator() -> Generator:
 			if other != self and other.get("_goal_generator") == g and not other.is_dead and not other.is_frozen:
 				claims += 1
 		var score := global_position.distance_to(g.global_position) + claims * 35.0
+		if g.busy_for(self):
+			score += 60.0  # 다른 사람이 가동 중인 봉인석은 피함 (한 명만)
 		if g == _goal_generator:
 			score -= 8.0  # 하던 일은 웬만하면 계속
 		if score < best_score:

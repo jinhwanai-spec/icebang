@@ -519,13 +519,44 @@ func _footsteps(delta: float) -> void:
 
 ## 어디선가 소리가 났을 때 (NoiseBus가 알려 줌)
 func _on_noise_made(pos: Vector3, radius: float, source: Node) -> void:
+	if possessed_by:
+		_poss_hear(pos, radius, source)
+		return
 	if state == State.DISABLED or state == State.CHASE or state == State.KNOCKBACK:
 		return  # 추격 중에는 다른 소리에 한눈팔지 않음
 	if source is Survivor and (source as Survivor).is_hidden_from_seeker():
 		return  # 카멜레온 능력 중이면 소리도 못 들음
-	if global_position.distance_to(pos) > radius * GameConfig.num("seeker", "hearing_multiplier", 1.0):
+	if global_position.distance_to(pos) > radius * hearing_mult():
 		return  # 너무 멀어서 안 들림
 	_investigate(pos)
+
+
+## 듣는 거리 배율 (정전 중에는 눈 대신 귀로 쫓아서 더 멀리 들음)
+func hearing_mult() -> float:
+	var m := GameConfig.num("seeker", "hearing_multiplier", 1.0)
+	if dark_sight < 0.99:
+		m *= GameConfig.num("blackout", "seeker_hearing", 1.5)
+	return m
+
+
+## 사람이 조종하는 술래: AI 처럼 귀로 들을 수 없으니, 들릴 만한 소리를 화면에 붉은 파동으로 보여 줌
+## (오늘의 규칙 '귀 밝은 술래'·정전 중에만. 무리 소음은 main.gd 가 항상 보냄)
+var _ping_at := {}
+func _poss_hear(pos: Vector3, radius: float, source: Node) -> void:
+	if source == possessed_by or state == State.DISABLED:
+		return
+	if GameConfig.num("seeker", "hear_ping", 0.0) < 0.5 and dark_sight > 0.99:
+		return
+	if source is Survivor and (source as Survivor).is_hidden_from_seeker():
+		return
+	if global_position.distance_to(pos) > radius * hearing_mult():
+		return
+	var key: int = source.get_instance_id() if source else int(pos.x) * 1000 + int(pos.z)
+	var now := Time.get_ticks_msec() / 1000.0
+	if now - float(_ping_at.get(key, -10.0)) < 0.9:
+		return
+	_ping_at[key] = now
+	_poss_call("poss_noise_ping", [pos, false])
 
 
 ## 생존자를 노릴 수 있는 상태인지 (얼음 무적, 카멜레온 감지 불가)
@@ -1304,6 +1335,8 @@ func _good_point(c: Vector3) -> bool:
 
 ## 사냥 지점: hunt_chance 확률로 랜덤 생존자 주변 hunt_radius 안의 한 곳. 아니면 Vector3.INF
 func _hunt_point() -> Vector3:
+	if dark_sight < 0.99:
+		return Vector3.INF  # 정전 중에는 감으로 몰아가지 않음 (소리로만 찾음)
 	# 한동안 아무도 못 만났으면 생존자 쪽으로 더 가까이 압박해 감
 	var pressing := _since_contact > GameConfig.num("seeker", "pressure_time", 15.0)
 	if not pressing and randf() >= GameConfig.num("seeker", "hunt_chance", 0.35):

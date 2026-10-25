@@ -53,6 +53,7 @@ var _mp_wait: Label
 var _mp_ready: Button
 var _mp_mode: Button
 var _mp_fill: Button
+var _mp_traitor: Button
 
 
 func _ready() -> void:
@@ -456,6 +457,10 @@ func _build_multi_page() -> Control:
 	_mp_mode.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_mp_mode.tooltip_text = "술래 변신: AI 술래 없이 시작하고, 판 중간에 무작위 플레이어 한 명이 갑자기 술래로 변해요.\n술래가 된 사람은 그 술래의 능력을 [R] [T] 키로 써요"
 	opt.add_child(_mp_mode)
+	_mp_traitor = _button("", func() -> void: Net.toggle_traitor())
+	_mp_traitor.custom_minimum_size.x = 190
+	_mp_traitor.tooltip_text = "술래 변신 모드에서 사람 중 1명이 몰래 술래 편이 돼요 (사람 4명 이상일 때)\n봉인석을 돌리는 척 되돌리고, 땡은 느리게, 술래가 나타나면 [B] 로 동료 위치를 제보해요"
+	opt.add_child(_mp_traitor)
 	_mp_fill = _button("", func() -> void: Net.cycle_fill())
 	_mp_fill.custom_minimum_size.x = 250
 	_mp_fill.tooltip_text = "판 인원 (사람 + 봇). 6명 이상이면 AI 술래가 2마리 나와요 (기본 방식)\n술래 1마리가 맡는 생존자가 4명보다 많으면 1명마다 술래 이동속도 +4% (최대 +16%)"
@@ -547,6 +552,9 @@ func _refresh_multi() -> void:
 	_mp_mode.visible = in_lobby
 	_mp_mode.disabled = not Net.is_host()
 	_mp_mode.text = "방식: %s" % Net.MODE_NAMES.get(Net.match_mode, "")
+	_mp_traitor.visible = in_lobby and Net.match_mode == "turncoat"
+	_mp_traitor.disabled = not Net.is_host()
+	_mp_traitor.text = "배신자: %s" % ("켬" if Net.traitor_on else "끔")
 	_mp_fill.visible = in_lobby
 	_mp_fill.disabled = not Net.is_host()
 	_mp_fill.text = "인원: %d명 (빈 자리 봇)" % maxi(Net.bot_fill, Net.players.size())

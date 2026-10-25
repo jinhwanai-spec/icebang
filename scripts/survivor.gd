@@ -682,7 +682,16 @@ func _update_thaw(delta: float) -> void:
 			unfreeze(h)  # 사나이: 한 번에!
 			return
 
-	thaw_progress += delta
+	# 배신자 혼자 녹이면 아주 느림 (가짜 땡). 다른 동료가 같이 있으면 정상
+	var rate := 1.0
+	var game := get_tree().get_first_node_in_group("game")
+	if game and game.has_method("is_traitor_slot"):
+		rate = GameConfig.num("traitor", "thaw_rate", 0.2)
+		for h in helpers:
+			if not game.is_traitor_slot(h.net_slot):
+				rate = 1.0
+				break
+	thaw_progress += delta * rate
 	if thaw_progress >= GameConfig.num("player", "thaw_time", 10.0):
 		unfreeze(credit)
 

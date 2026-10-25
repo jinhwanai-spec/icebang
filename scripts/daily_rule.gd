@@ -11,14 +11,16 @@ const RULES := [
 		"mul": {"player/thaw_time": 0.5}},
 	{"id": "rage_night", "name": "폭주의 밤", "desc": "술래가 처음부터 폭주해요. 대신 봉인석이 1개 적어요",
 		"set": {"seeker/rage_time": 4.0}, "add": {"mission/count": -1}},
-	{"id": "fog_night", "name": "짙은 안개", "desc": "안개가 두 배로 짙어요. 소리에 귀 기울여요",
-		"mul": {"view/fog_density": 2.0}},
+	{"id": "fog_night", "name": "짙은 안개", "desc": "안개가 두 배로 짙어요. 술래 눈도 흐려져서 소리로 찾아와요",
+		"mul": {"view/fog_density": 2.0, "seeker/far_sight_range": 0.7}},
 	{"id": "blackout_night", "name": "정전이 잦은 밤", "desc": "정전이 세 번 일어나요",
 		"set": {"blackout/count": 3, "blackout/first_min": 35, "blackout/first_max": 70, "blackout/gap_min": 45, "blackout/gap_max": 80}},
 	{"id": "tiny_seeker", "name": "꼬마 술래", "desc": "술래가 작아졌지만 15% 빨라요",
 		"mul": {"seeker/move_speed": 1.15}, "set": {"seeker/body_scale": 0.7}},
-	{"id": "blind_seeker", "name": "눈먼 술래", "desc": "술래 시야가 절반, 대신 소리를 두 배 멀리서 들어요",
-		"mul": {"seeker/far_sight_range": 0.5, "seeker/near_sight_range": 0.6, "seeker/hearing_multiplier": 2.0}},
+	{"id": "keen_ears", "name": "귀 밝은 술래", "desc": "술래가 코앞(3m)만 보지만 발소리를 두 배 멀리서 들어요. 살금살금(Ctrl)!",
+		"mul": {"seeker/far_sight_range": 0.3, "seeker/near_sight_range": 0.5, "seeker/hearing_multiplier": 2.0}, "set": {"seeker/hear_ping": 1}},
+	{"id": "loud_steps", "name": "삐걱이는 밤", "desc": "걷는 발소리가 두 배 멀리 퍼져요 (살금살금은 그대로)",
+		"mul": {"player/walk_noise": 2.0}},
 	{"id": "freeze_limit", "name": "얼음 아끼기", "desc": "얼음은 한 사람당 3번까지만 쓸 수 있어요",
 		"set": {"freeze_rule/max_freezes": 3}},
 	{"id": "gold_night", "name": "황금의 밤", "desc": "판이 끝나면 코인을 두 배로 받아요",
@@ -28,7 +30,7 @@ const RULES := [
 ## balance.cfg 에 없을 때 쓸 원래 값
 const BASE := {"stamina/max": 100.0, "player/thaw_time": 10.0, "seeker/rage_time": 600.0, "mission/count": 3.0,
 	"view/fog_density": 0.06, "seeker/move_speed": 1.1, "seeker/far_sight_range": 12.0, "seeker/near_sight_range": 4.0,
-	"seeker/hearing_multiplier": 1.3, "reward/clear": 50.0, "reward/per_mission": 10.0, "reward/per_rescue": 5.0}
+	"seeker/hearing_multiplier": 1.3, "player/walk_noise": 9.0, "reward/clear": 50.0, "reward/per_mission": 10.0, "reward/per_rescue": 5.0}
 
 
 static func find(id: String) -> Dictionary:

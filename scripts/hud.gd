@@ -494,6 +494,8 @@ func _process(delta: float) -> void:
 		_status_label.text = p.nearby_rat.get_meta("prompt", "[E] 쥐 잡기 (잡으면 술래가 위치를 알게 돼요)")
 	elif p.is_repairing:
 		_status_label.text = "미니게임 중... 술래를 조심하세요! (Esc: 그만두기)"
+	elif p.nearby_generator and p.nearby_generator.busy_for(p):
+		_status_label.text = "다른 동료가 가동 중인 봉인석이에요 — 다른 봉인석으로 흩어져요"
 	elif p.nearby_generator:
 		_status_label.text = "[E] 봉인석 미니게임 (%d / %d 단계)" % [p.nearby_generator.stages_done(), p.nearby_generator.stage_count()]
 	elif p.is_in_grass():
@@ -576,6 +578,8 @@ func _process(delta: float) -> void:
 		_ability_label.text = _seeker_skill_text(p.turned_seeker, SaveData.show_help or main.round_time < 30.0 or _turned_t < 12.0)
 		_turned_t += get_process_delta_time()
 	_shared_label.visible = not turned
+	if bool(main.get("is_traitor")) and not turned and not p.is_dead:
+		_ability_label.text += "\n[B] 배신자 제보 — 술래(사람)에게 가까운 동료 위치를 알려요"
 	# 술래 능력 칸이 높아지면 가운데 아래 안내를 그 위로 올림 (겹치지 않게)
 	var shift := maxf(0.0, _ability_label.size.y - 70.0) if turned else 0.0
 	var ob := lerpf(_status_label.offset_bottom, _status_base_bottom - shift, 0.25)

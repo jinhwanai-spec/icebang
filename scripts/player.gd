@@ -174,6 +174,14 @@ func _unhandled_input(event: InputEvent) -> void:
 		spring_arm.rotation.x = clamp(spring_arm.rotation.x - motion.relative.y * sens,
 				deg_to_rad(-55.0), deg_to_rad(40.0))
 
+	# 배신자: [B] 위치 제보 (술래 변신 모드)
+	if event is InputEventKey and event.pressed and not event.echo and (event as InputEventKey).physical_keycode == KEY_B \
+			and _game() and bool(_game().get("is_traitor")) and not is_dead and turned_seeker == null:
+		if Net.is_client():
+			Net.traitor_report.rpc_id(1, net_slot)
+		else:
+			_game().call("net_traitor_report", net_slot)
+		return
 	if turned_seeker:
 		# 술래로 변함: 움직이기·시점 + 그 술래의 능력 [R] [T] (닿으면 잡음)
 		if event.is_action_pressed("ability_1"):
@@ -255,6 +263,8 @@ func _physics_process(delta: float) -> void:
 
 	# 얼음·끌려감·탈락 등으로 상호작용을 못 하게 되면 미니게임 창을 닫음
 	if minigame and is_instance_valid(minigame):
+		if _mg_gen and is_instance_valid(_mg_gen):
+			_mg_gen.occupy(self)  # 가동 중: 다른 동료는 이 봉인석을 못 씀 (한 명만)
 		if _mg_gen and is_instance_valid(_mg_gen) and _mg_gen.completed:
 			minigame.close(true)  # 봉인석이 완료되면 창을 바로 닫음
 			notice.emit("봉인석 가동 완료!")
@@ -605,8 +615,55 @@ func poss_sense(radius: float, seconds: float) -> void:
 	notice.emit("사냥 본능: 생존자 %d명이 느껴져요" % n if n > 0 else "사냥 본능: 근처에 생존자가 없어요")
 
 
+## (방장이 보냄) 술래로 변한 사람에게 들린 소리: 그 자리에 붉은 파동 (벽 너머로도 보임). big = 무리 소음
+var _pings := 0
+func poss_noise_ping(pos: Vector3, big: bool) -> void:
+	if _pings > 12:
+		return
+	_pings += 1
+	var root := Node3D.new()
+	get_tree().current_scene.add_child(root)
+	root.global_position = pos + Vector3.UP * 0.2
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.no_depth_test = true
+	mat.albedo_color = Color(1.0, 0.18, 0.12, 0.85) if big else Color(1.0, 0.45, 0.3, 0.7)
+	mat.render_priority = 2
+	for k in (3 if big else 1):
+		var ring := MeshInstance3D.new()
+		var t := TorusMesh.new()
+		t.inner_radius = 0.92
+		t.outer_radius = 1.0
+		t.rings = 24
+		ring.mesh = t
+		ring.material_override = mat
+		ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		root.add_child(ring)
+		ring.scale = Vector3.ONE * 0.2
+		var tw := ring.create_tween()
+		tw.tween_interval(k * 0.18)
+		tw.tween_property(ring, "scale", Vector3(1, 1, 1) * (4.5 if big else 2.2), 0.9).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
+	if big:
+		var lb := Label3D.new()
+		lb.text = "우르르"
+		lb.font_size = 64
+		lb.outline_size = 10
+		lb.modulate = Color(1.0, 0.35, 0.25)
+		lb.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		lb.no_depth_test = true
+		lb.fixed_size = true
+		lb.pixel_size = 0.0012
+		lb.position = Vector3.UP * 1.8
+		root.add_child(lb)
+	var tw2 := root.create_tween()
+	tw2.tween_property(mat, "albedo_color:a", 0.0, 1.3).set_delay(0.4)
+	tw2.tween_callback(func() -> void: _pings -= 1)
+	tw2.tween_callback(root.queue_free)
+
+
 ## (방장이 시킴) 그 자리에 붉은 표시 (새끼 거미가 묶은 곳 등)
-func poss_sense_at(pos: Vector3, seconds: float) -> void:
+func poss_sense_at(pos: Vector3, seconds: float, text := "새끼 거미가 생존자를 묶었어요!") -> void:
 	var mk := Label3D.new()
 	mk.text = "◆"
 	mk.font_size = 110
@@ -622,7 +679,7 @@ func poss_sense_at(pos: Vector3, seconds: float) -> void:
 	tw.tween_interval(maxf(0.0, seconds - 0.6))
 	tw.tween_property(mk, "modulate:a", 0.0, 0.6)
 	tw.tween_callback(mk.queue_free)
-	notice.emit("새끼 거미가 생존자를 묶었어요!")
+	notice.emit(text)
 
 
 ## (방장이 보냄) 화면 가운데 알림
@@ -819,6 +876,9 @@ func _try_open_minigame() -> void:
 		return
 	var g := _nearest_generator(REPAIR_REACH)
 	if g == null:
+		return
+	if g.busy_for(self):
+		notice.emit("다른 동료가 이 봉인석을 가동 중이에요! 다른 봉인석으로 흩어져요")
 		return
 	if toolkit_ready:
 		toolkit_ready = false

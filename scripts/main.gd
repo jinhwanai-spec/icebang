@@ -126,6 +126,8 @@ func _ready() -> void:
 	ready_to_play = true
 	hud.show_message("[%s] 봉인석 %d개를 찾아 가동하세요! 발소리에 귀를 기울이세요" % [map_name, mission_total], 5.0)
 	_schedule_blackout(true)
+	if Net.in_match() and Net.i_am_traitor and not is_traitor:
+		become_traitor()
 	if daily_rule != "":
 		var r := DailyRule.find(daily_rule)
 		get_tree().create_timer(5.2, false).timeout.connect(func() -> void:
@@ -138,6 +140,154 @@ func _exit_tree() -> void:
 	Seeker.dark_sight = 1.0
 	if _blackout_left > 0.0:
 		_set_power(true, true)
+
+
+# ---------------------------------------------------------------- 무리 소음 (다 같이 붙어 다니지 못하게)
+
+var _cluster_t := 0.0
+var _cluster_cd := {}
+
+
+## (방장·혼자) 1초마다: 움직일 수 있는 생존자가 3명 이상 6m 안에 몰려 있으면 큰 소리 → 술래가 옴
+func _update_cluster(delta: float) -> void:
+	_cluster_t -= delta
+	if _cluster_t > 0.0:
+		return
+	_cluster_t = 1.0
+	if GameConfig.num("cluster", "enabled", 1.0) < 0.5 or escape_phase or round_time < GameConfig.num("cluster", "grace", 25.0):
+		return  # 시작하자마자는 다 같이 서 있으니 봐줌
+	var r := GameConfig.num("cluster", "radius", 6.0)
+	var need := int(GameConfig.num("cluster", "size", 3.0))
+	var now := Time.get_ticks_msec() / 1000.0
+	var mobile: Array = survivors.filter(func(s: Survivor) -> bool:
+		return is_instance_valid(s) and not s.is_dead and not s.escaped and not s.is_frozen and s.turned_seeker == null and s.in_locker == null)
+	for s in mobile:
+		if float(_cluster_cd.get(s, 0.0)) > now:
+			continue
+		var group: Array = mobile.filter(func(o: Survivor) -> bool: return o.global_position.distance_to(s.global_position) <= r)
+		if group.size() < need:
+			continue
+		var c := Vector3.ZERO
+		for g in group:
+			c += (g as Survivor).global_position
+		c /= group.size()
+		NoiseBus.make_noise(c, GameConfig.num("cluster", "noise", 28.0), null)
+		for g in group:
+			_cluster_cd[g] = now + GameConfig.num("cluster", "interval", 7.0)
+			_tell(g, "너무 몰려 있어요! 우르르 발소리가 술래에게 들려요 — 흩어져요")
+		for sk in seekers:
+			if is_instance_valid(sk) and sk.possessed_by:
+				sk._poss_call("poss_noise_ping", [c, true])
+
+
+## 생존자 한 명 화면에 알림 (내 캐릭터면 바로, 다른 사람이면 그 사람 컴퓨터로)
+func _tell(s: Survivor, text: String) -> void:
+	if s == player:
+		player.emit_signal("notice", text)
+	elif Net.is_host() and s.net_puppet and s.net_owner != 0:
+		Net.apply_to_me.rpc_id(s.net_owner, "net_notice", [text])
+
+
+## 손님·방장이 보낸 봉인석 가동 알림
+func net_gen_occupy(gen_index: int, slot: int) -> void:
+	if gen_index < 0 or gen_index >= generators.size() or slot < 0 or slot >= survivors.size():
+		return
+	var g := generators[gen_index]
+	if is_instance_valid(g):
+		g.occupy(survivors[slot], true)
+
+
+# ---------------------------------------------------------------- 배신자 (술래 변신 모드 전용)
+## 판 시작 때 사람 중 1명을 몰래 배신자로. 사람이 술래로 변하면 [B] 로 동료 위치를 술래에게 제보(3번),
+## 봉인석을 돌리면 오히려 되돌리고, 땡은 아주 느리게. 끝나면 결과 화면에서 공개
+
+## (방장) 배신자 자리 (-1 = 없음)
+var traitor_slot := -1
+## (내 컴퓨터) 내가 배신자인지
+var is_traitor := false
+var _traitor_reports := 3
+var _traitor_sabotage := 0
+
+
+func _pick_traitor() -> void:
+	if not bool(Net.match_config.get("traitor", false)):
+		return
+	var slots: Array = Net.match_config["slots"]
+	var humans: Array = []
+	for i in slots.size():
+		if int(slots[i]["peer"]) != 0:
+			humans.append(i)
+	if humans.size() < int(GameConfig.num("traitor", "min_players", 4.0)):
+		return
+	traitor_slot = humans[_true_random(0, humans.size() - 1)]
+	_traitor_reports = int(GameConfig.num("traitor", "reports", 3.0))
+	var peer := int(slots[traitor_slot]["peer"])
+	if peer == multiplayer.get_unique_id():
+		become_traitor()
+	else:
+		Net.you_are_traitor.rpc_id(peer)
+
+
+func is_traitor_slot(slot: int) -> bool:
+	return traitor_slot >= 0 and slot == traitor_slot
+
+
+## (배신자 컴퓨터) 몰래 알림
+func become_traitor() -> void:
+	if is_traitor:
+		return
+	is_traitor = true
+	get_tree().create_timer(11.5, false).timeout.connect(func() -> void:
+		if is_instance_valid(hud):
+			hud.show_message("당신은 배신자예요... (아무에게도 들키지 마세요)\n봉인석은 돌리는 척 되돌리고, 술래가 나타나면 [B] 로 동료 위치를 제보해요", 7.0))
+
+
+func traitor_sabotaged() -> void:
+	_traitor_sabotage += 1
+
+
+## (방장) 배신자의 [B] 제보: 배신자와 가장 가까운 동료 위치를 술래(사람)에게 4초 동안 표시
+func net_traitor_report(slot: int, sender := 0) -> void:
+	if not is_traitor_slot(slot) or slot >= survivors.size():
+		return
+	var me := survivors[slot]
+	if sender != 0 and me.net_owner != sender:
+		return
+	var reply := func(text: String) -> void:
+		if me == player:
+			player.emit_signal("notice", text)
+		elif me.net_owner != 0:
+			Net.apply_to_me.rpc_id(me.net_owner, "net_notice", [text])
+	if _traitor_reports <= 0:
+		reply.call("제보를 다 썼어요")
+		return
+	var sk: Seeker = null
+	for k in seekers:
+		if is_instance_valid(k) and k.possessed_by:
+			sk = k
+	if sk == null:
+		reply.call("아직 술래가 없어요 — 누군가 술래로 변하면 제보할 수 있어요")
+		return
+	var best: Survivor = null
+	for s in survivors:
+		if s == me or s.is_dead or s.escaped or s.turned_seeker != null:
+			continue
+		if best == null or s.global_position.distance_to(me.global_position) < best.global_position.distance_to(me.global_position):
+			best = s
+	if best == null:
+		reply.call("제보할 동료가 없어요")
+		return
+	_traitor_reports -= 1
+	sk._poss_call("poss_sense_at", [best.global_position, 4.0, "배신자의 제보! %s 이(가) 여기 있어요" % best.display_name])
+	reply.call("제보 완료: %s 위치를 술래에게 알렸어요 (남은 %d번)" % [best.display_name, _traitor_reports])
+
+
+## 결과 화면에 배신자 공개
+func _traitor_result(win: bool) -> String:
+	if traitor_slot < 0 or traitor_slot >= survivors.size():
+		return ""
+	var nm: String = str((Net.match_config["slots"] as Array)[traitor_slot]["name"])
+	return "배신자는 %s 였어요! — %s  (되돌린 봉인석 단계 %d, 남은 제보 %d)" % [nm, "생존자 승리" if win else "배신자 승리", _traitor_sabotage, _traitor_reports]
 
 
 # ---------------------------------------------------------------- 오늘의 규칙 · 정전
@@ -197,7 +347,7 @@ func start_blackout(seconds: float) -> void:
 		tw.tween_callback(_set_power.bind(k, false))
 		tw.tween_interval(randf_range(0.07, 0.16))
 	tw.tween_callback(_set_power.bind(false, false))
-	hud.show_message("정전! 불이 모두 꺼졌어요 (%d초)\n술래도 잘 못 봐요 — 숨거나, 몰래 봉인석을 돌려요" % roundi(seconds), 4.5)
+	hud.show_message("정전! 불이 모두 꺼졌어요 (%d초)\n술래는 이제 소리로만 쫓아와요 — 살금살금(Ctrl) 움직여요" % roundi(seconds), 4.5)
 	if hud.has_method("flash_red"):
 		hud.call("flash_red")
 
@@ -339,6 +489,7 @@ func _process(delta: float) -> void:
 		var rt := GameConfig.num("seeker", "rage_time", 600.0)
 		_enrage_all("폭주의 밤! 술래가 처음부터 폭주합니다!" if rt < 30.0 else "%d분이 지났어요... 술래들이 폭주합니다!" % roundi(rt / 60.0))
 	_update_blackout_timer(delta)
+	_update_cluster(delta)
 	_update_turncoat(delta)
 	if escape_phase:
 		_update_escape(delta)
@@ -1012,8 +1163,11 @@ func _end_round(win: bool, reason: String) -> void:
 		details += "\n스테이지 %d (%s)에서 졌어요. 스테이지 1부터 다시 시작해요. (최고 기록: 스테이지 %d)" % [lost_stage, names[si], SaveData.best_stage]
 
 	var rows := _stats_rows()
+	var tline := _traitor_result(win)
+	if tline != "":
+		details += "\n" + tline
 	if Net.is_host():
-		Net.round_ended.rpc(win, reason, "플레이 시간 %d:%02d" % [t / 60, t % 60], rows)
+		Net.round_ended.rpc(win, reason, "플레이 시간 %d:%02d" % [t / 60, t % 60] + ("\n" + tline if tline != "" else ""), rows)
 	get_tree().paused = true
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	hud.show_result(win, reason, details, rows, total)
@@ -1078,6 +1232,7 @@ func _net_spawn_characters() -> void:
 			sk.make_dormant()
 		if host:
 			_turn_left = 25.0 + _true_random(0, 45000) / 1000.0
+			_pick_traitor()
 
 
 ## 시작 자리가 모자라면(8인 멀티) 원래 자리 사이사이에 자리를 더 만듦: 짝끼리의 가운데 → 그래도 모자라면 살짝 옆
@@ -1120,7 +1275,7 @@ func _update_turncoat(delta: float) -> void:
 	var cands: Array = []
 	for i in survivors.size():
 		var s := survivors[i]
-		if int(slots[i]["peer"]) != 0 and not s.is_dead and not s.escaped:
+		if int(slots[i]["peer"]) != 0 and not s.is_dead and not s.escaped and i != traitor_slot:
 			cands.append(i)
 	if cands.is_empty():
 		return

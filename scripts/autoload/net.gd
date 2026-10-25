@@ -13,6 +13,8 @@ const MAX_PLAYERS := 8
 ## 방장이 고르는 판 인원 (사람 + 봇). 사람이 더 많으면 사람 수만큼
 const FILL_CHOICES := [4, 6, 8]
 var bot_fill := 8
+## 술래 변신 모드에서 배신자 넣기 (사람이 4명 이상일 때만 실제로 생김)
+var traitor_on := false
 
 ## 멀티 로비 또는 멀티 판 진행 중
 var active := false
@@ -154,6 +156,7 @@ func register(player_name: String, cos := {}) -> void:
 	sync_players.rpc(players)
 	sync_mode.rpc(match_mode)
 	sync_fill.rpc(bot_fill)
+	sync_traitor.rpc(traitor_on)
 
 
 ## 방장: 게임 방식 바꾸기 (모두에게 알림)
@@ -161,6 +164,44 @@ func toggle_mode() -> void:
 	if not multiplayer.is_server():
 		return
 	sync_mode.rpc("turncoat" if match_mode == "classic" else "classic")
+
+
+## 방장: 배신자 켜기/끄기
+func toggle_traitor() -> void:
+	if multiplayer.is_server():
+		sync_traitor.rpc(not traitor_on)
+
+
+@rpc("authority", "reliable", "call_local")
+func sync_traitor(on: bool) -> void:
+	traitor_on = on
+	lobby_changed.emit()
+
+
+## 방장 → 배신자 한 사람: "당신이 배신자" (다른 사람은 모름)
+var i_am_traitor := false
+@rpc("authority", "reliable")
+func you_are_traitor() -> void:
+	i_am_traitor = true  # 아직 맵을 만드는 중이면 main.gd 가 준비된 뒤에 읽음
+	var m := _main()
+	if m and bool(m.get("ready_to_play")):
+		m.call("become_traitor")
+
+
+## 배신자 → 방장: [B] 위치 제보
+@rpc("any_peer", "reliable")
+func traitor_report(slot: int) -> void:
+	var m := _main()
+	if m and multiplayer.is_server():
+		m.call("net_traitor_report", slot, multiplayer.get_remote_sender_id())
+
+
+## 누가 어느 봉인석을 가동 중인지 (한 봉인석은 한 명만)
+@rpc("any_peer", "unreliable")
+func gen_occupy(gen_index: int, slot: int) -> void:
+	var m := _main()
+	if m:
+		m.call("net_gen_occupy", gen_index, slot)
 
 
 ## 방장: 판 인원 바꾸기 (4 → 6 → 8 → 4)
@@ -317,6 +358,7 @@ func start_match() -> void:
 		"slots": slots,
 		"mode": match_mode,
 		"rule": DailyRule.choose(),
+		"traitor": traitor_on and match_mode == "turncoat",
 	}
 	begin_match.rpc(cfg)
 
@@ -324,6 +366,7 @@ func start_match() -> void:
 @rpc("authority", "reliable", "call_local")
 func begin_match(cfg: Dictionary) -> void:
 	match_config = cfg
+	i_am_traitor = false
 	get_tree().paused = false
 	get_tree().change_scene_to_file("res://scenes/main.tscn")
 
