@@ -38,6 +38,17 @@ func _ready() -> void:
 	m.seekers[0].global_position = p.global_position + fwd.normalized() * 6.0
 	await get_tree().create_timer(6.0).timeout
 	await _snap(map + "_" + rule + "_1normal")
+	if rule == "keen_ears":
+		# 술래로 변해서 소리 파동 보기
+		p.become_seeker(m.seekers[0])
+		await get_tree().create_timer(1.0).timeout
+		var bots: Array = m.survivors.filter(func(s): return s != p)
+		var c: Vector3 = bots[0].global_position
+		p.poss_noise_ping(c, true)
+		if bots.size() > 1:
+			p.poss_noise_ping(bots[1].global_position + Vector3(3, 0, 2), false)
+		await get_tree().create_timer(0.55).timeout
+		await _snap(map + "_" + rule + "_1ping")
 	m.start_blackout(6.0)
 	await get_tree().create_timer(1.6).timeout
 	await _snap(map + "_" + rule + "_2blackout")

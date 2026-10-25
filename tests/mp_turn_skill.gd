@@ -22,7 +22,7 @@ func _ready() -> void:
 		Net.pick_character("chameleon")
 		while Net.players.size() < 2 or not Net.all_ready():
 			await get_tree().create_timer(0.3).timeout
-		if mode == "turncoat":
+		if mode == "turncoat" or mode == "traitor":
 			Net.toggle_mode()
 		while Net.bot_fill != fill:
 			Net.cycle_fill()
@@ -57,6 +57,9 @@ func _ready() -> void:
 	print("MT ", role, " distinct spawns=", sp.size())
 	m.player.connect("notice", func(t: String) -> void: print("MT ", role, " NOTICE: ", t))
 	print("MT ", role, " rule=", m.daily_rule, " stamina_max=", GameConfig.num("stamina", "max", 0))
+	if mode == "traitor":
+		await _traitor_test(m)
+		return
 	if mode != "turncoat":
 		if role == "host":
 			Net.blackout.rpc(3.0)
@@ -108,5 +111,29 @@ func _ready() -> void:
 				" | b2 slow=", snappedf(b2.slow_left, 0.1), " bleed=", snappedf(b2.bleed_time_left, 0.1), " root=", snappedf(b2.rooted_left, 0.1), " ctrl=", snappedf(b2.controlled_left, 0.1), " pull=", snappedf(b2.pulled_time_left, 0.1), " dead=", b2.is_dead,
 				" | b3 frozen=", b3.is_frozen, " dead=", b3.is_dead, " chained=", b3.chained_by != null)
 	await get_tree().create_timer(1.0).timeout
+	print("MT ", role, " DONE")
+	get_tree().quit()
+
+
+## 배신자: 방장이 술래(0번), 손님(1번)이 배신자. 손님이 [B] 제보 + 봉인석 되돌리기
+func _traitor_test(m) -> void:
+	var g = m.generators[0]
+	if role == "host":
+		m.traitor_slot = 1
+		Net.you_are_traitor.rpc_id(int((Net.match_config["slots"] as Array)[1]["peer"]))
+		g.progress = 2.0 / 3.0
+		await get_tree().create_timer(1.0).timeout
+		m._turn_left = 0.0
+		Net.turn_seeker.rpc(0)
+		await get_tree().create_timer(5.0).timeout
+		print("MT host gen0 progress after sabotage=", snappedf(g.progress, 0.01), " reports_left=", m._traitor_reports)
+		print("MT host result line: ", m._traitor_result(false))
+		await get_tree().create_timer(2.0).timeout
+	else:
+		await get_tree().create_timer(2.5).timeout
+		print("MT client is_traitor=", m.is_traitor)
+		Net.traitor_report.rpc_id(1, m.player.net_slot)
+		Net.minigame_result.rpc_id(1, 0, m.player.net_slot, true)
+		await get_tree().create_timer(5.0).timeout
 	print("MT ", role, " DONE")
 	get_tree().quit()
